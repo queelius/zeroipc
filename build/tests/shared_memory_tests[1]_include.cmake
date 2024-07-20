@@ -1,0 +1,5 @@
+if(EXISTS "/home/spinoza/github/SMA/build/tests/shared_memory_tests[1]_tests.cmake")
+  include("/home/spinoza/github/SMA/build/tests/shared_memory_tests[1]_tests.cmake")
+else()
+  add_test(shared_memory_tests_NOT_BUILT shared_memory_tests_NOT_BUILT)
+endif()

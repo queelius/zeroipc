@@ -1,0 +1,111 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+_build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+.cache/
+compile_commands.json
+.ccls-cache/
+
+# Generated documentation
+docs/html/
+docs/latex/
+doxygen_warnings.txt
+
+# Test artifacts
+Testing/
+test_results/
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage/
+
+# Compiled files
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Conan files
+conan.lock
+conaninfo.txt
+graph_info.json
+*.pyc
+__pycache__/
+.conan/
+conanbuild*
+conanrun*
+
+# vcpkg files
+vcpkg_installed/
+vcpkg-manifest-install.log
+
+# Package files
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# Debug files
+debug_*
+core
+vgcore.*
+*.log
+
+# Temporary files
+*.tmp
+/tmp/
+temp/
+
+# Shared memory segments (local testing)
+/dev/shm/test_*
+/dev/shm/debug_*
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+*.cmake
+!cmake/*.cmake
+!vcpkg/*.cmake
+
+# CPack
+_CPack_Packages/
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# Python
+*.egg-info/
+dist/
+.eggs/
+
+# Benchmark results
+benchmark_results/
+*.bench
+
+# Editor backup files
+*.bak
+*.orig
+
+# Git
+*.patch

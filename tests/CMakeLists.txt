@@ -1,24 +1,33 @@
-find_package(GTest REQUIRED)
-include(GoogleTest)
+# Fetch Catch2 v3 (header-only, modern C++)
+include(FetchContent)
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v3.5.2
+)
+FetchContent_MakeAvailable(Catch2)
 
-# Find all .cpp files in the current directory and subdirectories
-file(GLOB_RECURSE TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+# Create test executable
+add_executable(posix_shm_tests
+    test_main.cpp
+    test_posix_shm.cpp
+    test_shm_table.cpp
+    test_shm_array.cpp
+    test_shm_queue.cpp
+    test_multi_process.cpp
+)
 
-# Create an executable for the tests
-add_executable(shared_memory_tests ${TEST_SOURCES})
-
-# Include the project's include directory
-target_include_directories(shared_memory_tests PRIVATE
+target_include_directories(posix_shm_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 
-# Link the test executable with necessary libraries
-target_link_libraries(shared_memory_tests
-    GTest::GTest
-    GTest::Main
-    rt  # For POSIX shared memory functions
-    pthread  # For std::atomic
+target_link_libraries(posix_shm_tests PRIVATE
+    Catch2::Catch2WithMain
+    rt      # POSIX shared memory
+    pthread # std::atomic
 )
 
-# Discover and register the tests
-gtest_discover_tests(shared_memory_tests)
+# Register tests with CTest
+include(CTest)
+include(Catch)
+catch_discover_tests(posix_shm_tests)

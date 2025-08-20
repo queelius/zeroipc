@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+if(UNIX AND NOT APPLE)
+    find_library(RT_LIBRARY rt)
+    if(NOT RT_LIBRARY)
+        message(FATAL_ERROR "rt library not found")
+    endif()
+endif()
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/posix_shm-targets.cmake")
+
+check_required_components(posix_shm)

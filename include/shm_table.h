@@ -4,45 +4,54 @@
 #include <array>
 #include <cstring>
 #include <optional>
+#include <algorithm>
+#include <string_view>
 
-using std::optional;
-using std::string;
-
-class shm_table
+/**
+ * @brief Metadata table for managing shared memory data structures
+ * 
+ * Stored at the beginning of shared memory segment to allow
+ * dynamic discovery and management of data structures.
+ * 
+ * @tparam MaxNameSize Maximum size for entry names (default 32)
+ * @tparam MaxEntries Maximum number of entries in the table (default 64)
+ */
+template<size_t MaxNameSize = 32, size_t MaxEntries = 64>
+class shm_table_impl
 {
-    static const size_t MAX_NAME_SIZE = 32;
-    static const size_t MAX_ENTRIES = 8;
+public:
+    static constexpr size_t MAX_NAME_SIZE = MaxNameSize;
+    static constexpr size_t MAX_ENTRIES = MaxEntries;
 
     struct entry
     {
-        std::array<char, MAX_NAME_SIZE> name;
-        size_t offset;
-        size_t size;
-        size_t elem_size;
-        size_t num_elem;
-        bool active;
+        std::array<char, MAX_NAME_SIZE> name{};
+        size_t offset{0};
+        size_t size{0};
+        size_t elem_size{0};
+        size_t num_elem{0};
+        bool active{false};
     };
 
-    entry entries[MAX_ENTRIES];
+private:
+    entry entries[MAX_ENTRIES]{};
+    size_t total_allocated{0};
 
 public:
-    shm_table()
-    {
-        for (size_t i = 0; i < MAX_ENTRIES; ++i)
-        {
-            entries[i].active = false;
-        }
-    }
+    shm_table_impl() = default;
 
     /**
      * @brief Add a new entry to the table.
      * 
      * @param name Name of the resource that resides in shared memory.
      * @param offset Offset of the resource in shared memory.
-     * @param size Size of the resource in bytes.
-     * @return bool 
+     * @param size Total size of the resource in bytes.
+     * @param elem_size Size of each element (for arrays/queues).
+     * @param num_elem Number of elements.
+     * @return true if added successfully, false if name exists or table full.
      */
-    auto add(const string &name, size_t offset, size_t size)
+    bool add(const char* name, size_t offset, size_t size, 
+             size_t elem_size = 0, size_t num_elem = 0)
     {
         if (find(name))
             return false;
@@ -51,36 +60,150 @@ public:
         {
             if (!entries[i].active)
             {
-                auto &entry = entries[i];
-                strncpy(entry.name.data(), name.c_str(), MAX_NAME_SIZE);
-                entry.offset = offset;
-                entry.size = size;
-                entry.active = true;
-                return true;
-            }
-        }
-    }
-
-    bool erase(const std::string &name)
-    {
-        for (size_t i = 0; i < MAX_ENTRIES; ++i)
-        {
-            if (strcmp(name.c_str(), entries[i].name.data()) == 0)
-            {
-                entries[i].active = false;
+                auto &e = entries[i];
+                std::strncpy(e.name.data(), name, MAX_NAME_SIZE - 1);
+                e.name[MAX_NAME_SIZE - 1] = '\0';
+                e.offset = offset;
+                e.size = size;
+                e.elem_size = elem_size;
+                e.num_elem = num_elem;
+                e.active = true;
+                
+                // Update total allocated
+                size_t end_offset = offset + size - sizeof(*this);
+                total_allocated = std::max(total_allocated, end_offset);
+                
                 return true;
             }
         }
         return false;
     }
 
-    optional<entry> find(const std::string &name)
+    bool add(std::string_view name, size_t offset, size_t size,
+             size_t elem_size = 0, size_t num_elem = 0)
+    {
+        char name_buf[MAX_NAME_SIZE]{};
+        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
+        std::copy_n(name.begin(), copy_len, name_buf);
+        return add(name_buf, offset, size, elem_size, num_elem);
+    }
+
+    bool erase(const char* name)
     {
         for (size_t i = 0; i < MAX_ENTRIES; ++i)
         {
-            if (strcmp(name.c_str(), entries[i].name.data()) == 0)
-                return entries[i];
+            if (entries[i].active && 
+                std::strcmp(name, entries[i].name.data()) == 0)
+            {
+                entries[i].active = false;
+                // Note: doesn't reclaim space, just marks as inactive
+                return true;
+            }
         }
-        return std::nullopt;
+        return false;
+    }
+
+    bool erase(std::string_view name)
+    {
+        char name_buf[MAX_NAME_SIZE]{};
+        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
+        std::copy_n(name.begin(), copy_len, name_buf);
+        return erase(name_buf);
+    }
+
+    /**
+     * @brief Find an entry by name
+     * @return Pointer to entry if found, nullptr otherwise
+     */
+    entry* find(const char* name)
+    {
+        for (size_t i = 0; i < MAX_ENTRIES; ++i)
+        {
+            if (entries[i].active && 
+                std::strcmp(name, entries[i].name.data()) == 0)
+            {
+                return &entries[i];
+            }
+        }
+        return nullptr;
+    }
+
+    const entry* find(const char* name) const
+    {
+        for (size_t i = 0; i < MAX_ENTRIES; ++i)
+        {
+            if (entries[i].active && 
+                std::strcmp(name, entries[i].name.data()) == 0)
+            {
+                return &entries[i];
+            }
+        }
+        return nullptr;
+    }
+
+    entry* find(std::string_view name)
+    {
+        char name_buf[MAX_NAME_SIZE]{};
+        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
+        std::copy_n(name.begin(), copy_len, name_buf);
+        return find(name_buf);
+    }
+
+    const entry* find(std::string_view name) const
+    {
+        char name_buf[MAX_NAME_SIZE]{};
+        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
+        std::copy_n(name.begin(), copy_len, name_buf);
+        return find(name_buf);
+    }
+
+    /**
+     * @brief Get total allocated size (excluding the table itself)
+     */
+    size_t get_total_allocated_size() const
+    {
+        return total_allocated;
+    }
+
+    /**
+     * @brief Get number of active entries
+     */
+    size_t get_entry_count() const
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < MAX_ENTRIES; ++i)
+        {
+            if (entries[i].active)
+                ++count;
+        }
+        return count;
+    }
+
+    /**
+     * @brief Clear all entries (for initialization)
+     */
+    void clear()
+    {
+        for (size_t i = 0; i < MAX_ENTRIES; ++i)
+        {
+            entries[i].active = false;
+        }
+        total_allocated = 0;
+    }
+
+    /**
+     * @brief Get the actual size of this table in bytes
+     */
+    static constexpr size_t size_bytes() 
+    {
+        return sizeof(shm_table_impl<MaxNameSize, MaxEntries>);
     }
 };
+
+// Default table type for backward compatibility
+using shm_table = shm_table_impl<32, 64>;
+
+// Common alternative configurations
+using shm_table_small = shm_table_impl<16, 16>;   // Minimal overhead
+using shm_table_large = shm_table_impl<64, 256>;   // More entries, longer names
+using shm_table_huge = shm_table_impl<256, 1024>;  // Maximum flexibility

@@ -1,0 +1,107 @@
+# Doxyfile for POSIX Shared Memory Data Structures
+
+# Project information
+PROJECT_NAME           = "POSIX Shared Memory Data Structures"
+PROJECT_NUMBER         = "1.0"
+PROJECT_BRIEF          = "High-performance lock-free data structures for inter-process communication"
+PROJECT_LOGO           = 
+
+# Input/output directories
+INPUT                  = README.md \
+                        docs/mainpage.md \
+                        docs/performance.md \
+                        docs/tutorial.md \
+                        docs/architecture.md \
+                        include \
+                        examples
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.h *.hpp *.cpp *.md
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
+
+# Output configuration
+OUTPUT_DIRECTORY       = docs/html
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HTML_OUTPUT            = .
+HTML_FILE_EXTENSION    = .html
+
+# Modern HTML theme settings
+HTML_COLORSTYLE_HUE    = 220
+HTML_COLORSTYLE_SAT    = 100
+HTML_COLORSTYLE_GAMMA  = 80
+HTML_DYNAMIC_SECTIONS  = YES
+HTML_INDEX_NUM_ENTRIES = 100
+DISABLE_INDEX          = NO
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 250
+
+# Extract all documentation
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_ANON_NSPACES   = YES
+
+# Code features
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+VERBATIM_HEADERS       = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# Graphs and diagrams
+HAVE_DOT               = YES
+DOT_NUM_THREADS        = 4
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+GROUP_GRAPHS           = YES
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+DOT_GRAPH_MAX_NODES    = 50
+DOT_TRANSPARENT        = YES
+
+# Preprocessing
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+PREDEFINED             = 
+
+# Warnings
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+
+# Index and search
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+
+# Example path
+EXAMPLE_PATH           = examples
+EXAMPLE_PATTERNS       = *.cpp
+EXAMPLE_RECURSIVE      = YES
+
+# Markdown support
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+
+# Groups and modules
+DISTRIBUTE_GROUP_DOC   = YES
+
+# Aliases for common documentation patterns
+ALIASES                = "complexity=\par Complexity:\n" \
+                        "thread_safe=\par Thread Safety:\n" \
+                        "lock_free=\par Lock-Free Guarantee:\n" \
+                        "performance=\par Performance:\n" \
+                        "usage_example=\par Usage Example:\n"
+
+HTML_EXTRA_STYLESHEET = docs/doxygen-awesome.css

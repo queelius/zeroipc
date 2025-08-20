@@ -1,0 +1,185 @@
+/* Doxygen Awesome - Modern styling for Doxygen
+   Inspired by doxygen-awesome-css */
+
+:root {
+    --primary-color: #1e88e5;
+    --primary-dark: #1565c0;
+    --text-color: #333;
+    --bg-color: #ffffff;
+    --code-bg: #f5f7fa;
+    --border-color: #e1e4e8;
+    --link-color: #0366d6;
+    --success-color: #28a745;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+}
+
+/* Base styling */
+body, table, div, p, dl {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 16px;
+    line-height: 1.25;
+}
+
+h1 { font-size: 2em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+h2 { font-size: 1.5em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+h3 { font-size: 1.25em; }
+
+/* Links */
+a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Code blocks */
+code, pre {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 14px;
+}
+
+code {
+    background-color: var(--code-bg);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+}
+
+pre.fragment {
+    background-color: var(--code-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 16px;
+    overflow: auto;
+}
+
+/* Navigation */
+#top {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+    border: none;
+    padding: 20px 0;
+}
+
+.tabs, .tabs2, .tabs3 {
+    background: none;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.tablist li {
+    background: none;
+}
+
+.tablist a {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    padding: 10px 15px;
+    border-radius: 4px 4px 0 0;
+}
+
+.tablist a:hover {
+    background-color: var(--code-bg);
+}
+
+.tablist li.current a {
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--bg-color);
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Content area */
+.contents {
+    margin-top: 20px;
+}
+
+/* Tables */
+table.memberdecls {
+    border-spacing: 0;
+    width: 100%;
+}
+
+.memberdecls td, .memberdecls th {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.memberdecls tr:hover {
+    background-color: var(--code-bg);
+}
+
+/* Member descriptions */
+.memdoc {
+    border: none;
+    background-color: var(--code-bg);
+    border-left: 4px solid var(--primary-color);
+    padding: 15px;
+    margin: 15px 0;
+    border-radius: 4px;
+}
+
+/* Parameters */
+.paramname {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Directory tree */
+.directory {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin: 10px 0;
+}
+
+.directory td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.directory tr:last-child td {
+    border-bottom: none;
+}
+
+/* Search */
+#MSearchBox {
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+}
+
+/* Footer */
+.footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    color: #586069;
+    font-size: 14px;
+}
+
+/* Syntax highlighting */
+.keyword { color: #d73a49; font-weight: 600; }
+.keywordtype { color: #d73a49; }
+.keywordflow { color: #d73a49; }
+.comment { color: #6a737d; font-style: italic; }
+.preprocessor { color: #005cc5; }
+.stringliteral { color: #032f62; }
+.charliteral { color: #032f62; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { font-size: 14px; }
+    h1 { font-size: 1.5em; }
+    h2 { font-size: 1.25em; }
+    h3 { font-size: 1.1em; }
+}

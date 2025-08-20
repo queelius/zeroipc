@@ -1,29 +1,84 @@
 #include <iostream>
-#include <vector>
-#include "SharedMemoryManager.h"
-#include "SharedMemoryAllocator.h"
+#include <chrono>
+#include <thread>
+#include <cstring>
+#include "posix_shm.h"
+#include "shm_array.h"
+#include "shm_queue.h"
 
 int main() {
     try {
-        SharedMemoryManager smm("/my_shared_memory", 1024 * 1024);  // 1MB
-        SharedMemoryAllocator<int> allocator(smm);
-
-        std::vector<int, SharedMemoryAllocator<int>> shared_vector(allocator);
-
-        shared_vector.push_back(42);
-        shared_vector.push_back(100);
-
-        std::cout << "Vector size: " << shared_vector.size() << std::endl;
-        std::cout << "Vector contents: ";
-        for (int i : shared_vector) {
-            std::cout << i << " ";
+        // Create or open shared memory segment
+        constexpr size_t shm_size = 1024 * 1024; // 1MB
+        posix_shm shm("my_simulation_shm", shm_size);
+        
+        std::cout << "Shared memory created/opened successfully\n";
+        
+        // Example 1: Using shm_array for fixed-size data exchange
+        {
+            constexpr size_t array_size = 100;
+            shm_array<double> sensor_data(shm, "sensor_readings", array_size);
+            
+            // Simulate writing sensor data
+            for (size_t i = 0; i < 10; ++i) {
+                sensor_data[i] = 3.14 * i;
+            }
+            
+            std::cout << "Written sensor data: ";
+            for (size_t i = 0; i < 10; ++i) {
+                std::cout << sensor_data[i] << " ";
+            }
+            std::cout << "\n";
         }
-        std::cout << std::endl;
-
+        
+        // Example 2: Discovery of existing array
+        {
+            // Another process could discover this array by name
+            shm_array<double> discovered_array(shm, "sensor_readings");
+            std::cout << "Discovered array size: " << discovered_array.size() << "\n";
+            std::cout << "First value: " << discovered_array[0] << "\n";
+        }
+        
+        // Example 3: Using shm_queue for message passing
+        {
+            struct SimulationMessage {
+                uint64_t timestamp;
+                double value;
+                uint32_t sensor_id;
+            };
+            
+            constexpr size_t queue_capacity = 50;
+            shm_queue<SimulationMessage> msg_queue(shm, "sim_messages", queue_capacity);
+            
+            // Enqueue some messages
+            SimulationMessage msg1{1000, 42.5, 1};
+            SimulationMessage msg2{2000, 37.2, 2};
+            
+            if (msg_queue.enqueue(msg1)) {
+                std::cout << "Message 1 enqueued successfully\n";
+            }
+            if (msg_queue.enqueue(msg2)) {
+                std::cout << "Message 2 enqueued successfully\n";
+            }
+            
+            // Dequeue and display
+            SimulationMessage received;
+            if (msg_queue.dequeue(received)) {
+                std::cout << "Dequeued message - Timestamp: " << received.timestamp 
+                          << ", Value: " << received.value 
+                          << ", Sensor: " << received.sensor_id << "\n";
+            }
+            
+            std::cout << "Queue size: " << msg_queue.size() << "\n";
+        }
+        
+        // The shared memory will be automatically cleaned up when the last reference is released
+        std::cout << "\nShared memory operations completed successfully!\n";
+        
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-
+    
     return 0;
 }

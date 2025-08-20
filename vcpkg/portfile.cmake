@@ -1,8 +1,8 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO queelius/posix_shm
-    REF v1.0.0
-    SHA512 0  # To be updated with actual hash
+    REF v1.0.1
+    SHA512 c52d1f09e9cda9d39cacbb6d13e9fa68f48a93c885a5c82eb219dee004826a73acdba6c7cf47b7f1f4b38e8e302f81ea9fbdcd4f105ae8b112f02dd67426318e
     HEAD_REF master
 )
 

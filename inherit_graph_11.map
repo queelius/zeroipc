@@ -1,0 +1,11 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classshm__span.html" title="Base class for shared memory data structures that span a region." alt="" coords="5,92,199,117"/>
+<area shape="rect" id="Node000001" href="$classshm__array.html" title=" " alt="" coords="275,5,425,31"/>
+<area shape="poly" id="edge1_Node000000_Node000001" title=" " alt="" coords="141,84,246,41,290,28,291,33,248,46,143,89"/>
+<area shape="rect" id="Node000002" href="$classshm__array.html" title=" " alt="" coords="265,55,435,95"/>
+<area shape="poly" id="edge2_Node000000_Node000002" title=" " alt="" coords="212,89,264,83,265,88,213,94"/>
+<area shape="rect" id="Node000003" href="$classshm__array.html" title="Fixed&#45;size array in shared memory with zero&#45;overhead access." alt="" coords="249,120,451,145"/>
+<area shape="poly" id="edge3_Node000000_Node000003" title=" " alt="" coords="213,114,250,119,249,124,212,120"/>
+<area shape="rect" id="Node000004" href="$classshm__queue.html" title="Lock&#45;free circular queue for shared memory IPC." alt="" coords="247,169,453,195"/>
+<area shape="poly" id="edge4_Node000000_Node000004" title=" " alt="" coords="149,120,247,154,293,167,292,172,246,159,147,125"/>
+</map>

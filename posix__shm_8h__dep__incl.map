@@ -1,0 +1,36 @@
+<map id="include/posix_shm.h" name="include/posix_shm.h">
+<area shape="rect" id="Node000001" title="Core POSIX shared memory management with automatic reference counting." alt="" coords="603,5,757,31"/>
+<area shape="rect" id="Node000002" href="$basic__usage_8cpp.html" title=" " alt="" coords="5,174,203,199"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="589,27,388,47,292,62,225,81,190,102,158,128,115,176,111,172,155,124,187,98,223,76,291,57,387,41,589,22"/>
+<area shape="rect" id="Node000003" href="$benchmark__reads_8cpp.html" title=" " alt="" coords="429,167,592,207"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="608,37,570,54,538,80,525,101,518,124,513,167,508,166,513,123,521,98,534,77,567,50,606,32"/>
+<area shape="rect" id="Node000004" href="$custom__table__sizes_8cpp.html" title=" " alt="" coords="227,167,405,207"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="630,37,513,81,422,127,348,169,345,164,420,122,511,76,629,32"/>
+<area shape="rect" id="Node000005" href="$simd__simulation_8cpp.html" title="Example of SIMD&#45;optimized particle simulation using shared memory." alt="" coords="647,255,873,280"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="697,41,727,79,766,116,794,131,820,136,845,143,857,152,868,165,875,187,868,208,854,225,838,238,802,257,799,252,835,234,851,221,863,205,870,187,863,168,853,156,843,148,819,141,792,136,762,121,723,83,693,44"/>
+<area shape="rect" id="Node000006" href="$simulation__patterns_8cpp.html" title=" " alt="" coords="963,167,1122,207"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="771,22,1000,42,1099,57,1132,66,1151,77,1159,90,1160,104,1155,117,1145,129,1118,151,1086,169,1083,164,1115,146,1141,125,1150,114,1154,103,1154,92,1147,81,1130,71,1097,62,999,47,770,27"/>
+<area shape="rect" id="Node000007" href="$shm__array_8h.html" title="Fixed&#45;size shared memory array with STL compatibility." alt="" coords="548,86,700,111"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="666,43,634,87,630,84,662,40"/>
+<area shape="rect" id="Node000009" href="$shm__atomic_8h.html" title=" " alt="" coords="1212,86,1377,111"/>
+<area shape="poly" id="edge14_Node000001_Node000009" title=" " alt="" coords="771,25,966,46,1194,76,1237,83,1236,89,1193,81,965,52,771,31"/>
+<area shape="rect" id="Node000010" href="$shm__object__pool_8h.html" title=" " alt="" coords="775,79,923,119"/>
+<area shape="poly" id="edge16_Node000001_Node000010" title=" " alt="" coords="718,34,809,76,807,81,716,39"/>
+<area shape="rect" id="Node000011" href="$shm__queue_8h.html" title=" " alt="" coords="236,86,396,111"/>
+<area shape="poly" id="edge18_Node000001_Node000011" title=" " alt="" coords="615,36,370,89,368,83,613,31"/>
+<area shape="rect" id="Node000012" href="$shm__ring__buffer_8h.html" title=" " alt="" coords="948,86,1137,111"/>
+<area shape="poly" id="edge21_Node000001_Node000012" title=" " alt="" coords="747,31,990,83,989,89,746,36"/>
+<area shape="poly" id="edge7_Node000007_Node000002" title=" " alt="" coords="540,116,215,169,172,177,171,171,214,164,540,111"/>
+<area shape="poly" id="edge8_Node000007_Node000003" title=" " alt="" coords="600,122,537,169,534,164,596,117"/>
+<area shape="poly" id="edge9_Node000007_Node000004" title=" " alt="" coords="570,118,385,169,383,164,569,113"/>
+<area shape="poly" id="edge10_Node000007_Node000005" title=" " alt="" coords="628,124,637,165,645,186,657,205,672,220,690,233,727,252,724,257,687,238,668,224,653,208,640,188,632,166,623,126"/>
+<area shape="poly" id="edge11_Node000007_Node000006" title=" " alt="" coords="694,112,964,166,962,172,693,117"/>
+<area shape="rect" id="Node000008" href="$shm__simd__utils_8h.html" title="SIMD&#45;optimized utilities for simulation workloads." alt="" coords="667,174,853,199"/>
+<area shape="poly" id="edge12_Node000007_Node000008" title=" " alt="" coords="655,116,743,171,740,176,652,121"/>
+<area shape="poly" id="edge13_Node000008_Node000005" title=" " alt="" coords="763,213,763,254,757,254,757,213"/>
+<area shape="poly" id="edge15_Node000009_Node000006" title=" " alt="" coords="1249,118,1099,169,1097,164,1247,113"/>
+<area shape="poly" id="edge17_Node000010_Node000006" title=" " alt="" coords="905,122,1001,164,999,169,903,127"/>
+<area shape="poly" id="edge19_Node000011_Node000002" title=" " alt="" coords="276,119,133,176,131,171,274,114"/>
+<area shape="poly" id="edge20_Node000011_Node000004" title=" " alt="" coords="319,125,319,166,313,166,313,125"/>
+<area shape="poly" id="edge22_Node000012_Node000006" title=" " alt="" coords="1045,125,1045,166,1040,166,1040,125"/>
+</map>

@@ -1,0 +1,22 @@
+<map id="include/shm_span.h" name="include/shm_span.h">
+<area shape="rect" id="Node000001" title=" " alt="" coords="343,5,494,31"/>
+<area shape="rect" id="Node000002" href="$shm__array_8h.html" title="Fixed&#45;size shared memory array with STL compatibility." alt="" coords="447,79,599,104"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="448,36,507,76,504,81,445,41"/>
+<area shape="rect" id="Node000009" href="$shm__queue_8h.html" title=" " alt="" coords="236,79,396,104"/>
+<area shape="poly" id="edge9_Node000001_Node000009" title=" " alt="" coords="392,41,334,81,331,76,389,36"/>
+<area shape="rect" id="Node000003" href="$basic__usage_8cpp.html" title=" " alt="" coords="5,159,203,185"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="449,109,165,162,164,157,448,104"/>
+<area shape="rect" id="Node000004" href="$benchmark__reads_8cpp.html" title=" " alt="" coords="824,152,987,192"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="592,104,824,151,823,157,591,109"/>
+<area shape="rect" id="Node000005" href="$custom__table__sizes_8cpp.html" title=" " alt="" coords="227,152,405,192"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="481,111,367,154,365,149,479,106"/>
+<area shape="rect" id="Node000006" href="$simd__simulation_8cpp.html" title="Example of SIMD&#45;optimized particle simulation using shared memory." alt="" coords="661,240,886,265"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="613,95,846,114,947,130,981,139,1001,150,1012,169,1011,186,1001,200,983,212,933,230,874,243,873,237,932,225,981,207,997,196,1006,184,1006,170,997,154,979,144,946,135,845,120,612,100"/>
+<area shape="rect" id="Node000007" href="$simulation__patterns_8cpp.html" title=" " alt="" coords="641,152,799,192"/>
+<area shape="poly" id="edge6_Node000002_Node000007" title=" " alt="" coords="565,107,674,149,672,154,563,112"/>
+<area shape="rect" id="Node000008" href="$shm__simd__utils_8h.html" title="SIMD&#45;optimized utilities for simulation workloads." alt="" coords="429,159,616,185"/>
+<area shape="poly" id="edge7_Node000002_Node000008" title=" " alt="" coords="525,118,525,159,520,159,520,118"/>
+<area shape="poly" id="edge8_Node000008_Node000006" title=" " alt="" coords="573,186,738,237,736,243,571,191"/>
+<area shape="poly" id="edge10_Node000009_Node000003" title=" " alt="" coords="274,111,136,162,134,157,272,106"/>
+<area shape="poly" id="edge11_Node000009_Node000005" title=" " alt="" coords="319,118,319,152,313,152,313,118"/>
+</map>

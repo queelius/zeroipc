@@ -208,6 +208,10 @@ clean-shm:
 	@rm -f /dev/shm/test_* /dev/shm/quick /dev/shm/debug_* 2>/dev/null || true
 	@echo "$(GREEN)Shared memory cleaned!$(NC)"
 
+# Full cleanup (build + shared memory)
+clean-all: clean clean-shm
+	@echo "$(GREEN)Complete cleanup done!$(NC)"
+
 # CI/CD targets
 ci: check-format build test docs
 	@echo "$(GREEN)CI checks passed!$(NC)"

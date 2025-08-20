@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/basic_usage.dir/basic_usage.cpp.o -o basic_usage  -lrt -lpthread 

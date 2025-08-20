@@ -1,9 +1,0 @@
-SharedMemoryTest.CreateAndDestroy 10 0.000335342
-SharedMemoryTest.MultipleInstances 10 0.000316392
-SharedMemoryTest.AllocatorBasicUsage 10 0.000291838
-SharedMemoryTest.AllocatorOutOfMemory 10 0.000294111
-SharedMemoryTest.MultiProcessAccess 0 0
-SharedMemoryTest.ConcurrentAccess 0 0
----
-SharedMemoryTest.MultiProcessAccess
-SharedMemoryTest.ConcurrentAccess

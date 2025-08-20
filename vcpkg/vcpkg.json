@@ -2,7 +2,7 @@
   "name": "posix-shm",
   "version": "1.0.0",
   "description": "High-performance POSIX shared memory library for C++23",
-  "homepage": "https://github.com/alextowell/posix_shm",
+  "homepage": "https://github.com/queelius/posix_shm",
   "license": "MIT",
   "supports": "!windows",
   "dependencies": [

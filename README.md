@@ -2,7 +2,7 @@
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://alextowell.github.io/posix_shm/)
+[![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://queelius.github.io/posix_shm/)
 
 High-performance POSIX shared memory library for C++23 with lock-free data structures and zero-copy IPC.
 
@@ -32,7 +32,7 @@ Add to your `CMakeLists.txt`:
 include(FetchContent)
 FetchContent_Declare(
     posix_shm
-    GIT_REPOSITORY https://github.com/alextowell/posix_shm.git
+    GIT_REPOSITORY https://github.com/queelius/posix_shm.git
     GIT_TAG        v1.0.0
 )
 FetchContent_MakeAvailable(posix_shm)
@@ -45,7 +45,7 @@ target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
 ```cmake
 CPMAddPackage(
     NAME posix_shm
-    GITHUB_REPOSITORY alextowell/posix_shm
+    GITHUB_REPOSITORY queelius/posix_shm
     VERSION 1.0.0
 )
 
@@ -81,7 +81,7 @@ target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
 ### Manual Installation
 
 ```bash
-git clone https://github.com/alextowell/posix_shm.git
+git clone https://github.com/queelius/posix_shm.git
 cd posix_shm
 mkdir build && cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
@@ -136,7 +136,7 @@ int main() {
 
 ## Documentation
 
-- [API Reference](https://alextowell.github.io/posix_shm/)
+- [API Reference](https://queelius.github.io/posix_shm/)
 - [Design Philosophy](docs/design_philosophy.md)
 - [Performance Guide](docs/performance.md)
 - [Examples](examples/)

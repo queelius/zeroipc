@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 project(posix_shm 
     VERSION 1.0.0
     DESCRIPTION "High-performance POSIX shared memory library for C++23"
-    HOMEPAGE_URL "https://github.com/alextowell/posix_shm"
+    HOMEPAGE_URL "https://github.com/queelius/posix_shm"
     LANGUAGES CXX)
 
 # Set C++ standard

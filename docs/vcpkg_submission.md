@@ -23,7 +23,7 @@
    Update the SHA512 hash in `vcpkg/portfile.cmake`:
    ```bash
    # Download the release tarball and calculate SHA512
-   wget https://github.com/alextowell/posix_shm/archive/v1.0.0.tar.gz
+   wget https://github.com/queelius/posix_shm/archive/v1.0.0.tar.gz
    sha512sum v1.0.0.tar.gz
    ```
    
@@ -31,7 +31,7 @@
    ```cmake
    vcpkg_from_github(
        OUT_SOURCE_PATH SOURCE_PATH
-       REPO alextowell/posix_shm
+       REPO queelius/posix_shm
        REF v1.0.0
        SHA512 <paste-calculated-sha512>
        HEAD_REF master

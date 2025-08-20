@@ -90,7 +90,7 @@ The current conanfile.py needs these modifications for Conan Center:
    ```yaml
    sources:
      "1.0.0":
-       url: "https://github.com/alextowell/posix_shm/archive/v1.0.0.tar.gz"
+       url: "https://github.com/queelius/posix_shm/archive/v1.0.0.tar.gz"
        sha256: "<calculate-sha256>"
    ```
 

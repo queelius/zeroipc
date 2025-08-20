@@ -8,7 +8,7 @@ class PosixShmConan(ConanFile):
     version = "1.0.0"
     license = "MIT"
     author = "Alex Towell"
-    url = "https://github.com/alextowell/posix_shm"
+    url = "https://github.com/queelius/posix_shm"
     description = "High-performance POSIX shared memory library for C++23"
     topics = ("shared-memory", "ipc", "posix", "lock-free", "header-only")
     

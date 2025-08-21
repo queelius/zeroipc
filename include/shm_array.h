@@ -147,11 +147,20 @@ public:
             }
             
             // Data must come after the table
-            size_t byte_offset = sizeof(TableType) + current_used;
-            this->offset = byte_offset;  // Keep as byte offset
+            size_t base_offset = sizeof(TableType) + current_used;
+            
+            // Align to 64-byte boundary for better cache performance
+            // This ensures consistency across all data structures
+            void* base_ptr = this->shm.get_base_addr();
+            void* target_ptr = static_cast<char*>(base_ptr) + base_offset;
+            uintptr_t addr = reinterpret_cast<uintptr_t>(target_ptr);
+            uintptr_t aligned_addr = (addr + 63) & ~63;
+            
+            // Calculate the aligned offset from base
+            this->offset = aligned_addr - reinterpret_cast<uintptr_t>(base_ptr);
             this->num_elem = count;
             
-            if (!table->add(name_buf, byte_offset, required_size, sizeof(T), count))
+            if (!table->add(name_buf, this->offset, required_size, sizeof(T), count))
             {
                 throw std::runtime_error("Failed to add array to table");
             }

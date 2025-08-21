@@ -70,8 +70,9 @@ public:
                 e.active = true;
                 
                 // Update total allocated
-                size_t end_offset = offset + size - sizeof(*this);
-                total_allocated = std::max(total_allocated, end_offset);
+                // offset is absolute from base, so subtract table size
+                size_t relative_end = (offset - sizeof(*this)) + size;
+                total_allocated = std::max(total_allocated, relative_end);
                 
                 return true;
             }
@@ -163,6 +164,23 @@ public:
     size_t get_total_allocated_size() const
     {
         return total_allocated;
+    }
+    
+    /**
+     * @brief Get the number of available entries in the table
+     * @return Number of entries that can still be added
+     */
+    size_t get_available_entries() const
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < MAX_ENTRIES; ++i)
+        {
+            if (!entries[i].active)
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

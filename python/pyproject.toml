@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=61.0", "pybind11>=2.10.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "posix-shm"
+version = "1.0.0"
+authors = [
+    {name = "Alex Towell"},
+]
+description = "High-performance lock-free data structures in POSIX shared memory for Python"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Hardware :: Symmetric Multi-processing",
+    "Topic :: Scientific/Engineering",
+]
+keywords = ["shared-memory", "ipc", "lock-free", "data-structures", "multiprocessing"]
+
+[project.urls]
+"Homepage" = "https://github.com/queelius/posix_shm"
+"Bug Reports" = "https://github.com/queelius/posix_shm/issues"
+"Documentation" = "https://queelius.github.io/posix_shm/"
+"Source" = "https://github.com/queelius/posix_shm"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "numpy>=1.20",
+    "black>=22.0",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
+]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
+]
+
+[tool.setuptools]
+packages = ["posix_shm"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+posix_shm = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

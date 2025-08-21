@@ -100,7 +100,8 @@ TEST_CASE("Possible solutions for fragmentation", "[fragmentation][design]") {
                 }
                 
                 // No fit, allocate at end
-                return allocate_at_end(size);
+                // return allocate_at_end(size);  // Not implemented in this example
+                return static_cast<size_t>(-1);  // Indicate failure
             }
         };
         

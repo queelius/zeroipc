@@ -51,7 +51,34 @@ private:
     
 public:
     /**
+     * @brief Check if a queue exists in shared memory
+     * @param shm Shared memory segment
+     * @param name Queue identifier to check
+     * @return true if queue exists, false otherwise
+     */
+    template<typename ShmType>
+    static bool exists(ShmType& shm, std::string_view name) {
+        auto* table = static_cast<TableType*>(shm.get_base_addr());
+        char name_buf[TableType::MAX_NAME_SIZE]{};
+        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
+        std::copy_n(name.begin(), copy_len, name_buf);
+        return table->find(name_buf) != nullptr;
+    }
+    
+    /**
      * @brief Create or open a shared memory queue
+     * 
+     * @param shm Shared memory segment
+     * @param name Unique identifier for the queue
+     * @param capacity Maximum number of elements (0 to open existing)
+     * 
+     * @throws std::runtime_error if:
+     *   - capacity is 0 and queue doesn't exist
+     *   - capacity is non-zero but doesn't match existing queue
+     * 
+     * @note Use capacity > 0 to create a new queue
+     * @note Use capacity = 0 to open an existing queue
+     * @note Use exists() to check before opening if unsure
      */
     template<typename ShmType>
     shm_queue(ShmType& shm, std::string_view name, size_t capacity = 0)
@@ -93,14 +120,26 @@ public:
             size_t current_used = table->get_total_allocated_size();
             
             // Data must come after the table
-            this->offset = sizeof(TableType) + current_used;
+            size_t base_offset = sizeof(TableType) + current_used;
+            
+            // Align to 64-byte boundary for better cache performance
+            // Even though QueueHeader doesn't require it, this ensures consistency
+            void* base_ptr = shm.get_base_addr();
+            void* target_ptr = static_cast<char*>(base_ptr) + base_offset;
+            uintptr_t addr = reinterpret_cast<uintptr_t>(target_ptr);
+            uintptr_t aligned_addr = (addr + 63) & ~63;
+            
+            // Calculate the aligned offset from base
+            this->offset = aligned_addr - reinterpret_cast<uintptr_t>(base_ptr);
             this->num_elem = capacity;
             
             // Initialize header with actual capacity
             new (header()) QueueHeader{.capacity = actual_capacity};
             
             // Register in table
-            table->add(name_buf, this->offset, required_size, sizeof(T), capacity);
+            if (!table->add(name_buf, this->offset, required_size, sizeof(T), capacity)) {
+                throw std::runtime_error("Failed to register queue in table - table may be full");
+            }
             // Find the entry we just added
             _table_entry = table->find(name_buf);
         } else {

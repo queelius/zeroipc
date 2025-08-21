@@ -14,7 +14,17 @@ add_executable(posix_shm_tests
     test_shm_table.cpp
     test_shm_array.cpp
     test_shm_queue.cpp
+    test_shm_stack.cpp
+    test_shm_hash_map.cpp
+    test_shm_set.cpp
+    test_shm_bitset.cpp
+    test_shm_ring_buffer.cpp
+    test_shm_object_pool.cpp
     test_multi_process.cpp
+    test_cpp_hashmap.cpp
+    test_hash_map_multiple.cpp
+    test_fragmentation.cpp
+    test_integration_multi_structures.cpp
 )
 
 target_include_directories(posix_shm_tests PRIVATE

@@ -23,6 +23,8 @@
 #include <cstring>
 #include <atomic>
 #include <cerrno>
+#include <utility>
+#include <algorithm>
 #include "shm_table.h"
 
 /**
@@ -241,6 +243,35 @@ public:
     size_t get_total_size() const
     {
         return total_size - sizeof(header);
+    }
+    
+    /**
+     * @brief Query available capacity for new allocations
+     * 
+     * @return Structure containing capacity information
+     */
+    struct capacity_info {
+        size_t available_memory;    ///< Bytes available for allocation
+        size_t available_entries;   ///< Table entries available
+        size_t max_entries;         ///< Maximum table entries
+        
+        /// Check if allocation of given size would succeed
+        bool can_allocate(size_t size_bytes) const {
+            return available_entries > 0 && size_bytes <= available_memory;
+        }
+    };
+    
+    capacity_info get_capacity() const
+    {
+        auto* table = get_table();
+        size_t allocated = table->get_total_allocated_size();
+        size_t total = get_total_size();
+        
+        return {
+            .available_memory = (allocated < total) ? (total - allocated) : 0,
+            .available_entries = table->get_available_entries(),
+            .max_entries = TableType::MAX_ENTRIES
+        };
     }
 
     /**

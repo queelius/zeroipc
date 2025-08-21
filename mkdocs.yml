@@ -1,0 +1,97 @@
+site_name: POSIX Shared Memory Library
+site_url: https://queelius.github.io/posix_shm/
+repo_url: https://github.com/queelius/posix_shm
+repo_name: queelius/posix_shm
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            members_order: source
+            docstring_style: google
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Examples: getting-started/examples.md
+  - Python API:
+    - SharedMemory: python-api/shared-memory.md
+    - Data Structures:
+      - Queue: python-api/queue.md
+      - Stack: python-api/stack.md
+      - HashMap: python-api/hashmap.md
+      - Bitset: python-api/bitset.md
+      - Array: python-api/array.md
+    - Utilities:
+      - Helpers: python-api/helpers.md
+      - NumPy Integration: python-api/numpy.md
+  - C++ API:
+    - Core:
+      - posix_shm: cpp-api/posix_shm.md
+      - shm_table: cpp-api/shm_table.md
+    - Data Structures:
+      - shm_queue: cpp-api/shm_queue.md
+      - shm_stack: cpp-api/shm_stack.md
+      - shm_hash_map: cpp-api/shm_hash_map.md
+      - shm_bitset: cpp-api/shm_bitset.md
+      - shm_array: cpp-api/shm_array.md
+  - Architecture:
+    - Design: architecture/design.md
+    - Memory Layout: architecture/memory-layout.md
+    - Lock-Free Algorithms: architecture/lock-free.md
+  - Performance:
+    - Benchmarks: performance/benchmarks.md
+    - Optimization: performance/optimization.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/queelius/posix_shm
+  version:
+    provider: mike

@@ -3,8 +3,8 @@
 #include <vector>
 #include <numeric>
 #include <random>
-#include "posix_shm.h"
-#include "shm_array.h"
+#include "zeroipc.h"
+#include "array.h"
 
 using namespace std::chrono;
 
@@ -53,8 +53,8 @@ int main() {
     std::iota(stack_array, stack_array + STACK_SIZE, 0);
     
     // Shared memory array
-    posix_shm shm("benchmark_shm", 10 * 1024 * 1024);
-    shm_array<int> shared_array(shm, "bench_array", ARRAY_SIZE);
+    zeroipc::memory shm("benchmark_shm", 10 * 1024 * 1024);
+    zeroipc::array<int> shared_array(shm, "bench_array", ARRAY_SIZE);
     std::iota(shared_array.begin(), shared_array.end(), 0);
     
     // Get raw pointer for apples-to-apples comparison

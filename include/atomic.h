@@ -1,9 +1,12 @@
 #pragma once
-#include "posix_shm.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "table.h"
 #include <atomic>
 #include <concepts>
 #include <string_view>
+
+namespace zeroipc {
+
 
 /**
  * @brief Shared memory atomic value with auto-discovery
@@ -12,11 +15,11 @@
  * by other processes. Fully compatible with std::atomic interface.
  * 
  * @tparam T Type of the atomic value (must be trivially copyable and lock-free)
- * @tparam TableType Type of metadata table (default: shm_table)
+ * @tparam TableType Type of metadata table (default: table)
  */
-template<typename T, typename TableType = shm_table>
+template<typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T> && std::atomic<T>::is_always_lock_free
-class shm_atomic {
+class atomic_value {
 private:
     std::atomic<T>* atom_ptr{nullptr};
     const typename TableType::entry* table_entry{nullptr};
@@ -35,7 +38,7 @@ public:
      * @brief Create or open a shared atomic value
      */
     template<typename ShmType>
-    shm_atomic(ShmType& shm, std::string_view name, T initial_value = T{}) {
+    atomic_value(ShmType& shm, std::string_view name, T initial_value = T{}) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match atomic table type");
 
@@ -223,20 +226,21 @@ public:
 };
 
 // Convenience type aliases for common atomic types
-template<typename TableType = shm_table>
-using shm_atomic_bool = shm_atomic<bool, TableType>;
+template<typename TableType = table>
+using atomic_bool = atomic_value<bool, TableType>;
 
-template<typename TableType = shm_table>
-using shm_atomic_int = shm_atomic<int, TableType>;
+template<typename TableType = table>
+using atomic_int = atomic_value<int, TableType>;
 
-template<typename TableType = shm_table>
-using shm_atomic_uint = shm_atomic<unsigned int, TableType>;
+template<typename TableType = table>
+using atomic_uint = atomic_value<unsigned int, TableType>;
 
-template<typename TableType = shm_table>
-using shm_atomic_size_t = shm_atomic<size_t, TableType>;
+template<typename TableType = table>
+using atomic_size_t = atomic_value<size_t, TableType>;
 
-template<typename TableType = shm_table>
-using shm_atomic_int64 = shm_atomic<int64_t, TableType>;
+template<typename TableType = table>
+using atomic_int64 = atomic_value<int64_t, TableType>;
 
-template<typename TableType = shm_table>
-using shm_atomic_uint64 = shm_atomic<uint64_t, TableType>;
+template<typename TableType = table>
+using atomic_uint64 = atomic_value<uint64_t, TableType>;
+} // namespace zeroipc

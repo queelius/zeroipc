@@ -1,21 +1,24 @@
 /**
- * @file shm_array.h
+ * @file zeroipc::array.h
  * @brief Fixed-size shared memory array with STL compatibility
- * @author POSIX SHM Library Team
+ * @author ZeroIPC Library Team
  * @date 2025
  * @version 1.0.0
  */
 
 #pragma once
-#include "posix_shm.h"
-#include "shm_span.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "span.h"
+#include "table.h"
 #include <stdexcept>
 #include <algorithm>
 #include <concepts>
 #include <span>
 #include <string_view>
 #include <iterator>
+
+namespace zeroipc {
+
 
 /**
  * @brief Fixed-size array in shared memory with zero-overhead access
@@ -34,7 +37,7 @@
  * ```
  *
  * @tparam T Element type (must be trivially copyable for shared memory)
- * @tparam TableType Metadata table type (default: shm_table)
+ * @tparam TableType Metadata table type (default: table)
  * 
  * @note Read performance identical to native arrays (~2.3ns per access)
  * @note No synchronization provided - use external locking if needed
@@ -43,23 +46,23 @@
  * @par Example:
  * @code
  * // Process 1: Create and populate
- * posix_shm shm("sim", 10*1024*1024);
- * shm_array<double> temps(shm, "temperatures", 1000);
+ * memory shm("sim", 10*1024*1024);
+ * array<double> temps(shm, "temperatures", 1000);
  * temps[0] = 25.5;
  * 
  * // Process 2: Discover and read
- * posix_shm shm("sim");
- * shm_array<double> temps(shm, "temperatures");  // Auto-discovers size
+ * memory shm("sim");
+ * array<double> temps(shm, "temperatures");  // Auto-discovers size
  * double t = temps[0];  // Zero-overhead read
  * @endcode
  * 
- * @see shm_span Base class providing core functionality
- * @see shm_queue For FIFO operations
- * @see shm_object_pool For dynamic allocation
+ * @see zeroipc::span Base class providing core functionality
+ * @see zeroipc::queue For FIFO operations
+ * @see zeroipc::pool For dynamic allocation
  */
-template <typename T, typename TableType = shm_table>
+template <typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_array : public shm_span<T, posix_shm_impl<TableType>>
+class array : public zeroipc::span<T, memory_impl<TableType>>
 {
 private:
     const typename TableType::entry* _table_entry{nullptr};  ///< Cached table entry for name lookup
@@ -87,15 +90,15 @@ public:
      * @par Example:
      * @code
      * // Create new array of 1000 floats
-     * shm_array<float> arr(shm, "sensor_data", 1000);
+     * array<float> arr(shm, "sensor_data", 1000);
      * 
      * // Attach to existing array (size auto-discovered)
-     * shm_array<float> arr2(shm, "sensor_data");
+     * array<float> arr2(shm, "sensor_data");
      * @endcode
      */
     template<typename ShmType>
-    shm_array(ShmType &shared_mem, std::string_view name, size_t count = 0)
-        : shm_span<T, posix_shm_impl<TableType>>(shared_mem, 0, 0)
+    array(ShmType &shared_mem, std::string_view name, size_t count = 0)
+        : zeroipc::span<T, memory_impl<TableType>>(shared_mem, 0, 0)
     {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match array table type");
@@ -240,7 +243,7 @@ public:
      * 
      * @par Example:
      * @code
-     * shm_array<int> arr(shm, "data", 1000);
+     * array<int> arr(shm, "data", 1000);
      * arr.fill(42);  // All elements = 42
      * @endcode
      */
@@ -339,10 +342,10 @@ public:
     /// @brief Get pointer to underlying data
     /// @return Pointer to first element (or nullptr if empty)
     /// @note Direct memory access - use with caution
-    [[nodiscard]] pointer data() noexcept { return shm_span<T, posix_shm_impl<TableType>>::data(); }
+    [[nodiscard]] pointer data() noexcept { return zeroipc::span<T, memory_impl<TableType>>::data(); }
     
     /// @brief Get const pointer to underlying data
-    [[nodiscard]] const_pointer data() const noexcept { return shm_span<T, posix_shm_impl<TableType>>::data(); }
+    [[nodiscard]] const_pointer data() const noexcept { return zeroipc::span<T, memory_impl<TableType>>::data(); }
 
     /**
      * @brief Get array name from metadata table
@@ -355,7 +358,7 @@ public:
      * 
      * @par Example:
      * @code
-     * shm_array<int> arr(shm, "sensor_data", 100);
+     * array<int> arr(shm, "sensor_data", 100);
      * std::cout << arr.name();  // Prints: sensor_data
      * @endcode
      */
@@ -363,3 +366,4 @@ public:
         return _table_entry ? std::string_view(_table_entry->name.data()) : std::string_view{};
     }
 };
+} // namespace zeroipc

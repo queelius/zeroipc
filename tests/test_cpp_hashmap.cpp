@@ -1,17 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_hash_map.h"
+#include "zeroipc.h"
+#include "map.h"
 #include <thread>
 #include <vector>
 
-TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map core functionality", "[zeroipc::map]") {
     const std::string shm_name = "/test_hashmap_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use hash map") {
-        shm_hash_map<int, double> map(shm, "test_map", 100);
+        zeroipc::map<int, double> map(shm, "test_map", 100);
         
         REQUIRE(map.size() == 0);
         REQUIRE(map.empty());
@@ -36,7 +36,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test contains") {
-        shm_hash_map<int, double> map(shm, "contains_map", 100);
+        zeroipc::map<int, double> map(shm, "contains_map", 100);
         
         map.insert(10, 1.0);
         REQUIRE(map.contains(10));
@@ -44,7 +44,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test update") {
-        shm_hash_map<int, double> map(shm, "update_map", 100);
+        zeroipc::map<int, double> map(shm, "update_map", 100);
         
         map.insert(1, 1.0);
         REQUIRE(map.update(1, 2.0));
@@ -58,7 +58,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test erase") {
-        shm_hash_map<int, double> map(shm, "erase_map", 100);
+        zeroipc::map<int, double> map(shm, "erase_map", 100);
         
         map.insert(1, 1.0);
         map.insert(2, 2.0);
@@ -74,7 +74,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test insert_or_update") {
-        shm_hash_map<int, double> map(shm, "insert_update_map", 100);
+        zeroipc::map<int, double> map(shm, "insert_update_map", 100);
         
         // Should insert
         map.insert_or_update(1, 1.0);
@@ -87,7 +87,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test clear") {
-        shm_hash_map<int, double> map(shm, "clear_map", 100);
+        zeroipc::map<int, double> map(shm, "clear_map", 100);
         
         for (int i = 0; i < 10; ++i) {
             map.insert(i, double(i));
@@ -100,7 +100,7 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     }
 
     SECTION("Test for_each") {
-        shm_hash_map<int, double> map(shm, "foreach_map", 100);
+        zeroipc::map<int, double> map(shm, "foreach_map", 100);
         
         for (int i = 0; i < 5; ++i) {
             map.insert(i, double(i) * 1.1);
@@ -120,12 +120,12 @@ TEST_CASE("shm_hash_map core functionality", "[shm_hash_map]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map collision resolution", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map collision resolution", "[zeroipc::map]") {
     const std::string shm_name = "/test_hashmap_collision";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
-    shm_hash_map<int, int> map(shm, "collision_map", 1000);
+    zeroipc::map<int, int> map(shm, "collision_map", 1000);
     
     // Insert many items to force collisions
     for (int i = 0; i < 100; ++i) {
@@ -142,14 +142,14 @@ TEST_CASE("shm_hash_map collision resolution", "[shm_hash_map]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map persistence basics", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map persistence basics", "[zeroipc::map]") {
     const std::string shm_name = "/test_hashmap_persist";
     shm_unlink(shm_name.c_str());
     
     // Process 1: Create and populate
     {
-        posix_shm shm1(shm_name, 10 * 1024 * 1024);
-        shm_hash_map<int, double> map(shm1, "persist_map", 100);
+        zeroipc::memory shm1(shm_name, 10 * 1024 * 1024);
+        zeroipc::map<int, double> map(shm1, "persist_map", 100);
         
         map.insert(1, 1.23);
         map.insert(2, 4.56);
@@ -160,8 +160,8 @@ TEST_CASE("shm_hash_map persistence basics", "[shm_hash_map]") {
     
     // Process 2: Attach and verify
     {
-        posix_shm shm2(shm_name, 0);  // Attach only
-        shm_hash_map<int, double> map(shm2, "persist_map");
+        zeroipc::memory shm2(shm_name, 0);  // Attach only
+        zeroipc::map<int, double> map(shm2, "persist_map");
         
         REQUIRE(map.size() == 3);
         REQUIRE(*map.find(1) == 1.23);
@@ -172,12 +172,12 @@ TEST_CASE("shm_hash_map persistence basics", "[shm_hash_map]") {
     shm_unlink(shm_name.c_str());
 }
 
-TEST_CASE("shm_hash_map concurrent access", "[shm_hash_map][concurrent]") {
+TEST_CASE("zeroipc::map concurrent access", "[zeroipc::map][concurrent]") {
     const std::string shm_name = "/test_hashmap_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
-    shm_hash_map<int, int> map(shm, "concurrent_map", 10000);
+    zeroipc::map<int, int> map(shm, "concurrent_map", 10000);
     
     const int num_threads = 4;
     const int items_per_thread = 1000;
@@ -210,13 +210,13 @@ TEST_CASE("shm_hash_map concurrent access", "[shm_hash_map][concurrent]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map with string keys", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map with string keys", "[zeroipc::map]") {
     const std::string shm_name = "/test_hashmap_string";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
     
     // Use hash of string as key
-    shm_hash_map<uint64_t, double> map(shm, "string_map", 100);
+    zeroipc::map<uint64_t, double> map(shm, "string_map", 100);
     
     auto hash_str = [](const std::string& s) {
         return std::hash<std::string>{}(s);

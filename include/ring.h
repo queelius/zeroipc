@@ -1,9 +1,12 @@
 #pragma once
-#include "posix_shm.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "table.h"
 #include <atomic>
 #include <span>
 #include <algorithm>
+
+namespace zeroipc {
+
 
 /**
  * @brief Lock-free ring buffer for high-throughput streaming data
@@ -19,9 +22,9 @@
  * @tparam T Element type
  * @tparam TableType Metadata table type
  */
-template<typename T, typename TableType = shm_table>
+template<typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_ring_buffer {
+class ring {
 private:
     struct RingHeader {
         std::atomic<uint64_t> write_pos{0};  // Total elements written (never wraps)
@@ -45,7 +48,7 @@ public:
     using size_type = size_t;
 
     template<typename ShmType>
-    shm_ring_buffer(ShmType& shm, std::string_view name, size_t capacity = 0) {
+    ring(ShmType& shm, std::string_view name, size_t capacity = 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match ring buffer table type");
 
@@ -284,3 +287,4 @@ public:
         header_->write_pos.store(write + 1, std::memory_order_release);
     }
 };
+} // namespace zeroipc

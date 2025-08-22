@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <string_view>
 
+namespace zeroipc {
+
+
 /**
  * @brief Metadata table for managing shared memory data structures
  * 
@@ -17,7 +20,7 @@
  * @tparam MaxEntries Maximum number of entries in the table (default 64)
  */
 template<size_t MaxNameSize = 32, size_t MaxEntries = 64>
-class shm_table_impl
+class table_impl
 {
 public:
     static constexpr size_t MAX_NAME_SIZE = MaxNameSize;
@@ -38,7 +41,7 @@ private:
     size_t total_allocated{0};
 
 public:
-    shm_table_impl() = default;
+    table_impl() = default;
 
     /**
      * @brief Add a new entry to the table.
@@ -214,14 +217,15 @@ public:
      */
     static constexpr size_t size_bytes() 
     {
-        return sizeof(shm_table_impl<MaxNameSize, MaxEntries>);
+        return sizeof(table_impl<MaxNameSize, MaxEntries>);
     }
 };
 
 // Default table type for backward compatibility
-using shm_table = shm_table_impl<32, 64>;
+using table = table_impl<32, 64>;
 
 // Common alternative configurations
-using shm_table_small = shm_table_impl<16, 16>;   // Minimal overhead
-using shm_table_large = shm_table_impl<64, 256>;   // More entries, longer names
-using shm_table_huge = shm_table_impl<256, 1024>;  // Maximum flexibility
+using table_small = table_impl<16, 16>;   // Minimal overhead
+using table_large = table_impl<64, 256>;   // More entries, longer names
+using table_huge = table_impl<256, 1024>;  // Maximum flexibility
+} // namespace zeroipc

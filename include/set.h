@@ -1,19 +1,19 @@
 /**
- * @file shm_set.h
+ * @file zeroipc::set.h
  * @brief Lock-free set implementation for POSIX shared memory
  * @author Alex Towell
  * 
  * @details
  * Provides a thread-safe set (unique elements) that can be shared across processes.
- * Implemented as a thin wrapper around shm_hash_map with dummy values.
+ * Implemented as a thin wrapper around zeroipc::map with dummy values.
  * 
  * @par Thread Safety
  * All operations are thread-safe using atomic operations from the underlying hash map.
  * 
  * @par Example
  * @code
- * posix_shm shm("simulation", 10 * 1024 * 1024);
- * shm_set<uint32_t> active_particles(shm, "active", 10000);
+ * memory shm("simulation", 10 * 1024 * 1024);
+ * set<uint32_t> active_particles(shm, "active", 10000);
  * 
  * // Insert
  * active_particles.insert(42);
@@ -27,8 +27,11 @@
 
 #pragma once
 
-#include "shm_hash_map.h"
+#include "map.h"
 #include <functional>
+
+namespace zeroipc {
+
 
 /**
  * @brief Lock-free set for shared memory
@@ -43,13 +46,13 @@
  */
 template<typename T, 
          typename Hash = std::hash<T>,
-         typename TableType = shm_table>
+         typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_set {
+class set {
 private:
     // Use empty struct as value type to minimize memory usage
     struct Empty {};
-    shm_hash_map<T, Empty, Hash, TableType> map;
+    map<T, Empty, Hash, TableType> map;
 
 public:
     using value_type = T;
@@ -60,7 +63,7 @@ public:
      */
     template<typename ShmType>
     static bool exists(ShmType& shm, std::string_view name) {
-        return shm_hash_map<T, Empty, Hash, TableType>::exists(shm, name);
+        return zeroipc::map<T, Empty, Hash, TableType>::exists(shm, name);
     }
 
     /**
@@ -71,7 +74,7 @@ public:
      * @param capacity Maximum number of elements (0 to open existing)
      */
     template<typename ShmType>
-    shm_set(ShmType& shm, std::string_view name, size_t capacity = 0)
+    set(ShmType& shm, std::string_view name, size_t capacity = 0)
         : map(shm, name, capacity) {}
 
     /**
@@ -138,11 +141,11 @@ public:
      * @return New set containing elements from both sets
      */
     template<typename ShmType>
-    shm_set set_union(ShmType& shm, const std::string& result_name, 
-                      const shm_set& other) const {
+    set set_union(ShmType& shm, const std::string& result_name, 
+                      const set& other) const {
         // Estimate capacity
         size_t cap = this->size() + other.size();
-        shm_set result(shm, result_name, cap);
+        set result(shm, result_name, cap);
         
         // Add all from this set
         this->for_each([&result](const T& elem) {
@@ -163,13 +166,13 @@ public:
      * @return New set containing common elements
      */
     template<typename ShmType>
-    shm_set set_intersection(ShmType& shm, const std::string& result_name,
-                             const shm_set& other) const {
+    set set_intersection(ShmType& shm, const std::string& result_name,
+                             const set& other) const {
         // Use smaller set for iteration
-        const shm_set* smaller = this->size() < other.size() ? this : &other;
-        const shm_set* larger = this->size() < other.size() ? &other : this;
+        const set* smaller = this->size() < other.size() ? this : &other;
+        const set* larger = this->size() < other.size() ? &other : this;
         
-        shm_set result(shm, result_name, smaller->size());
+        set result(shm, result_name, smaller->size());
         
         smaller->for_each([&result, larger](const T& elem) {
             if (larger->contains(elem)) {
@@ -186,9 +189,9 @@ public:
      * @return New set containing elements in this but not in other
      */
     template<typename ShmType>
-    shm_set set_difference(ShmType& shm, const std::string& result_name,
-                          const shm_set& other) const {
-        shm_set result(shm, result_name, this->size());
+    set set_difference(ShmType& shm, const std::string& result_name,
+                          const set& other) const {
+        set result(shm, result_name, this->size());
         
         this->for_each([&result, &other](const T& elem) {
             if (!other.contains(elem)) {
@@ -202,7 +205,7 @@ public:
     /**
      * @brief Check if this is a subset of another set
      */
-    [[nodiscard]] bool is_subset_of(const shm_set& other) const noexcept {
+    [[nodiscard]] bool is_subset_of(const set& other) const noexcept {
         if (this->size() > other.size()) {
             return false;
         }
@@ -220,16 +223,16 @@ public:
     /**
      * @brief Check if this is a superset of another set
      */
-    [[nodiscard]] bool is_superset_of(const shm_set& other) const noexcept {
+    [[nodiscard]] bool is_superset_of(const set& other) const noexcept {
         return other.is_subset_of(*this);
     }
 
     /**
      * @brief Check if sets are disjoint (no common elements)
      */
-    [[nodiscard]] bool is_disjoint(const shm_set& other) const noexcept {
-        const shm_set* smaller = this->size() < other.size() ? this : &other;
-        const shm_set* larger = this->size() < other.size() ? &other : this;
+    [[nodiscard]] bool is_disjoint(const set& other) const noexcept {
+        const set* smaller = this->size() < other.size() ? this : &other;
+        const set* larger = this->size() < other.size() ? &other : this;
         
         bool disjoint = true;
         smaller->for_each([&disjoint, larger](const T& elem) {
@@ -250,6 +253,7 @@ public:
 };
 
 // Type aliases for common sets
-using shm_set_int = shm_set<int>;
-using shm_set_uint32 = shm_set<uint32_t>;
-using shm_set_uint64 = shm_set<uint64_t>;
+using set_int = set<int>;
+using set_uint32 = set<uint32_t>;
+using set_uint64 = set<uint64_t>;
+} // namespace zeroipc

@@ -1,5 +1,5 @@
 /**
- * @file shm_bitset.h
+ * @file zeroipc::bitset.h
  * @brief Lock-free bitset implementation for POSIX shared memory
  * @author Alex Towell
  * 
@@ -13,8 +13,8 @@
  * 
  * @par Example
  * @code
- * posix_shm shm("simulation", 10 * 1024 * 1024);
- * shm_bitset<1000000> active_flags(shm, "active");
+ * memory shm("simulation", 10 * 1024 * 1024);
+ * bitset<1000000> active_flags(shm, "active");
  * 
  * // Set bits
  * active_flags.set(42);
@@ -29,13 +29,16 @@
 
 #pragma once
 
-#include "posix_shm.h"
-#include "shm_table.h"
-#include "shm_span.h"
+#include "zeroipc.h"
+#include "table.h"
+#include "span.h"
 #include <atomic>
 #include <cstring>
 #include <bit>
 #include <immintrin.h>  // For popcnt
+
+namespace zeroipc {
+
 
 /**
  * @brief Lock-free bitset for shared memory
@@ -47,8 +50,8 @@
  * Stores N bits compactly using atomic operations on 64-bit words.
  * Provides O(1) bit access and O(N/64) bulk operations.
  */
-template<size_t N, typename TableType = shm_table>
-class shm_bitset : public shm_span<uint64_t, posix_shm_impl<TableType>> {
+template<size_t N, typename TableType = table>
+class bitset : public zeroipc::span<uint64_t, memory_impl<TableType>> {
 private:
     static constexpr size_t BITS_PER_WORD = 64;
     static constexpr size_t NUM_WORDS = (N + BITS_PER_WORD - 1) / BITS_PER_WORD;
@@ -101,8 +104,8 @@ public:
      * @brief Create or open a shared memory bitset
      */
     template<typename ShmType>
-    shm_bitset(ShmType& shm, std::string_view name)
-        : shm_span<uint64_t, posix_shm_impl<TableType>>(shm, 0, 0) {
+    bitset(ShmType& shm, std::string_view name)
+        : zeroipc::span<uint64_t, memory_impl<TableType>>(shm, 0, 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match bitset table type");
         
@@ -393,7 +396,7 @@ public:
     /**
      * @brief Bitwise AND with another bitset
      */
-    shm_bitset& operator&=(const shm_bitset& other) noexcept {
+    bitset& operator&=(const bitset& other) noexcept {
         auto* w = words();
         auto* other_w = other.words();
         size_t new_count = 0;
@@ -411,7 +414,7 @@ public:
     /**
      * @brief Bitwise OR with another bitset
      */
-    shm_bitset& operator|=(const shm_bitset& other) noexcept {
+    bitset& operator|=(const bitset& other) noexcept {
         auto* w = words();
         auto* other_w = other.words();
         size_t new_count = 0;
@@ -429,7 +432,7 @@ public:
     /**
      * @brief Bitwise XOR with another bitset
      */
-    shm_bitset& operator^=(const shm_bitset& other) noexcept {
+    bitset& operator^=(const bitset& other) noexcept {
         auto* w = words();
         auto* other_w = other.words();
         size_t new_count = 0;
@@ -453,7 +456,8 @@ public:
 };
 
 // Common bitset sizes
-using shm_bitset_64 = shm_bitset<64>;
-using shm_bitset_256 = shm_bitset<256>;
-using shm_bitset_1024 = shm_bitset<1024>;
-using shm_bitset_4096 = shm_bitset<4096>;
+using bitset_64 = bitset<64>;
+using bitset_256 = bitset<256>;
+using bitset_1024 = bitset<1024>;
+using bitset_4096 = bitset<4096>;
+} // namespace zeroipc

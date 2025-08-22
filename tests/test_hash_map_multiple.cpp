@@ -1,22 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_hash_map.h"
+#include "zeroipc.h"
+#include "map.h"
 #include <thread>
 #include <vector>
 #include <unordered_set>
 
-TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]") {
+TEST_CASE("Multiple hash maps in same shared memory", "[zeroipc::map][multiple]") {
     const std::string shm_name = "/test_multi_hashmap";
     shm_unlink(shm_name.c_str());
     
     SECTION("Create multiple hash maps with different types") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
         // Create different hash maps
-        shm_hash_map<int, int> map1(shm, "int_int_map", 100);
-        shm_hash_map<int, double> map2(shm, "int_double_map", 100);
-        shm_hash_map<uint64_t, float> map3(shm, "uint64_float_map", 100);
+        zeroipc::map<int, int> map1(shm, "int_int_map", 100);
+        zeroipc::map<int, double> map2(shm, "int_double_map", 100);
+        zeroipc::map<uint64_t, float> map3(shm, "uint64_float_map", 100);
         
         // Insert into each map
         map1.insert(1, 100);
@@ -77,13 +77,13 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
     }
     
     SECTION("Create many hash maps of same type") {
-        posix_shm shm(shm_name, 20 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 20 * 1024 * 1024);
         
         // Create 10 hash maps
-        std::vector<std::unique_ptr<shm_hash_map<int, int>>> maps;
+        std::vector<std::unique_ptr<zeroipc::map<int, int>>> maps;
         for (int i = 0; i < 10; i++) {
             std::string name = "map_" + std::to_string(i);
-            maps.push_back(std::make_unique<shm_hash_map<int, int>>(shm, name, 50));
+            maps.push_back(std::make_unique<zeroipc::map<int, int>>(shm, name, 50));
         }
         
         // Insert different data into each map
@@ -108,10 +108,10 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
     
     SECTION("Persistence across processes for multiple maps") {
         {
-            posix_shm shm(shm_name, 10 * 1024 * 1024);
+            zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
             
-            shm_hash_map<int, std::array<char, 16>> map1(shm, "config_map", 100);
-            shm_hash_map<uint32_t, uint32_t> map2(shm, "id_map", 100);
+            zeroipc::map<int, std::array<char, 16>> map1(shm, "config_map", 100);
+            zeroipc::map<uint32_t, uint32_t> map2(shm, "id_map", 100);
             
             // Insert data
             std::array<char, 16> config1 = {"config_alpha"};
@@ -125,10 +125,10 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
         
         // Reopen and verify
         {
-            posix_shm shm(shm_name);
+            zeroipc::memory shm(shm_name);
             
-            shm_hash_map<int, std::array<char, 16>> map1(shm, "config_map");
-            shm_hash_map<uint32_t, uint32_t> map2(shm, "id_map");
+            zeroipc::map<int, std::array<char, 16>> map1(shm, "config_map");
+            zeroipc::map<uint32_t, uint32_t> map2(shm, "id_map");
             
             REQUIRE(map1.size() == 2);
             REQUIRE(map2.size() == 2);
@@ -150,11 +150,11 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
     }
     
     SECTION("Collision handling across multiple maps") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
         // Create small maps to force collisions
-        shm_hash_map<int, int> map1(shm, "collision_map1", 10);
-        shm_hash_map<int, int> map2(shm, "collision_map2", 10);
+        zeroipc::map<int, int> map1(shm, "collision_map1", 10);
+        zeroipc::map<int, int> map2(shm, "collision_map2", 10);
         
         // Insert many items to force collisions
         for (int i = 0; i < 8; i++) {
@@ -181,16 +181,16 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
     }
     
     SECTION("Concurrent operations on multiple maps") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
-        shm_hash_map<int, int> map1(shm, "concurrent_map1", 1000);
-        shm_hash_map<int, int> map2(shm, "concurrent_map2", 1000);
-        shm_hash_map<int, int> map3(shm, "concurrent_map3", 1000);
+        zeroipc::map<int, int> map1(shm, "concurrent_map1", 1000);
+        zeroipc::map<int, int> map2(shm, "concurrent_map2", 1000);
+        zeroipc::map<int, int> map3(shm, "concurrent_map3", 1000);
         
         const int items_per_thread = 100;
         const int num_threads = 4;
         
-        auto worker = [&](int thread_id, shm_hash_map<int, int>& map) {
+        auto worker = [&](int thread_id, zeroipc::map<int, int>& map) {
             int start = thread_id * items_per_thread;
             int end = start + items_per_thread;
             
@@ -234,14 +234,14 @@ TEST_CASE("Multiple hash maps in same shared memory", "[shm_hash_map][multiple]"
     }
 }
 
-TEST_CASE("Hash map stress tests", "[shm_hash_map][stress]") {
+TEST_CASE("Hash map stress tests", "[zeroipc::map][stress]") {
     const std::string shm_name = "/test_hashmap_stress";
     shm_unlink(shm_name.c_str());
     
     SECTION("Maximum capacity handling") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
-        shm_hash_map<int, int> map(shm, "max_capacity", 100);
+        zeroipc::map<int, int> map(shm, "max_capacity", 100);
         
         // Fill to near capacity
         int inserted = 0;
@@ -267,9 +267,9 @@ TEST_CASE("Hash map stress tests", "[shm_hash_map][stress]") {
     }
     
     SECTION("Rapid insert/remove cycles") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
-        shm_hash_map<int, int> map(shm, "rapid_cycles", 1000);
+        zeroipc::map<int, int> map(shm, "rapid_cycles", 1000);
         
         // Perform many insert/remove cycles
         for (int cycle = 0; cycle < 10; cycle++) {

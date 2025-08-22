@@ -1,15 +1,15 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_array.h"
+#include "zeroipc.h"
+#include "array.h"
 #include <algorithm>
 #include <numeric>
 
-TEST_CASE("shm_array basic operations", "[shm_array]") {
+TEST_CASE("zeroipc::array basic operations", "[zeroipc::array]") {
     const std::string shm_name = "/test_array_basic";
-    posix_shm shm(shm_name, 10 * 1024 * 1024); // 10MB
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024); // 10MB
 
     SECTION("Create and access array") {
-        shm_array<int> arr(shm, "int_array", 100);
+        zeroipc::array<int> arr(shm, "int_array", 100);
         
         REQUIRE(arr.size() == 100);
         REQUIRE(!arr.empty());
@@ -29,14 +29,14 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     SECTION("Array discovery by name") {
         // Create array
         {
-            shm_array<double> arr1(shm, "discoverable", 50);
+            zeroipc::array<double> arr1(shm, "discoverable", 50);
             arr1[0] = 3.14159;
             arr1[49] = 2.71828;
         }
         
         // Discover existing array
         {
-            shm_array<double> arr2(shm, "discoverable");
+            zeroipc::array<double> arr2(shm, "discoverable");
             REQUIRE(arr2.size() == 50);
             REQUIRE(arr2[0] == 3.14159);
             REQUIRE(arr2[49] == 2.71828);
@@ -44,7 +44,7 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 
     SECTION("Bounds checking with at()") {
-        shm_array<int> arr(shm, "bounded", 10);
+        zeroipc::array<int> arr(shm, "bounded", 10);
         
         REQUIRE_NOTHROW(arr.at(0) = 42);
         REQUIRE_NOTHROW(arr.at(9) = 99);
@@ -53,7 +53,7 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 
     SECTION("Front and back access") {
-        shm_array<int> arr(shm, "endpoints", 5);
+        zeroipc::array<int> arr(shm, "endpoints", 5);
         arr.fill(0);
         
         arr.front() = 100;
@@ -64,7 +64,7 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 
     SECTION("Fill operation") {
-        shm_array<int> arr(shm, "fillable", 20);
+        zeroipc::array<int> arr(shm, "fillable", 20);
         arr.fill(42);
         
         for (size_t i = 0; i < arr.size(); ++i) {
@@ -73,7 +73,7 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 
     SECTION("Iterator support") {
-        shm_array<int> arr(shm, "iterable", 10);
+        zeroipc::array<int> arr(shm, "iterable", 10);
         std::iota(arr.begin(), arr.end(), 0);  // Fill with 0,1,2,...,9
         
         int sum = std::accumulate(arr.begin(), arr.end(), 0);
@@ -85,7 +85,7 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 
     SECTION("std::span conversion") {
-        shm_array<int> arr(shm, "spannable", 15);
+        zeroipc::array<int> arr(shm, "spannable", 15);
         std::iota(arr.begin(), arr.end(), 1);
         
         auto span = arr.as_span();
@@ -99,9 +99,9 @@ TEST_CASE("shm_array basic operations", "[shm_array]") {
     }
 }
 
-TEST_CASE("shm_array with custom types", "[shm_array]") {
+TEST_CASE("zeroipc::array with custom types", "[zeroipc::array]") {
     const std::string shm_name = "/test_array_custom";
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     struct Point {
         double x, y, z;
@@ -112,7 +112,7 @@ TEST_CASE("shm_array with custom types", "[shm_array]") {
     static_assert(std::is_trivially_copyable_v<Point>);
 
     SECTION("Array of structs") {
-        shm_array<Point> points(shm, "3d_points", 100);
+        zeroipc::array<Point> points(shm, "3d_points", 100);
         
         points[0] = {1.0, 2.0, 3.0};
         points[50] = {10.5, 20.5, 30.5};
@@ -122,12 +122,12 @@ TEST_CASE("shm_array with custom types", "[shm_array]") {
     }
 }
 
-TEST_CASE("shm_array with custom table sizes", "[shm_array][template]") {
+TEST_CASE("zeroipc::array with custom table sizes", "[zeroipc::array][template]") {
     SECTION("Array with small table") {
         const std::string shm_name = "/test_array_small_table";
-        posix_shm_small shm(shm_name, 1024 * 1024);
+        zeroipc::memory_small shm(shm_name, 1024 * 1024);
         
-        shm_array<uint32_t, shm_table_small> arr(shm, "small_arr", 100);
+        zeroipc::array<uint32_t, zeroipc::table_small> arr(shm, "small_arr", 100);
         REQUIRE(arr.size() == 100);
         
         arr[0] = 0xDEADBEEF;
@@ -136,37 +136,37 @@ TEST_CASE("shm_array with custom table sizes", "[shm_array][template]") {
 
     SECTION("Array with large table") {
         const std::string shm_name = "/test_array_large_table";
-        posix_shm_large shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory_large shm(shm_name, 10 * 1024 * 1024);
         
-        shm_array<double, shm_table_large> arr(
+        zeroipc::array<double, zeroipc::table_large> arr(
             shm, "array_with_very_long_descriptive_name_for_testing", 1000);
         REQUIRE(arr.size() == 1000);
         REQUIRE(arr.name() == "array_with_very_long_descriptive_name_for_testing");
     }
 }
 
-TEST_CASE("shm_array error handling", "[shm_array][error]") {
+TEST_CASE("zeroipc::array error handling", "[zeroipc::array][error]") {
     const std::string shm_name = "/test_array_errors";
-    posix_shm shm(shm_name, 1024); // Small shared memory
+    zeroipc::memory shm(shm_name, 1024); // Small shared memory
 
     SECTION("Not enough space") {
         REQUIRE_THROWS_AS(
-            shm_array<double>(shm, "too_big", 10000),
+            zeroipc::array<double>(shm, "too_big", 10000),
             std::runtime_error
         );
     }
 
     SECTION("Array not found") {
         REQUIRE_THROWS_AS(
-            shm_array<int>(shm, "nonexistent"),
+            zeroipc::array<int>(shm, "nonexistent"),
             std::runtime_error
         );
     }
 
     SECTION("Size mismatch on open") {
-        shm_array<int> arr1(shm, "sized", 10);
+        zeroipc::array<int> arr1(shm, "sized", 10);
         REQUIRE_THROWS_AS(
-            shm_array<int>(shm, "sized", 20),
+            zeroipc::array<int>(shm, "sized", 20),
             std::runtime_error
         );
     }

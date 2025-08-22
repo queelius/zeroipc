@@ -1,20 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_ring_buffer.h"
+#include "zeroipc.h"
+#include "ring.h"
 #include <thread>
 #include <vector>
 #include <array>
 #include <numeric>
 #include <algorithm>
 
-TEST_CASE("shm_ring_buffer basic operations", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring basic operations", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use ring buffer") {
-        shm_ring_buffer<int> ring(shm, "test_ring", 100);
+        zeroipc::ring<int> ring(shm, "test_ring", 100);
         
         REQUIRE(ring.capacity() == 100);
         REQUIRE(ring.size() == 0);
@@ -24,7 +24,7 @@ TEST_CASE("shm_ring_buffer basic operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Push and pop single elements") {
-        shm_ring_buffer<int> ring(shm, "single_ops", 10);
+        zeroipc::ring<int> ring(shm, "single_ops", 10);
         
         // Push elements
         REQUIRE(ring.push(42));
@@ -57,7 +57,7 @@ TEST_CASE("shm_ring_buffer basic operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Fill to capacity") {
-        shm_ring_buffer<int> ring(shm, "fill_capacity", 5);
+        zeroipc::ring<int> ring(shm, "fill_capacity", 5);
         
         for (int i = 0; i < 5; ++i) {
             REQUIRE(ring.push(i));
@@ -77,7 +77,7 @@ TEST_CASE("shm_ring_buffer basic operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Wraparound behavior") {
-        shm_ring_buffer<int> ring(shm, "wraparound", 3);
+        zeroipc::ring<int> ring(shm, "wraparound", 3);
         
         // Fill buffer
         ring.push(1);
@@ -101,13 +101,13 @@ TEST_CASE("shm_ring_buffer basic operations", "[shm_ring_buffer]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer bulk operations", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring bulk operations", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_bulk";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Push bulk") {
-        shm_ring_buffer<int> ring(shm, "push_bulk", 100);
+        zeroipc::ring<int> ring(shm, "push_bulk", 100);
         
         std::vector<int> data(10);
         std::iota(data.begin(), data.end(), 0);  // 0,1,2,...,9
@@ -125,7 +125,7 @@ TEST_CASE("shm_ring_buffer bulk operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Push bulk partial when near full") {
-        shm_ring_buffer<int> ring(shm, "push_partial", 5);
+        zeroipc::ring<int> ring(shm, "push_partial", 5);
         
         // Fill most of buffer
         ring.push(1);
@@ -148,7 +148,7 @@ TEST_CASE("shm_ring_buffer bulk operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Pop bulk") {
-        shm_ring_buffer<int> ring(shm, "pop_bulk", 100);
+        zeroipc::ring<int> ring(shm, "pop_bulk", 100);
         
         // Push test data
         for (int i = 0; i < 20; ++i) {
@@ -169,7 +169,7 @@ TEST_CASE("shm_ring_buffer bulk operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Pop bulk partial when near empty") {
-        shm_ring_buffer<int> ring(shm, "pop_partial", 100);
+        zeroipc::ring<int> ring(shm, "pop_partial", 100);
         
         // Push only 3 elements
         ring.push(11);
@@ -190,13 +190,13 @@ TEST_CASE("shm_ring_buffer bulk operations", "[shm_ring_buffer]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer peek operations", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring peek operations", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_peek";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Peek without consuming") {
-        shm_ring_buffer<int> ring(shm, "peek_basic", 10);
+        zeroipc::ring<int> ring(shm, "peek_basic", 10);
         
         // Push test data
         for (int i = 0; i < 5; ++i) {
@@ -228,7 +228,7 @@ TEST_CASE("shm_ring_buffer peek operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Get last N elements") {
-        shm_ring_buffer<double> ring(shm, "get_last", 100);
+        zeroipc::ring<double> ring(shm, "get_last", 100);
         
         // Simulate sensor data stream
         for (int i = 0; i < 50; ++i) {
@@ -251,7 +251,7 @@ TEST_CASE("shm_ring_buffer peek operations", "[shm_ring_buffer]") {
     }
 
     SECTION("Skip elements") {
-        shm_ring_buffer<int> ring(shm, "skip", 10);
+        zeroipc::ring<int> ring(shm, "skip", 10);
         
         for (int i = 0; i < 8; ++i) {
             ring.push(i);
@@ -270,13 +270,13 @@ TEST_CASE("shm_ring_buffer peek operations", "[shm_ring_buffer]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer overwrite mode", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring overwrite mode", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_overwrite";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Push overwrite when full") {
-        shm_ring_buffer<int> ring(shm, "overwrite", 3);
+        zeroipc::ring<int> ring(shm, "overwrite", 3);
         
         // Fill buffer
         ring.push(1);
@@ -295,7 +295,7 @@ TEST_CASE("shm_ring_buffer overwrite mode", "[shm_ring_buffer]") {
     }
 
     SECTION("Continuous overwrite simulating sensor stream") {
-        shm_ring_buffer<float> ring(shm, "sensor_stream", 5);
+        zeroipc::ring<float> ring(shm, "sensor_stream", 5);
         
         // Simulate continuous sensor updates
         for (int i = 0; i < 20; ++i) {
@@ -317,13 +317,13 @@ TEST_CASE("shm_ring_buffer overwrite mode", "[shm_ring_buffer]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer statistics", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring statistics", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_stats";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Track total read/written") {
-        shm_ring_buffer<int> ring(shm, "stats", 10);
+        zeroipc::ring<int> ring(shm, "stats", 10);
         
         REQUIRE(ring.total_written() == 0);
         REQUIRE(ring.total_read() == 0);
@@ -346,13 +346,13 @@ TEST_CASE("shm_ring_buffer statistics", "[shm_ring_buffer]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer concurrent operations", "[shm_ring_buffer][concurrent]") {
+TEST_CASE("zeroipc::ring concurrent operations", "[zeroipc::ring][concurrent]") {
     const std::string shm_name = "/test_ring_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Single producer single consumer") {
-        shm_ring_buffer<int> ring(shm, "spsc", 1000);
+        zeroipc::ring<int> ring(shm, "spsc", 1000);
         const int total_items = 10000;
         std::atomic<bool> producer_done{false};
         
@@ -391,7 +391,7 @@ TEST_CASE("shm_ring_buffer concurrent operations", "[shm_ring_buffer][concurrent
     }
 
     SECTION("Multiple readers with peek") {
-        shm_ring_buffer<int> ring(shm, "multi_reader", 100);
+        zeroipc::ring<int> ring(shm, "multi_reader", 100);
         
         // Pre-fill with data
         for (int i = 0; i < 50; ++i) {
@@ -435,15 +435,15 @@ TEST_CASE("shm_ring_buffer concurrent operations", "[shm_ring_buffer][concurrent
     shm.unlink();
 }
 
-TEST_CASE("shm_ring_buffer cross-process", "[shm_ring_buffer][process]") {
+TEST_CASE("zeroipc::ring cross-process", "[zeroipc::ring][process]") {
     const std::string shm_name = "/test_ring_process";
     shm_unlink(shm_name.c_str());
     
     SECTION("Ring buffer persistence") {
         // Process 1: Create and populate
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_ring_buffer<uint32_t> ring(shm1, "persistent_ring", 100);
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::ring<uint32_t> ring(shm1, "persistent_ring", 100);
             
             for (uint32_t i = 0; i < 20; ++i) {
                 ring.push(i * 100);
@@ -455,8 +455,8 @@ TEST_CASE("shm_ring_buffer cross-process", "[shm_ring_buffer][process]") {
         
         // Process 2: Open and continue
         {
-            posix_shm shm2(shm_name, 0);
-            shm_ring_buffer<uint32_t> ring(shm2, "persistent_ring");
+            zeroipc::memory shm2(shm_name, 0);
+            zeroipc::ring<uint32_t> ring(shm2, "persistent_ring");
             
             REQUIRE(ring.size() == 20);
             REQUIRE(ring.capacity() == 100);
@@ -477,8 +477,8 @@ TEST_CASE("shm_ring_buffer cross-process", "[shm_ring_buffer][process]") {
         
         // Process 3: Verify state
         {
-            posix_shm shm3(shm_name, 0);
-            shm_ring_buffer<uint32_t> ring(shm3, "persistent_ring");
+            zeroipc::memory shm3(shm_name, 0);
+            zeroipc::ring<uint32_t> ring(shm3, "persistent_ring");
             
             REQUIRE(ring.size() == 17);  // 20 - 5 + 2
             REQUIRE(ring.total_written() == 22);
@@ -492,10 +492,10 @@ TEST_CASE("shm_ring_buffer cross-process", "[shm_ring_buffer][process]") {
     shm_unlink(shm_name.c_str());
 }
 
-TEST_CASE("shm_ring_buffer with custom types", "[shm_ring_buffer]") {
+TEST_CASE("zeroipc::ring with custom types", "[zeroipc::ring]") {
     const std::string shm_name = "/test_ring_custom";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     struct SensorData {
         uint64_t timestamp;
@@ -505,7 +505,7 @@ TEST_CASE("shm_ring_buffer with custom types", "[shm_ring_buffer]") {
     };
 
     SECTION("Sensor data streaming") {
-        shm_ring_buffer<SensorData> ring(shm, "sensor_ring", 1000);
+        zeroipc::ring<SensorData> ring(shm, "sensor_ring", 1000);
         
         // Simulate sensor stream
         for (uint64_t t = 0; t < 100; ++t) {

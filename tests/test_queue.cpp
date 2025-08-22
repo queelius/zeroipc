@@ -1,18 +1,18 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_queue.h"
+#include "zeroipc.h"
+#include "queue.h"
 #include <thread>
 #include <vector>
 #include <sys/mman.h>
 
-TEST_CASE("shm_queue basic operations", "[shm_queue]") {
+TEST_CASE("zeroipc::queue basic operations", "[zeroipc::queue]") {
     const std::string shm_name = "/test_queue_basic";
     // Clean up any leftover shared memory from previous runs
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use queue") {
-        shm_queue<int> queue(shm, "int_queue", 10);
+        zeroipc::queue<int> queue(shm, "int_queue", 10);
         
         REQUIRE(queue.empty());
         REQUIRE(!queue.full());
@@ -22,7 +22,7 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     }
 
     SECTION("Enqueue and dequeue") {
-        shm_queue<int> queue(shm, "ops_queue", 5);
+        zeroipc::queue<int> queue(shm, "ops_queue", 5);
         
         // Enqueue elements
         REQUIRE(queue.enqueue(10));
@@ -46,7 +46,7 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     }
 
     SECTION("Queue full behavior") {
-        shm_queue<int> queue(shm, "full_queue", 3);
+        zeroipc::queue<int> queue(shm, "full_queue", 3);
         
         REQUIRE(queue.enqueue(1));
         REQUIRE(queue.enqueue(2));
@@ -64,7 +64,7 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     }
 
     SECTION("Queue empty behavior") {
-        shm_queue<int> queue(shm, "empty_queue", 5);
+        zeroipc::queue<int> queue(shm, "empty_queue", 5);
         
         REQUIRE(queue.empty());
         auto val = queue.dequeue();
@@ -76,7 +76,7 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     }
 
     SECTION("Circular buffer wraparound") {
-        shm_queue<int> queue(shm, "circular", 3);
+        zeroipc::queue<int> queue(shm, "circular", 3);
         
         // Fill and empty multiple times
         for (int cycle = 0; cycle < 3; ++cycle) {
@@ -97,14 +97,14 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     SECTION("Queue discovery by name") {
         // Create and populate queue
         {
-            shm_queue<double> q1(shm, "discoverable_q", 10);
+            zeroipc::queue<double> q1(shm, "discoverable_q", 10);
             q1.enqueue(3.14);
             q1.enqueue(2.718);
         }
         
         // Discover and use existing queue
         {
-            shm_queue<double> q2(shm, "discoverable_q");
+            zeroipc::queue<double> q2(shm, "discoverable_q");
             REQUIRE(q2.size() == 2);
             REQUIRE(q2.capacity() == 10);
             
@@ -115,10 +115,10 @@ TEST_CASE("shm_queue basic operations", "[shm_queue]") {
     }
 }
 
-TEST_CASE("shm_queue with custom types", "[shm_queue]") {
+TEST_CASE("zeroipc::queue with custom types", "[zeroipc::queue]") {
     const std::string shm_name = "/test_queue_custom";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     struct Message {
         uint64_t timestamp;
@@ -128,7 +128,7 @@ TEST_CASE("shm_queue with custom types", "[shm_queue]") {
     static_assert(std::is_trivially_copyable_v<Message>);
 
     SECTION("Queue of structs") {
-        shm_queue<Message> msg_queue(shm, "messages", 100);
+        zeroipc::queue<Message> msg_queue(shm, "messages", 100);
         
         Message m1{1000, 1, 42.5f};
         Message m2{2000, 2, 99.9f};
@@ -144,13 +144,13 @@ TEST_CASE("shm_queue with custom types", "[shm_queue]") {
     }
 }
 
-TEST_CASE("shm_queue lock-free concurrency", "[shm_queue][concurrency]") {
+TEST_CASE("zeroipc::queue lock-free concurrency", "[zeroipc::queue][concurrency]") {
     const std::string shm_name = "/test_queue_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Multiple producers") {
-        shm_queue<int> queue(shm, "multi_prod", 1000);
+        zeroipc::queue<int> queue(shm, "multi_prod", 1000);
         const int num_producers = 4;
         const int items_per_producer = 100;
         
@@ -173,7 +173,7 @@ TEST_CASE("shm_queue lock-free concurrency", "[shm_queue][concurrency]") {
     }
 
     SECTION("Producer-consumer pattern") {
-        shm_queue<int> queue(shm, "prod_cons", 10);
+        zeroipc::queue<int> queue(shm, "prod_cons", 10);
         const int num_items = 100;
         
         std::thread producer([&queue, num_items]() {
@@ -204,12 +204,12 @@ TEST_CASE("shm_queue lock-free concurrency", "[shm_queue][concurrency]") {
     }
 }
 
-TEST_CASE("shm_queue with custom table sizes", "[shm_queue][template]") {
+TEST_CASE("zeroipc::queue with custom table sizes", "[zeroipc::queue][template]") {
     SECTION("Queue with small table") {
         const std::string shm_name = "/test_queue_small_table";
-        posix_shm_small shm(shm_name, 1024 * 1024);
+        zeroipc::memory_small shm(shm_name, 1024 * 1024);
         
-        shm_queue<uint32_t, shm_table_small> queue(shm, "small_q", 50);
+        zeroipc::queue<uint32_t, zeroipc::table_small> queue(shm, "small_q", 50);
         REQUIRE(queue.capacity() == 50);
         
         queue.enqueue(0xCAFEBABE);
@@ -220,30 +220,30 @@ TEST_CASE("shm_queue with custom table sizes", "[shm_queue][template]") {
 
     SECTION("Queue with large table") {
         const std::string shm_name = "/test_queue_large_table";
-        posix_shm_large shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory_large shm(shm_name, 10 * 1024 * 1024);
         
-        shm_queue<double, shm_table_large> queue(
+        zeroipc::queue<double, zeroipc::table_large> queue(
             shm, "queue_with_very_long_descriptive_name", 500);
         REQUIRE(queue.capacity() == 500);
         REQUIRE(queue.name() == "queue_with_very_long_descriptive_name");
     }
 }
 
-TEST_CASE("shm_queue error handling", "[shm_queue][error]") {
+TEST_CASE("zeroipc::queue error handling", "[zeroipc::queue][error]") {
     const std::string shm_name = "/test_queue_errors";
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Queue not found") {
         REQUIRE_THROWS_AS(
-            shm_queue<int>(shm, "nonexistent"),
+            zeroipc::queue<int>(shm, "nonexistent"),
             std::runtime_error
         );
     }
 
     SECTION("Capacity mismatch on open") {
-        shm_queue<int> q1(shm, "sized_q", 10);
+        zeroipc::queue<int> q1(shm, "sized_q", 10);
         REQUIRE_THROWS_AS(
-            shm_queue<int>(shm, "sized_q", 20),
+            zeroipc::queue<int>(shm, "sized_q", 20),
             std::runtime_error
         );
     }

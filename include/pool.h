@@ -1,10 +1,13 @@
 #pragma once
-#include "posix_shm.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "table.h"
 #include <atomic>
 #include <optional>
 #include <span>
 #include <bit>
+
+namespace zeroipc {
+
 
 /**
  * @brief High-performance object pool for shared memory
@@ -18,9 +21,9 @@
  * @tparam T Type of objects in the pool
  * @tparam TableType Metadata table type
  */
-template<typename T, typename TableType = shm_table>
+template<typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_object_pool {
+class pool {
 private:
     struct PoolHeader {
         std::atomic<uint32_t> free_head{0};  // Head of free list (stack)
@@ -50,7 +53,7 @@ public:
     static constexpr handle_type invalid_handle = NULL_INDEX;
 
     template<typename ShmType>
-    shm_object_pool(ShmType& shm, std::string_view name, size_t capacity = 0) {
+    pool(ShmType& shm, std::string_view name, size_t capacity = 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match pool table type");
 
@@ -255,3 +258,4 @@ public:
         }
     }
 };
+} // namespace zeroipc

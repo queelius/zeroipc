@@ -8,18 +8,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 # Create test executable
-add_executable(posix_shm_tests
+add_executable(zeroipc_tests
     test_main.cpp
-    test_posix_shm.cpp
-    test_shm_table.cpp
-    test_shm_array.cpp
-    test_shm_queue.cpp
-    test_shm_stack.cpp
-    test_shm_hash_map.cpp
-    test_shm_set.cpp
-    test_shm_bitset.cpp
-    test_shm_ring_buffer.cpp
-    test_shm_object_pool.cpp
+    test_zeroipc.cpp
+    test_table.cpp
+    test_array.cpp
+    test_queue.cpp
+    test_stack.cpp
+    test_hash_map.cpp
+    test_set.cpp
+    test_bitset.cpp
+    test_ring_buffer.cpp
+    test_object_pool.cpp
     test_multi_process.cpp
     test_cpp_hashmap.cpp
     test_hash_map_multiple.cpp
@@ -27,11 +27,11 @@ add_executable(posix_shm_tests
     test_integration_multi_structures.cpp
 )
 
-target_include_directories(posix_shm_tests PRIVATE
+target_include_directories(zeroipc_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 
-target_link_libraries(posix_shm_tests PRIVATE
+target_link_libraries(zeroipc_tests PRIVATE
     Catch2::Catch2WithMain
     rt      # POSIX shared memory
     pthread # std::atomic
@@ -40,4 +40,4 @@ target_link_libraries(posix_shm_tests PRIVATE
 # Register tests with CTest
 include(CTest)
 include(Catch)
-catch_discover_tests(posix_shm_tests)
+catch_discover_tests(zeroipc_tests)

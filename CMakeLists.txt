@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
-project(posix_shm 
+project(zeroipc 
     VERSION 1.0.0
     DESCRIPTION "High-performance POSIX shared memory library for C++23"
-    HOMEPAGE_URL "https://github.com/queelius/posix_shm"
+    HOMEPAGE_URL "https://github.com/queelius/zeroipc"
     LANGUAGES CXX)
 
 # Set C++ standard
@@ -13,24 +13,24 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Options
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build examples" ON)
-option(POSIX_SHM_INSTALL "Generate installation target" ON)
+option(ZEROIPC_INSTALL "Generate installation target" ON)
 
 # Create interface library (header-only)
-add_library(posix_shm INTERFACE)
-add_library(posix_shm::posix_shm ALIAS posix_shm)
+add_library(zeroipc INTERFACE)
+add_library(zeroipc::zeroipc ALIAS zeroipc)
 
 # Configure include directories
-target_include_directories(posix_shm INTERFACE
+target_include_directories(zeroipc INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
 # Set required C++ standard
-target_compile_features(posix_shm INTERFACE cxx_std_23)
+target_compile_features(zeroipc INTERFACE cxx_std_23)
 
 # Link against rt library on Linux
 if(UNIX AND NOT APPLE)
-    target_link_libraries(posix_shm INTERFACE rt)
+    target_link_libraries(zeroipc INTERFACE rt)
 endif()
 
 # Add subdirectories
@@ -44,7 +44,7 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Installation
-if(POSIX_SHM_INSTALL)
+if(ZEROIPC_INSTALL)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
     
@@ -55,35 +55,35 @@ if(POSIX_SHM_INSTALL)
     )
     
     # Install targets
-    install(TARGETS posix_shm
-        EXPORT posix_shm-targets
+    install(TARGETS zeroipc
+        EXPORT zeroipc-targets
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
     
     # Install export
-    install(EXPORT posix_shm-targets
-        FILE posix_shm-targets.cmake
-        NAMESPACE posix_shm::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/posix_shm
+    install(EXPORT zeroipc-targets
+        FILE zeroipc-targets.cmake
+        NAMESPACE zeroipc::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zeroipc
     )
     
     # Create and install config file
     configure_package_config_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/posix_shm-config.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/posix_shm-config.cmake
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/posix_shm
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/zeroipc-config.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/zeroipc-config.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zeroipc
     )
     
     # Create and install version file
     write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/posix_shm-config-version.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/zeroipc-config-version.cmake
         VERSION ${PROJECT_VERSION}
         COMPATIBILITY SameMajorVersion
     )
     
     install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/posix_shm-config.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/posix_shm-config-version.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/posix_shm
+        ${CMAKE_CURRENT_BINARY_DIR}/zeroipc-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/zeroipc-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zeroipc
     )
 endif()

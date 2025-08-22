@@ -1,20 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_stack.h"
+#include "zeroipc.h"
+#include "stack.h"
 #include <thread>
 #include <vector>
 #include <atomic>
 #include <sys/mman.h>
 
-TEST_CASE("shm_stack basic operations", "[shm_stack]") {
+TEST_CASE("zeroipc::stack basic operations", "[zeroipc::stack]") {
     const std::string shm_name = "/test_stack_basic";
     // Clean up any leftover shared memory from previous runs
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use stack") {
-        shm_stack<int> stack(shm, "int_stack", 10);
+        zeroipc::stack<int> stack(shm, "int_stack", 10);
         
         REQUIRE(stack.empty());
         REQUIRE(!stack.full());
@@ -23,7 +23,7 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Push and pop") {
-        shm_stack<int> stack(shm, "ops_stack", 5);
+        zeroipc::stack<int> stack(shm, "ops_stack", 5);
         
         // Push elements
         REQUIRE(stack.push(10));
@@ -53,7 +53,7 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Stack full behavior") {
-        shm_stack<int> stack(shm, "full_stack", 3);
+        zeroipc::stack<int> stack(shm, "full_stack", 3);
         
         REQUIRE(stack.push(1));
         REQUIRE(stack.push(2));
@@ -71,7 +71,7 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Stack empty behavior") {
-        shm_stack<int> stack(shm, "empty_stack", 5);
+        zeroipc::stack<int> stack(shm, "empty_stack", 5);
         
         REQUIRE(stack.empty());
         auto val = stack.pop();
@@ -83,7 +83,7 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Top operation") {
-        shm_stack<int> stack(shm, "top_stack", 5);
+        zeroipc::stack<int> stack(shm, "top_stack", 5);
         
         stack.push(10);
         stack.push(20);
@@ -103,7 +103,7 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Clear operation") {
-        shm_stack<int> stack(shm, "clear_stack", 5);
+        zeroipc::stack<int> stack(shm, "clear_stack", 5);
         
         stack.push(1);
         stack.push(2);
@@ -122,14 +122,14 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     SECTION("Stack discovery by name") {
         // Create and populate stack
         {
-            shm_stack<double> s1(shm, "discoverable_stack", 10);
+            zeroipc::stack<double> s1(shm, "discoverable_stack", 10);
             s1.push(3.14);
             s1.push(2.71);
             s1.push(1.41);
         }
         
         // Open existing stack
-        shm_stack<double> s2(shm, "discoverable_stack");
+        zeroipc::stack<double> s2(shm, "discoverable_stack");
         REQUIRE(s2.size() == 3);
         REQUIRE(s2.capacity() == 10);
         
@@ -140,9 +140,9 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     }
 
     SECTION("Multiple stacks in same segment") {
-        shm_stack<int> s1(shm, "stack1", 5);
-        shm_stack<double> s2(shm, "stack2", 10);
-        shm_stack<char> s3(shm, "stack3", 20);
+        zeroipc::stack<int> s1(shm, "stack1", 5);
+        zeroipc::stack<double> s2(shm, "stack2", 10);
+        zeroipc::stack<char> s3(shm, "stack3", 20);
         
         s1.push(100);
         s2.push(3.14);
@@ -160,10 +160,10 @@ TEST_CASE("shm_stack basic operations", "[shm_stack]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_stack struct types", "[shm_stack]") {
+TEST_CASE("zeroipc::stack struct types", "[zeroipc::stack]") {
     const std::string shm_name = "/test_stack_struct";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     struct Point {
         int x, y;
@@ -173,7 +173,7 @@ TEST_CASE("shm_stack struct types", "[shm_stack]") {
     };
 
     SECTION("Stack of structs") {
-        shm_stack<Point> stack(shm, "point_stack", 5);
+        zeroipc::stack<Point> stack(shm, "point_stack", 5);
         
         Point p1{10, 20};
         Point p2{30, 40};
@@ -199,13 +199,13 @@ TEST_CASE("shm_stack struct types", "[shm_stack]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_stack concurrent operations", "[shm_stack][concurrent]") {
+TEST_CASE("zeroipc::stack concurrent operations", "[zeroipc::stack][concurrent]") {
     const std::string shm_name = "/test_stack_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Concurrent push operations") {
-        shm_stack<int> stack(shm, "concurrent_push", 1000);
+        zeroipc::stack<int> stack(shm, "concurrent_push", 1000);
         const int num_threads = 4;
         const int items_per_thread = 100;
         
@@ -232,7 +232,7 @@ TEST_CASE("shm_stack concurrent operations", "[shm_stack][concurrent]") {
     }
 
     SECTION("Concurrent pop operations") {
-        shm_stack<int> stack(shm, "concurrent_pop", 1000);
+        zeroipc::stack<int> stack(shm, "concurrent_pop", 1000);
         
         // Pre-fill stack
         const int total_items = 400;
@@ -266,7 +266,7 @@ TEST_CASE("shm_stack concurrent operations", "[shm_stack][concurrent]") {
     }
 
     SECTION("Mixed push/pop operations") {
-        shm_stack<int> stack(shm, "concurrent_mixed", 100);
+        zeroipc::stack<int> stack(shm, "concurrent_mixed", 100);
         const int num_operations = 1000;
         
         std::thread pusher([&stack, num_operations]() {
@@ -299,15 +299,15 @@ TEST_CASE("shm_stack concurrent operations", "[shm_stack][concurrent]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_stack cross-process", "[shm_stack][process]") {
+TEST_CASE("zeroipc::stack cross-process", "[zeroipc::stack][process]") {
     const std::string shm_name = "/test_stack_process";
     shm_unlink(shm_name.c_str());
     
     SECTION("Stack persistence across processes") {
         // Process 1: Create and populate
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_stack<int> stack(shm1, "persistent_stack", 10);
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::stack<int> stack(shm1, "persistent_stack", 10);
             
             stack.push(100);
             stack.push(200);
@@ -318,8 +318,8 @@ TEST_CASE("shm_stack cross-process", "[shm_stack][process]") {
         
         // Process 2: Open and verify
         {
-            posix_shm shm2(shm_name, 0);  // Attach only
-            shm_stack<int> stack(shm2, "persistent_stack");
+            zeroipc::memory shm2(shm_name, 0);  // Attach only
+            zeroipc::stack<int> stack(shm2, "persistent_stack");
             
             REQUIRE(stack.size() == 3);
             

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_array.h"
-#include "shm_queue.h"
-#include "shm_atomic.h"
+#include "zeroipc.h"
+#include "array.h"
+#include "queue.h"
+#include "atomic.h"
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
@@ -23,9 +23,9 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
         if (pid == 0) {  // Child process
             try {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                posix_shm shm(shm_name);  // Open existing
+                zeroipc::memory shm(shm_name);  // Open existing
                 
-                shm_array<int> arr(shm, "shared_data");
+                zeroipc::array<int> arr(shm, "shared_data");
                 REQUIRE(arr.size() == 10);
                 REQUIRE(arr[0] == 42);
                 REQUIRE(arr[9] == 99);
@@ -38,8 +38,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
                 exit(1);
             }
         } else {  // Parent process
-            posix_shm shm(shm_name, shm_size);
-            shm_array<int> arr(shm, "shared_data", 10);
+            zeroipc::memory shm(shm_name, shm_size);
+            zeroipc::array<int> arr(shm, "shared_data", 10);
             
             arr[0] = 42;
             arr[9] = 99;
@@ -66,8 +66,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
         if (pid == 0) {  // Child - Consumer
             try {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                posix_shm shm(shm_name);
-                shm_queue<int> queue(shm, "prod_cons_queue");
+                zeroipc::memory shm(shm_name);
+                zeroipc::queue<int> queue(shm, "prod_cons_queue");
                 
                 int count = 0;
                 auto start = std::chrono::steady_clock::now();
@@ -91,8 +91,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
                 exit(1);
             }
         } else {  // Parent - Producer
-            posix_shm shm(shm_name, shm_size);
-            shm_queue<int> queue(shm, "prod_cons_queue", 10);
+            zeroipc::memory shm(shm_name, shm_size);
+            zeroipc::queue<int> queue(shm, "prod_cons_queue", 10);
             
             for (int i = 0; i < num_items; ++i) {
                 while (!queue.enqueue(i)) {
@@ -116,8 +116,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
         
         // Create shared memory with atomic counter
         {
-            posix_shm shm(shm_name, shm_size);
-            shm_atomic_int counter(shm, "counter", 0);
+            zeroipc::memory shm(shm_name, shm_size);
+            zeroipc::atomic_int<> counter(shm, "counter", 0);
         }
         
         // Fork multiple children
@@ -127,8 +127,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
             
             if (pid == 0) {  // Child
                 try {
-                    posix_shm shm(shm_name, 0);  // Explicitly pass 0 to attach
-                    shm_atomic_int counter(shm, "counter");
+                    zeroipc::memory shm(shm_name, 0);  // Explicitly pass 0 to attach
+                    zeroipc::atomic_int<> counter(shm, "counter");
                     
                     for (int j = 0; j < increments_per_child; ++j) {
                         counter++;
@@ -150,8 +150,8 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
         }
         
         // Check final counter value
-        posix_shm shm(shm_name);
-        shm_atomic_int counter(shm, "counter");
+        zeroipc::memory shm(shm_name);
+        zeroipc::atomic_int<> counter(shm, "counter");
         REQUIRE(counter.load() == num_children * increments_per_child);
         
         // Clean up
@@ -165,12 +165,12 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
         if (pid == 0) {  // Child
             try {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                posix_shm shm(shm_name);
+                zeroipc::memory shm(shm_name);
                 
                 // Discover all structures by name
-                shm_array<double> sensors(shm, "sensors");
-                shm_queue<uint32_t> events(shm, "events");
-                shm_atomic_bool flag(shm, "ready");
+                zeroipc::array<double> sensors(shm, "sensors");
+                zeroipc::queue<uint32_t> events(shm, "events");
+                zeroipc::atomic_bool<> flag(shm, "ready");
                 
                 REQUIRE(sensors.size() == 100);
                 REQUIRE(events.capacity() == 50);
@@ -188,16 +188,16 @@ TEST_CASE("Multi-process shared memory", "[multi-process]") {
                 exit(1);
             }
         } else {  // Parent
-            posix_shm shm(shm_name, shm_size);
+            zeroipc::memory shm(shm_name, shm_size);
             
             // Create multiple structures
-            shm_array<double> sensors(shm, "sensors", 100);
+            zeroipc::array<double> sensors(shm, "sensors", 100);
             sensors[0] = 3.14159;
             
-            shm_queue<uint32_t> events(shm, "events", 50);
+            zeroipc::queue<uint32_t> events(shm, "events", 50);
             events.enqueue(0xDEADBEEF);
             
-            shm_atomic_bool flag(shm, "ready", true);
+            zeroipc::atomic_bool<> flag(shm, "ready", true);
             
             int status;
             waitpid(pid, &status, 0);
@@ -219,8 +219,8 @@ TEST_CASE("Process crash resilience", "[multi-process][resilience]") {
         
         if (pid == 0) {  // Child - will "crash"
             try {
-                posix_shm shm(shm_name, 1024 * 1024);
-                shm_array<int> arr(shm, "persistent", 5);
+                zeroipc::memory shm(shm_name, 1024 * 1024);
+                zeroipc::array<int> arr(shm, "persistent", 5);
                 arr[0] = 12345;
                 
                 // Simulate crash
@@ -233,8 +233,8 @@ TEST_CASE("Process crash resilience", "[multi-process][resilience]") {
             waitpid(pid, &status, 0);
             
             // Now access the shared memory left by crashed child
-            posix_shm shm(shm_name);
-            shm_array<int> arr(shm, "persistent");
+            zeroipc::memory shm(shm_name);
+            zeroipc::array<int> arr(shm, "persistent");
             REQUIRE(arr[0] == 12345);
             
             // Clean up

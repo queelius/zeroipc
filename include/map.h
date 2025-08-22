@@ -1,5 +1,5 @@
 /**
- * @file shm_hash_map.h
+ * @file zeroipc::map.h
  * @brief Lock-free hash map implementation for POSIX shared memory
  * @author Alex Towell
  * 
@@ -13,8 +13,8 @@
  * 
  * @par Example
  * @code
- * posix_shm shm("simulation", 10 * 1024 * 1024);
- * shm_hash_map<uint32_t, Particle> particles(shm, "particle_map", 10000);
+ * memory shm("simulation", 10 * 1024 * 1024);
+ * map<uint32_t, Particle> particles(shm, "particle_map", 10000);
  * 
  * // Insert
  * particles.insert(42, particle);
@@ -28,14 +28,17 @@
 
 #pragma once
 
-#include "posix_shm.h"
-#include "shm_table.h"
-#include "shm_span.h"
+#include "zeroipc.h"
+#include "table.h"
+#include "span.h"
 #include <atomic>
 #include <optional>
 #include <functional>
 #include <cstring>
 #include <concepts>
+
+namespace zeroipc {
+
 
 /**
  * @brief Lock-free hash map for shared memory
@@ -65,10 +68,10 @@
  */
 template<typename Key, typename Value, 
          typename Hash = std::hash<Key>,
-         typename TableType = shm_table>
+         typename TableType = table>
     requires std::is_trivially_copyable_v<Key> && 
              std::is_trivially_copyable_v<Value>
-class shm_hash_map : public shm_span<std::pair<Key, Value>, posix_shm_impl<TableType>> {
+class map : public zeroipc::span<std::pair<Key, Value>, memory_impl<TableType>> {
 private:
     enum State : uint8_t {
         EMPTY = 0,
@@ -151,8 +154,8 @@ public:
      * @throws std::runtime_error if capacity is 0 and map doesn't exist
      */
     template<typename ShmType>
-    shm_hash_map(ShmType& shm, std::string_view name, size_t capacity = 0)
-        : shm_span<std::pair<Key, Value>, posix_shm_impl<TableType>>(shm, 0, 0) {
+    map(ShmType& shm, std::string_view name, size_t capacity = 0)
+        : zeroipc::span<std::pair<Key, Value>, memory_impl<TableType>>(shm, 0, 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match hash map table type");
         
@@ -317,7 +320,7 @@ public:
      * @brief Find a value by key (const version)
      */
     [[nodiscard]] const Value* find(const Key& key) const noexcept {
-        return const_cast<shm_hash_map*>(this)->find(key);
+        return const_cast<map*>(this)->find(key);
     }
 
     /**
@@ -460,9 +463,7 @@ public:
 };
 
 // Type aliases for common hash maps
-template<typename K, typename V>
-using shm_map = shm_hash_map<K, V>;
-
-using shm_map_int_int = shm_hash_map<int, int>;
-using shm_map_uint32_uint32 = shm_hash_map<uint32_t, uint32_t>;
-using shm_map_uint64_uint64 = shm_hash_map<uint64_t, uint64_t>;
+using map_int_int = map<int, int>;
+using map_uint32_uint32 = map<uint32_t, uint32_t>;
+using map_uint64_uint64 = map<uint64_t, uint64_t>;
+} // namespace zeroipc

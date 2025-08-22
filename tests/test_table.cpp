@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
-#include "shm_table.h"
+#include "table.h"
 #include <string_view>
 
-TEST_CASE("shm_table operations", "[shm_table]") {
-    shm_table table;
+TEST_CASE("zeroipc::table operations", "[zeroipc::table]") {
+    zeroipc::table table;
 
     SECTION("Initial state") {
         REQUIRE(table.get_entry_count() == 0);
@@ -55,10 +55,10 @@ TEST_CASE("shm_table operations", "[shm_table]") {
 
     SECTION("Track total allocated size") {
         table.add("first", 100, 50);
-        REQUIRE(table.get_total_allocated_size() == 150 - sizeof(shm_table));
+        REQUIRE(table.get_total_allocated_size() == 150 - sizeof(zeroipc::table));
         
         table.add("second", 200, 100);
-        REQUIRE(table.get_total_allocated_size() == 300 - sizeof(shm_table));
+        REQUIRE(table.get_total_allocated_size() == 300 - sizeof(zeroipc::table));
     }
 
     SECTION("Clear all entries") {
@@ -72,11 +72,11 @@ TEST_CASE("shm_table operations", "[shm_table]") {
     }
 }
 
-TEST_CASE("shm_table with custom sizes", "[shm_table][template]") {
+TEST_CASE("zeroipc::table with custom sizes", "[zeroipc::table][template]") {
     SECTION("Small table") {
-        shm_table_small small_table;
-        REQUIRE(shm_table_small::MAX_NAME_SIZE == 16);
-        REQUIRE(shm_table_small::MAX_ENTRIES == 16);
+        zeroipc::table_small small_table;
+        REQUIRE(zeroipc::table_small::MAX_NAME_SIZE == 16);
+        REQUIRE(zeroipc::table_small::MAX_ENTRIES == 16);
         
         // Name longer than 16 chars gets truncated
         small_table.add("this_is_a_very_long_name", 100, 50);
@@ -85,9 +85,9 @@ TEST_CASE("shm_table with custom sizes", "[shm_table][template]") {
     }
 
     SECTION("Large table") {
-        shm_table_large large_table;
-        REQUIRE(shm_table_large::MAX_NAME_SIZE == 64);
-        REQUIRE(shm_table_large::MAX_ENTRIES == 256);
+        zeroipc::table_large large_table;
+        REQUIRE(zeroipc::table_large::MAX_NAME_SIZE == 64);
+        REQUIRE(zeroipc::table_large::MAX_ENTRIES == 256);
         
         // Can store many more entries
         for (int i = 0; i < 100; ++i) {
@@ -98,18 +98,18 @@ TEST_CASE("shm_table with custom sizes", "[shm_table][template]") {
     }
 }
 
-TEST_CASE("shm_table size calculations", "[shm_table][template]") {
+TEST_CASE("zeroipc::table size calculations", "[zeroipc::table][template]") {
     SECTION("Compare table sizes") {
-        constexpr size_t small_size = shm_table_small::size_bytes();
-        constexpr size_t default_size = shm_table::size_bytes();
-        constexpr size_t large_size = shm_table_large::size_bytes();
+        constexpr size_t small_size = zeroipc::table_small::size_bytes();
+        constexpr size_t default_size = zeroipc::table::size_bytes();
+        constexpr size_t large_size = zeroipc::table_large::size_bytes();
         
         REQUIRE(small_size < default_size);
         REQUIRE(default_size < large_size);
         
         // Verify actual sizes match expectations
-        REQUIRE(sizeof(shm_table_small) == small_size);
-        REQUIRE(sizeof(shm_table) == default_size);
-        REQUIRE(sizeof(shm_table_large) == large_size);
+        REQUIRE(sizeof(zeroipc::table_small) == small_size);
+        REQUIRE(sizeof(zeroipc::table) == default_size);
+        REQUIRE(sizeof(zeroipc::table_large) == large_size);
     }
 }

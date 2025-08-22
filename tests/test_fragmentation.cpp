@@ -1,22 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_array.h"
-#include "shm_queue.h"
+#include "zeroipc.h"
+#include "array.h"
+#include "queue.h"
 
 TEST_CASE("Shared memory fragmentation behavior", "[fragmentation]") {
     
     SECTION("Current implementation never reclaims space") {
-        posix_shm shm("test_frag", 10 * 1024 * 1024);
+        zeroipc::memory shm("test_frag", 10 * 1024 * 1024);
         auto* table = shm.get_table();
         
         // Create array1
         {
-            shm_array<int> arr1(shm, "array1", 1000);
+            zeroipc::array<int> arr1(shm, "array1", 1000);
             size_t allocated_after_1 = table->get_total_allocated_size();
             REQUIRE(allocated_after_1 > 0);
             
             // Create array2
-            shm_array<int> arr2(shm, "array2", 1000);
+            zeroipc::array<int> arr2(shm, "array2", 1000);
             size_t allocated_after_2 = table->get_total_allocated_size();
             REQUIRE(allocated_after_2 > allocated_after_1);
             
@@ -28,7 +28,7 @@ TEST_CASE("Shared memory fragmentation behavior", "[fragmentation]") {
             REQUIRE(allocated_after_erase == allocated_after_2);  // Space not reclaimed
             
             // Create array3 - it goes at the END, not in the gap
-            shm_array<int> arr3(shm, "array3", 500);
+            zeroipc::array<int> arr3(shm, "array3", 500);
             size_t allocated_after_3 = table->get_total_allocated_size();
             REQUIRE(allocated_after_3 > allocated_after_2);  // Appended, not reused!
         }
@@ -38,14 +38,14 @@ TEST_CASE("Shared memory fragmentation behavior", "[fragmentation]") {
     }
     
     SECTION("Worst case: repeated create/delete exhausts memory") {
-        posix_shm shm("test_exhaust", 1024 * 1024);  // 1MB only
+        zeroipc::memory shm("test_exhaust", 1024 * 1024);  // 1MB only
         
         // This will eventually fail even though we "delete" each time
         for (int i = 0; i < 100; ++i) {
             std::string name = "temp_" + std::to_string(i);
             
             try {
-                shm_array<double> arr(shm, name, 1000);  // 8KB each
+                zeroipc::array<double> arr(shm, name, 1000);  // 8KB each
                 
                 // "Delete" it
                 shm.get_table()->erase(name.c_str());

@@ -1,17 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_bitset.h"
+#include "zeroipc.h"
+#include "bitset.h"
 #include <thread>
 #include <vector>
 #include <bitset>
 
-TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
+TEST_CASE("zeroipc::bitset basic operations", "[zeroipc::bitset]") {
     const std::string shm_name = "/test_bitset_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use bitset") {
-        shm_bitset<100> bits(shm, "test_bits");
+        zeroipc::bitset<100> bits(shm, "test_bits");
         
         REQUIRE(bits.size() == 100);
         REQUIRE(bits.count() == 0);
@@ -21,7 +21,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Set and test individual bits") {
-        shm_bitset<64> bits(shm, "individual_bits");
+        zeroipc::bitset<64> bits(shm, "individual_bits");
         
         bits.set(0);
         bits.set(10);
@@ -40,7 +40,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Reset bits") {
-        shm_bitset<32> bits(shm, "reset_bits");
+        zeroipc::bitset<32> bits(shm, "reset_bits");
         
         bits.set(5);
         bits.set(10);
@@ -56,7 +56,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Flip bits") {
-        shm_bitset<16> bits(shm, "flip_bits");
+        zeroipc::bitset<16> bits(shm, "flip_bits");
         
         bits.flip(3);
         REQUIRE(bits.test(3));
@@ -68,7 +68,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Set with value") {
-        shm_bitset<8> bits(shm, "set_value");
+        zeroipc::bitset<8> bits(shm, "set_value");
         
         bits.set(2, true);
         REQUIRE(bits.test(2));
@@ -78,7 +78,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Set all bits") {
-        shm_bitset<100> bits(shm, "set_all");
+        zeroipc::bitset<100> bits(shm, "set_all");
         
         bits.set();
         REQUIRE(bits.count() == 100);
@@ -92,7 +92,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Reset all bits") {
-        shm_bitset<50> bits(shm, "reset_all");
+        zeroipc::bitset<50> bits(shm, "reset_all");
         
         // Set some bits first
         for (size_t i = 0; i < 50; i += 3) {
@@ -107,7 +107,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Flip all bits") {
-        shm_bitset<10> bits(shm, "flip_all");
+        zeroipc::bitset<10> bits(shm, "flip_all");
         
         bits.set(0);
         bits.set(2);
@@ -123,7 +123,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Find first set bit") {
-        shm_bitset<128> bits(shm, "find_first");
+        zeroipc::bitset<128> bits(shm, "find_first");
         
         REQUIRE(bits.find_first() == 128);  // No bits set
         
@@ -135,7 +135,7 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     }
 
     SECTION("Find next set bit") {
-        shm_bitset<100> bits(shm, "find_next");
+        zeroipc::bitset<100> bits(shm, "find_next");
         
         bits.set(10);
         bits.set(20);
@@ -161,13 +161,13 @@ TEST_CASE("shm_bitset basic operations", "[shm_bitset]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_bitset bitwise operations", "[shm_bitset]") {
+TEST_CASE("zeroipc::bitset bitwise operations", "[zeroipc::bitset]") {
     const std::string shm_name = "/test_bitset_bitwise";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
-    shm_bitset<64> bits1(shm, "bits1");
-    shm_bitset<64> bits2(shm, "bits2");
+    zeroipc::bitset<64> bits1(shm, "bits1");
+    zeroipc::bitset<64> bits2(shm, "bits2");
     
     // Setup bit patterns
     for (size_t i = 0; i < 64; i += 2) {
@@ -178,7 +178,7 @@ TEST_CASE("shm_bitset bitwise operations", "[shm_bitset]") {
     }
 
     SECTION("Bitwise AND") {
-        shm_bitset<64> result(shm, "and_result");
+        zeroipc::bitset<64> result(shm, "and_result");
         result.set();  // Start with all 1s
         
         result &= bits1;
@@ -192,7 +192,7 @@ TEST_CASE("shm_bitset bitwise operations", "[shm_bitset]") {
     }
 
     SECTION("Bitwise OR") {
-        shm_bitset<64> result(shm, "or_result");
+        zeroipc::bitset<64> result(shm, "or_result");
         
         result |= bits1;
         result |= bits2;
@@ -205,7 +205,7 @@ TEST_CASE("shm_bitset bitwise operations", "[shm_bitset]") {
     }
 
     SECTION("Bitwise XOR") {
-        shm_bitset<64> result(shm, "xor_result");
+        zeroipc::bitset<64> result(shm, "xor_result");
         result |= bits1;  // Copy bits1
         
         result ^= bits2;
@@ -220,13 +220,13 @@ TEST_CASE("shm_bitset bitwise operations", "[shm_bitset]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_bitset concurrent operations", "[shm_bitset][concurrent]") {
+TEST_CASE("zeroipc::bitset concurrent operations", "[zeroipc::bitset][concurrent]") {
     const std::string shm_name = "/test_bitset_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Concurrent bit setting") {
-        shm_bitset<10000> bits(shm, "concurrent_set");
+        zeroipc::bitset<10000> bits(shm, "concurrent_set");
         const int num_threads = 4;
         const int bits_per_thread = 2500;
         
@@ -249,7 +249,7 @@ TEST_CASE("shm_bitset concurrent operations", "[shm_bitset][concurrent]") {
     }
 
     SECTION("Concurrent flipping") {
-        shm_bitset<1000> bits(shm, "concurrent_flip");
+        zeroipc::bitset<1000> bits(shm, "concurrent_flip");
         const int num_threads = 4;
         const int flips_per_thread = 1000;
         
@@ -274,7 +274,7 @@ TEST_CASE("shm_bitset concurrent operations", "[shm_bitset][concurrent]") {
     }
 
     SECTION("Concurrent read/write") {
-        shm_bitset<10000> bits(shm, "concurrent_rw");
+        zeroipc::bitset<10000> bits(shm, "concurrent_rw");
         
         // Pre-set some bits
         for (size_t i = 0; i < 10000; i += 2) {
@@ -317,13 +317,13 @@ TEST_CASE("shm_bitset concurrent operations", "[shm_bitset][concurrent]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_bitset edge cases", "[shm_bitset]") {
+TEST_CASE("zeroipc::bitset edge cases", "[zeroipc::bitset]") {
     const std::string shm_name = "/test_bitset_edge";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Non-64-bit aligned size") {
-        shm_bitset<73> bits(shm, "odd_size");
+        zeroipc::bitset<73> bits(shm, "odd_size");
         
         // Should handle bits near boundary correctly
         bits.set(63);
@@ -344,7 +344,7 @@ TEST_CASE("shm_bitset edge cases", "[shm_bitset]") {
     }
 
     SECTION("Single bit") {
-        shm_bitset<1> single(shm, "single_bit");
+        zeroipc::bitset<1> single(shm, "single_bit");
         
         REQUIRE(!single.test(0));
         single.set(0);
@@ -358,7 +358,7 @@ TEST_CASE("shm_bitset edge cases", "[shm_bitset]") {
     }
 
     SECTION("Large bitset") {
-        shm_bitset<100000> large(shm, "large_bits");
+        zeroipc::bitset<100000> large(shm, "large_bits");
         
         // Set pattern
         for (size_t i = 0; i < 100000; i += 1000) {
@@ -375,15 +375,15 @@ TEST_CASE("shm_bitset edge cases", "[shm_bitset]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_bitset cross-process", "[shm_bitset][process]") {
+TEST_CASE("zeroipc::bitset cross-process", "[zeroipc::bitset][process]") {
     const std::string shm_name = "/test_bitset_process";
     shm_unlink(shm_name.c_str());
     
     SECTION("Bitset persistence across processes") {
         // Process 1: Create and set bits
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_bitset<256> bits(shm1, "persistent_bits");
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::bitset<256> bits(shm1, "persistent_bits");
             
             for (size_t i = 0; i < 256; i += 4) {
                 bits.set(i);
@@ -394,8 +394,8 @@ TEST_CASE("shm_bitset cross-process", "[shm_bitset][process]") {
         
         // Process 2: Open and verify
         {
-            posix_shm shm2(shm_name, 0);  // Attach only
-            shm_bitset<256> bits(shm2, "persistent_bits");
+            zeroipc::memory shm2(shm_name, 0);  // Attach only
+            zeroipc::bitset<256> bits(shm2, "persistent_bits");
             
             REQUIRE(bits.count() == 64);
             
@@ -413,8 +413,8 @@ TEST_CASE("shm_bitset cross-process", "[shm_bitset][process]") {
         
         // Process 3: Verify modifications
         {
-            posix_shm shm3(shm_name, 0);
-            shm_bitset<256> bits(shm3, "persistent_bits");
+            zeroipc::memory shm3(shm_name, 0);
+            zeroipc::bitset<256> bits(shm3, "persistent_bits");
             
             REQUIRE(bits.count() == 192);  // 256 - 64
             

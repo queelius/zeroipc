@@ -14,9 +14,9 @@
 #include <chrono>
 #include <random>
 #include <iomanip>
-#include "posix_shm.h"
-#include "shm_array.h"
-#include "shm_simd_utils.h"
+#include "zeroipc.h"
+#include "array.h"
+#include "simd_utils.h"
 
 using namespace std::chrono;
 
@@ -29,12 +29,12 @@ constexpr size_t ITERATIONS = 100;
  * Better for SIMD than Array of Structures
  */
 struct ParticleSystemSoA {
-    shm_array<float> x, y, z;      // Position
-    shm_array<float> vx, vy, vz;   // Velocity
-    shm_array<float> ax, ay, az;   // Acceleration
-    shm_array<float> mass;         // Mass
+    zeroipc::array<float> x, y, z;      // Position
+    zeroipc::array<float> vx, vy, vz;   // Velocity
+    zeroipc::array<float> ax, ay, az;   // Acceleration
+    zeroipc::array<float> mass;         // Mass
     
-    ParticleSystemSoA(posix_shm& shm, size_t count)
+    ParticleSystemSoA(zeroipc::memory& shm, size_t count)
         : x(shm, "pos_x", count), y(shm, "pos_y", count), z(shm, "pos_z", count),
           vx(shm, "vel_x", count), vy(shm, "vel_y", count), vz(shm, "vel_z", count),
           ax(shm, "acc_x", count), ay(shm, "acc_y", count), az(shm, "acc_z", count),
@@ -173,7 +173,7 @@ float calculate_kinetic_energy_scalar(ParticleSystemSoA& particles) {
 // SIMD version using helper functions
 float calculate_kinetic_energy_simd(ParticleSystemSoA& particles) {
     // Create temporary arrays for v²
-    shm_array<float> v_squared(particles.x.shm, "v_squared_temp", NUM_PARTICLES);
+    zeroipc::array<float> v_squared(particles.x.shm, "v_squared_temp", NUM_PARTICLES);
     
     // Calculate v² = vx² + vy² + vz² using SIMD
     size_t simd_count = NUM_PARTICLES & ~7;
@@ -209,7 +209,7 @@ int main() {
     try {
         // Create shared memory segment
         size_t shm_size = 20 * NUM_PARTICLES * sizeof(float);  // Space for all arrays
-        posix_shm shm("simd_simulation", shm_size);
+        zeroipc::memory shm("simd_simulation", shm_size);
         
         std::cout << "=== SIMD Particle Simulation ===" << std::endl;
         std::cout << "Particles: " << NUM_PARTICLES << std::endl;

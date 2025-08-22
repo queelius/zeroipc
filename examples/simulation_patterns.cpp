@@ -2,11 +2,11 @@
 #include <random>
 #include <chrono>
 #include <thread>
-#include "posix_shm.h"
-#include "shm_object_pool.h"
-#include "shm_ring_buffer.h"
-#include "shm_atomic.h"
-#include "shm_array.h"
+#include "zeroipc.h"
+#include "pool.h"
+#include "ring.h"
+#include "atomic.h"
+#include "array.h"
 
 // Example: High-performance particle simulation using shared memory
 
@@ -27,11 +27,11 @@ struct SensorReading {
 void particle_simulation_example() {
     std::cout << "\n=== Particle Simulation with Object Pool ===\n";
     
-    posix_shm shm("particle_sim", 100 * 1024 * 1024);  // 100MB
+    zeroipc::memory shm("particle_sim", 100 * 1024 * 1024);  // 100MB
     
     // Object pool for dynamic particle allocation
     constexpr size_t MAX_PARTICLES = 10000;
-    shm_object_pool<Particle> particles(shm, "particles", MAX_PARTICLES);
+    zeroipc::pool<Particle> particles(shm, "particles", MAX_PARTICLES);
     
     // Statistics
     shm_atomic_uint64 total_spawned(shm, "total_spawned", 0);
@@ -82,11 +82,11 @@ void particle_simulation_example() {
 void sensor_streaming_example() {
     std::cout << "\n=== Sensor Data Streaming with Ring Buffer ===\n";
     
-    posix_shm shm("sensor_stream", 10 * 1024 * 1024);
+    zeroipc::memory shm("sensor_stream", 10 * 1024 * 1024);
     
     // Ring buffer for continuous sensor data
     constexpr size_t BUFFER_SIZE = 1000;
-    shm_ring_buffer<SensorReading> sensor_buffer(shm, "sensors", BUFFER_SIZE);
+    zeroipc::ring<SensorReading> sensor_buffer(shm, "sensors", BUFFER_SIZE);
     
     // Generate some sensor data
     std::random_device rd;
@@ -134,7 +134,7 @@ void sensor_streaming_example() {
 void grid_simulation_example() {
     std::cout << "\n=== Grid-based Simulation ===\n";
     
-    posix_shm shm("grid_sim", 50 * 1024 * 1024);
+    zeroipc::memory shm("grid_sim", 50 * 1024 * 1024);
     
     // Fixed grid for spatial data (e.g., fluid simulation, cellular automata)
     constexpr size_t GRID_SIZE = 256 * 256;
@@ -149,8 +149,8 @@ void grid_simulation_example() {
     };
     
     // Two grids for double buffering
-    shm_array<Cell> grid_current(shm, "grid_current", GRID_SIZE);
-    shm_array<Cell> grid_next(shm, "grid_next", GRID_SIZE);
+    zeroipc::array<Cell> grid_current(shm, "grid_current", GRID_SIZE);
+    zeroipc::array<Cell> grid_next(shm, "grid_next", GRID_SIZE);
     
     // Simulation step counter
     shm_atomic_uint64 step_counter(shm, "step", 0);
@@ -190,27 +190,27 @@ void grid_simulation_example() {
 void usage_patterns() {
     std::cout << "\n=== Common Simulation Patterns ===\n\n";
     
-    std::cout << "1. Object Pool (shm_object_pool):\n";
+    std::cout << "1. Object Pool (zeroipc::pool):\n";
     std::cout << "   - Dynamic entity management (particles, enemies, projectiles)\n";
     std::cout << "   - Avoids fragmentation, O(1) allocation\n";
     std::cout << "   - Perfect for systems with many temporary objects\n\n";
     
-    std::cout << "2. Ring Buffer (shm_ring_buffer):\n";
+    std::cout << "2. Ring Buffer (zeroipc::ring):\n";
     std::cout << "   - Sensor data streams\n";
     std::cout << "   - Event/message logging\n";
     std::cout << "   - Time-series data with bulk operations\n\n";
     
-    std::cout << "3. Fixed Arrays (shm_array):\n";
+    std::cout << "3. Fixed Arrays (zeroipc::array):\n";
     std::cout << "   - Spatial grids (collision, physics, fluid)\n";
     std::cout << "   - Lookup tables\n";
     std::cout << "   - Double-buffered state\n\n";
     
-    std::cout << "4. Atomics (shm_atomic):\n";
+    std::cout << "4. Atomics (zeroipc::atomic_value):\n";
     std::cout << "   - Global counters and statistics\n";
     std::cout << "   - Synchronization flags\n";
     std::cout << "   - Lock-free coordination\n\n";
     
-    std::cout << "5. Queues (shm_queue):\n";
+    std::cout << "5. Queues (zeroipc::queue):\n";
     std::cout << "   - Task distribution\n";
     std::cout << "   - Event handling\n";
     std::cout << "   - Producer-consumer patterns\n";

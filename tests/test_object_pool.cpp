@@ -1,20 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_object_pool.h"
+#include "zeroipc.h"
+#include "pool.h"
 #include <thread>
 #include <vector>
 #include <set>
 #include <unordered_set>
 #include <atomic>
 
-TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
+TEST_CASE("zeroipc::pool basic operations", "[zeroipc::pool]") {
     const std::string shm_name = "/test_pool_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use pool") {
-        shm_object_pool<int> pool(shm, "test_pool", 100);
+        zeroipc::pool<int> pool(shm, "test_pool", 100);
         
         REQUIRE(pool.capacity() == 100);
         REQUIRE(pool.num_allocated() == 0);
@@ -24,7 +24,7 @@ TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
     }
 
     SECTION("Acquire and release single objects") {
-        shm_object_pool<int> pool(shm, "single_pool", 10);
+        zeroipc::pool<int> pool(shm, "single_pool", 10);
         
         // Acquire objects
         auto h1 = pool.acquire();
@@ -54,9 +54,9 @@ TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
     }
 
     SECTION("Acquire all objects") {
-        shm_object_pool<int> pool(shm, "exhaust_pool", 5);
+        zeroipc::pool<int> pool(shm, "exhaust_pool", 5);
         
-        std::vector<shm_object_pool<int>::handle_type> handles;
+        std::vector<zeroipc::pool<int>::handle_type> handles;
         
         // Acquire all objects
         for (int i = 0; i < 5; ++i) {
@@ -82,7 +82,7 @@ TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
     }
 
     SECTION("Get pointer access") {
-        shm_object_pool<double> pool(shm, "ptr_pool", 10);
+        zeroipc::pool<double> pool(shm, "ptr_pool", 10);
         
         auto h = pool.acquire();
         REQUIRE(h != pool.invalid_handle);
@@ -105,7 +105,7 @@ TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
             Point(float a, float b, float c) : x(a), y(b), z(c) {}
         };
         
-        shm_object_pool<Point> pool(shm, "point_pool", 10);
+        zeroipc::pool<Point> pool(shm, "point_pool", 10);
         
         // Acquire and construct with arguments
         auto h1 = pool.acquire_construct(1.0f, 2.0f, 3.0f);
@@ -125,22 +125,22 @@ TEST_CASE("shm_object_pool basic operations", "[shm_object_pool]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_object_pool batch operations", "[shm_object_pool]") {
+TEST_CASE("zeroipc::pool batch operations", "[zeroipc::pool]") {
     const std::string shm_name = "/test_pool_batch";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Batch acquire") {
-        shm_object_pool<int> pool(shm, "batch_acquire", 100);
+        zeroipc::pool<int> pool(shm, "batch_acquire", 100);
         
-        shm_object_pool<int>::handle_type handles[20];
+        zeroipc::pool<int>::handle_type handles[20];
         size_t acquired = pool.acquire_batch(20, handles);
         
         REQUIRE(acquired == 20);
         REQUIRE(pool.num_allocated() == 20);
         
         // Verify all handles are unique
-        std::set<shm_object_pool<int>::handle_type> unique_handles(handles, handles + 20);
+        std::set<zeroipc::pool<int>::handle_type> unique_handles(handles, handles + 20);
         REQUIRE(unique_handles.size() == 20);
         
         // Use the objects
@@ -150,7 +150,7 @@ TEST_CASE("shm_object_pool batch operations", "[shm_object_pool]") {
     }
 
     SECTION("Batch acquire partial when near full") {
-        shm_object_pool<int> pool(shm, "batch_partial", 10);
+        zeroipc::pool<int> pool(shm, "batch_partial", 10);
         
         // Manually acquire some objects
         for (int i = 0; i < 7; ++i) {
@@ -158,7 +158,7 @@ TEST_CASE("shm_object_pool batch operations", "[shm_object_pool]") {
         }
         
         // Try to acquire more than available
-        shm_object_pool<int>::handle_type handles[10];
+        zeroipc::pool<int>::handle_type handles[10];
         size_t acquired = pool.acquire_batch(10, handles);
         
         REQUIRE(acquired == 3);  // Only 3 available
@@ -166,10 +166,10 @@ TEST_CASE("shm_object_pool batch operations", "[shm_object_pool]") {
     }
 
     SECTION("Batch release") {
-        shm_object_pool<int> pool(shm, "batch_release", 50);
+        zeroipc::pool<int> pool(shm, "batch_release", 50);
         
         // Acquire some objects
-        std::vector<shm_object_pool<int>::handle_type> handles;
+        std::vector<zeroipc::pool<int>::handle_type> handles;
         for (int i = 0; i < 25; ++i) {
             handles.push_back(pool.acquire());
         }
@@ -186,16 +186,16 @@ TEST_CASE("shm_object_pool batch operations", "[shm_object_pool]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_object_pool reuse patterns", "[shm_object_pool]") {
+TEST_CASE("zeroipc::pool reuse patterns", "[zeroipc::pool]") {
     const std::string shm_name = "/test_pool_reuse";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("LIFO reuse pattern") {
-        shm_object_pool<int> pool(shm, "lifo_pool", 5);
+        zeroipc::pool<int> pool(shm, "lifo_pool", 5);
         
         // Acquire all
-        std::vector<shm_object_pool<int>::handle_type> handles;
+        std::vector<zeroipc::pool<int>::handle_type> handles;
         for (int i = 0; i < 5; ++i) {
             handles.push_back(pool.acquire());
         }
@@ -214,10 +214,10 @@ TEST_CASE("shm_object_pool reuse patterns", "[shm_object_pool]") {
     }
 
     SECTION("Rapid acquire/release cycles") {
-        shm_object_pool<int> pool(shm, "cycle_pool", 3);
+        zeroipc::pool<int> pool(shm, "cycle_pool", 3);
         
         for (int cycle = 0; cycle < 100; ++cycle) {
-            std::vector<shm_object_pool<int>::handle_type> handles;
+            std::vector<zeroipc::pool<int>::handle_type> handles;
             
             // Acquire all
             for (int i = 0; i < 3; ++i) {
@@ -248,13 +248,13 @@ TEST_CASE("shm_object_pool reuse patterns", "[shm_object_pool]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_object_pool unsafe access", "[shm_object_pool]") {
+TEST_CASE("zeroipc::pool unsafe access", "[zeroipc::pool]") {
     const std::string shm_name = "/test_pool_unsafe";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Access all objects view") {
-        shm_object_pool<int> pool(shm, "unsafe_pool", 10);
+        zeroipc::pool<int> pool(shm, "unsafe_pool", 10);
         
         // Get view of all objects
         auto all_objects = pool.unsafe_all_objects();
@@ -280,13 +280,13 @@ TEST_CASE("shm_object_pool unsafe access", "[shm_object_pool]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_object_pool concurrent operations", "[shm_object_pool][concurrent]") {
+TEST_CASE("zeroipc::pool concurrent operations", "[zeroipc::pool][concurrent]") {
     const std::string shm_name = "/test_pool_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Multiple threads acquiring and releasing") {
-        shm_object_pool<int> pool(shm, "concurrent_pool", 1000);
+        zeroipc::pool<int> pool(shm, "concurrent_pool", 1000);
         const int num_threads = 4;
         const int ops_per_thread = 10000;
         
@@ -297,7 +297,7 @@ TEST_CASE("shm_object_pool concurrent operations", "[shm_object_pool][concurrent
         
         for (int t = 0; t < num_threads; ++t) {
             threads.emplace_back([&pool, &total_acquired, &total_released, t, ops_per_thread]() {
-                std::vector<shm_object_pool<int>::handle_type> my_handles;
+                std::vector<zeroipc::pool<int>::handle_type> my_handles;
                 
                 for (int op = 0; op < ops_per_thread; ++op) {
                     // Acquire phase
@@ -335,7 +335,7 @@ TEST_CASE("shm_object_pool concurrent operations", "[shm_object_pool][concurrent
     }
 
     SECTION("Stress test with rapid cycling") {
-        shm_object_pool<uint64_t> pool(shm, "stress_pool", 100);
+        zeroipc::pool<uint64_t> pool(shm, "stress_pool", 100);
         const int num_threads = 8;
         const int cycles = 1000;
         
@@ -382,7 +382,7 @@ TEST_CASE("shm_object_pool concurrent operations", "[shm_object_pool][concurrent
     shm.unlink();
 }
 
-TEST_CASE("shm_object_pool cross-process", "[shm_object_pool][process]") {
+TEST_CASE("zeroipc::pool cross-process", "[zeroipc::pool][process]") {
     const std::string shm_name = "/test_pool_process";
     shm_unlink(shm_name.c_str());
     
@@ -394,10 +394,10 @@ TEST_CASE("shm_object_pool cross-process", "[shm_object_pool][process]") {
         };
         
         // Process 1: Create pool and allocate some entities
-        std::vector<shm_object_pool<Entity>::handle_type> persisted_handles;
+        std::vector<zeroipc::pool<Entity>::handle_type> persisted_handles;
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_object_pool<Entity> pool(shm1, "entity_pool", 100);
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::pool<Entity> pool(shm1, "entity_pool", 100);
             
             // Create some entities
             for (uint32_t i = 0; i < 10; ++i) {
@@ -420,8 +420,8 @@ TEST_CASE("shm_object_pool cross-process", "[shm_object_pool][process]") {
         
         // Process 2: Open pool and verify entities
         {
-            posix_shm shm2(shm_name, 0);
-            shm_object_pool<Entity> pool(shm2, "entity_pool");
+            zeroipc::memory shm2(shm_name, 0);
+            zeroipc::pool<Entity> pool(shm2, "entity_pool");
             
             REQUIRE(pool.capacity() == 100);
             REQUIRE(pool.num_allocated() == 10);
@@ -450,8 +450,8 @@ TEST_CASE("shm_object_pool cross-process", "[shm_object_pool][process]") {
         
         // Process 3: Verify final state
         {
-            posix_shm shm3(shm_name, 0);
-            shm_object_pool<Entity> pool(shm3, "entity_pool");
+            zeroipc::memory shm3(shm_name, 0);
+            zeroipc::pool<Entity> pool(shm3, "entity_pool");
             
             REQUIRE(pool.num_allocated() == 15);
             REQUIRE(pool.num_available() == 85);
@@ -461,13 +461,13 @@ TEST_CASE("shm_object_pool cross-process", "[shm_object_pool][process]") {
     shm_unlink(shm_name.c_str());
 }
 
-TEST_CASE("shm_object_pool edge cases", "[shm_object_pool]") {
+TEST_CASE("zeroipc::pool edge cases", "[zeroipc::pool]") {
     const std::string shm_name = "/test_pool_edge";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Invalid handle operations") {
-        shm_object_pool<int> pool(shm, "edge_pool", 10);
+        zeroipc::pool<int> pool(shm, "edge_pool", 10);
         
         // Release invalid handle (should be safe)
         pool.release(pool.invalid_handle);
@@ -485,7 +485,7 @@ TEST_CASE("shm_object_pool edge cases", "[shm_object_pool]") {
     }
 
     SECTION("Double release") {
-        shm_object_pool<int> pool(shm, "double_release", 5);
+        zeroipc::pool<int> pool(shm, "double_release", 5);
         
         auto h = pool.acquire();
         pool[h] = 42;
@@ -502,12 +502,12 @@ TEST_CASE("shm_object_pool edge cases", "[shm_object_pool]") {
     }
 
     SECTION("Empty pool operations") {
-        shm_object_pool<int> pool(shm, "empty_ops", 10);
+        zeroipc::pool<int> pool(shm, "empty_ops", 10);
         
         REQUIRE(pool.empty());
         
         // Batch acquire on empty pool
-        shm_object_pool<int>::handle_type handles[5];
+        zeroipc::pool<int>::handle_type handles[5];
         size_t acquired = pool.acquire_batch(5, handles);
         REQUIRE(acquired == 5);
         

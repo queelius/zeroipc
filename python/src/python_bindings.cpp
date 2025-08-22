@@ -1,6 +1,6 @@
 /**
  * @file python_bindings.cpp
- * @brief Python bindings for posix_shm using pybind11
+ * @brief Python bindings for zeroipc::memory using pybind11
  * @author Alex Towell
  */
 
@@ -9,16 +9,16 @@
 #include <pybind11/functional.h>
 #include <pybind11/numpy.h>
 
-#include "../../include/posix_shm.h"
-#include "../../include/shm_array.h"
-#include "../../include/shm_queue.h"
-#include "../../include/shm_stack.h"
-#include "../../include/shm_hash_map.h"
-#include "../../include/shm_set.h"
-#include "../../include/shm_bitset.h"
-#include "../../include/shm_ring_buffer.h"
-#include "../../include/shm_object_pool.h"
-#include "../../include/shm_atomic.h"
+#include "../../include/zeroipc::memory.h"
+#include "../../include/zeroipc::array.h"
+#include "../../include/zeroipc::queue.h"
+#include "../../include/zeroipc::stack.h"
+#include "../../include/zeroipc::map.h"
+#include "../../include/zeroipc::set.h"
+#include "../../include/zeroipc::bitset.h"
+#include "../../include/zeroipc::ring.h"
+#include "../../include/zeroipc::pool.h"
+#include "../../include/zeroipc::atomic_value.h"
 
 namespace py = pybind11;
 
@@ -29,10 +29,10 @@ namespace py = pybind11;
 // Helper class to manage object lifetime in Python
 template<typename T>
 class PythonShmObject {
-    posix_shm* shm_ptr;
+    zeroipc::memory* shm_ptr;
     std::unique_ptr<T> obj;
 public:
-    PythonShmObject(posix_shm& shm, const std::string& name, size_t capacity = 0) 
+    PythonShmObject(zeroipc::memory& shm, const std::string& name, size_t capacity = 0) 
         : shm_ptr(&shm), obj(std::make_unique<T>(shm, name, capacity)) {}
     T* operator->() { return obj.get(); }
     T& operator*() { return *obj; }
@@ -51,178 +51,178 @@ PYBIND11_MODULE(posix_shm_py, m) {
 
     // ========== Core Classes ==========
     
-    // posix_shm
-    py::class_<posix_shm>(m, "SharedMemory")
+    // zeroipc::memory
+    py::class_<zeroipc::memory>(m, "SharedMemory")
         .def(py::init<const std::string&, size_t>(),
              py::arg("name"), py::arg("size"),
              "Create or attach to shared memory segment")
-        .def("unlink", &posix_shm::unlink,
+        .def("unlink", &zeroipc::memory::unlink,
              "Remove shared memory segment")
-        .def("__repr__", [](const posix_shm& self) {
+        .def("__repr__", [](const zeroipc::memory& self) {
             return "<SharedMemory>";
         });
 
     // ========== Atomic Types ==========
     
-    py::class_<shm_atomic<int>>(m, "AtomicInt")
-        .def(py::init<posix_shm&, const std::string&, int>(),
+    py::class_<zeroipc::atomic_value<int>>(m, "AtomicInt")
+        .def(py::init<zeroipc::memory&, const std::string&, int>(),
              py::arg("shm"), py::arg("name"), py::arg("initial") = 0)
-        .def("load", &shm_atomic<int>::load)
-        .def("store", &shm_atomic<int>::store)
-        .def("exchange", &shm_atomic<int>::exchange)
-        .def("compare_exchange", [](shm_atomic<int>& self, int expected, int desired) {
+        .def("load", &zeroipc::atomic_value<int>::load)
+        .def("store", &zeroipc::atomic_value<int>::store)
+        .def("exchange", &zeroipc::atomic_value<int>::exchange)
+        .def("compare_exchange", [](zeroipc::atomic_value<int>& self, int expected, int desired) {
             return self.compare_exchange_strong(expected, desired);
         })
-        .def("fetch_add", &shm_atomic<int>::fetch_add)
-        .def("fetch_sub", &shm_atomic<int>::fetch_sub)
-        .def("__iadd__", [](shm_atomic<int>& self, int val) { 
+        .def("fetch_add", &zeroipc::atomic_value<int>::fetch_add)
+        .def("fetch_sub", &zeroipc::atomic_value<int>::fetch_sub)
+        .def("__iadd__", [](zeroipc::atomic_value<int>& self, int val) { 
             self.fetch_add(val); return self; 
         })
-        .def("__isub__", [](shm_atomic<int>& self, int val) { 
+        .def("__isub__", [](zeroipc::atomic_value<int>& self, int val) { 
             self.fetch_sub(val); return self; 
         })
-        .def("__int__", &shm_atomic<int>::load)
-        .def("__repr__", [](shm_atomic<int>& self) {
+        .def("__int__", &zeroipc::atomic_value<int>::load)
+        .def("__repr__", [](zeroipc::atomic_value<int>& self) {
             return "<AtomicInt value=" + std::to_string(self.load()) + ">";
         });
 
     // ========== Queue ==========
     
-    py::class_<shm_queue<int>>(m, "IntQueue")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::queue<int>>(m, "IntQueue")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("enqueue", &shm_queue<int>::enqueue, "Add element to queue")
-        .def("dequeue", [](shm_queue<int>& self) -> py::object {
+        .def("enqueue", &zeroipc::queue<int>::enqueue, "Add element to queue")
+        .def("dequeue", [](zeroipc::queue<int>& self) -> py::object {
             auto val = self.dequeue();
             if (val) return py::cast(*val);
             return py::none();
         }, "Remove and return element from queue")
-        .def("push", &shm_queue<int>::enqueue, "Alias for enqueue")
-        .def("pop", [](shm_queue<int>& self) -> py::object {
+        .def("push", &zeroipc::queue<int>::enqueue, "Alias for enqueue")
+        .def("pop", [](zeroipc::queue<int>& self) -> py::object {
             auto val = self.dequeue();
             if (val) return py::cast(*val);
             return py::none();
         }, "Alias for dequeue")
-        .def("full", &shm_queue<int>::full)
-        .def("capacity", &shm_queue<int>::capacity)
-        .def("size", &shm_queue<int>::size)
-        .def("empty", &shm_queue<int>::empty)
-        .def("__len__", &shm_queue<int>::size)
-        .def("__bool__", [](const shm_queue<int>& self) { return !self.empty(); });
+        .def("full", &zeroipc::queue<int>::full)
+        .def("capacity", &zeroipc::queue<int>::capacity)
+        .def("size", &zeroipc::queue<int>::size)
+        .def("empty", &zeroipc::queue<int>::empty)
+        .def("__len__", &zeroipc::queue<int>::size)
+        .def("__bool__", [](const zeroipc::queue<int>& self) { return !self.empty(); });
 
-    py::class_<shm_queue<double>>(m, "FloatQueue")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::queue<double>>(m, "FloatQueue")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("enqueue", &shm_queue<double>::enqueue)
-        .def("dequeue", [](shm_queue<double>& self) -> py::object {
+        .def("enqueue", &zeroipc::queue<double>::enqueue)
+        .def("dequeue", [](zeroipc::queue<double>& self) -> py::object {
             auto val = self.dequeue();
             if (val) return py::cast(*val);
             return py::none();
         })
-        .def("size", &shm_queue<double>::size)
-        .def("empty", &shm_queue<double>::empty)
-        .def("__len__", &shm_queue<double>::size)
-        .def("__bool__", [](const shm_queue<double>& self) { return !self.empty(); });
+        .def("size", &zeroipc::queue<double>::size)
+        .def("empty", &zeroipc::queue<double>::empty)
+        .def("__len__", &zeroipc::queue<double>::size)
+        .def("__bool__", [](const zeroipc::queue<double>& self) { return !self.empty(); });
 
     // ========== Stack ==========
     
-    py::class_<shm_stack<int>>(m, "IntStack")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::stack<int>>(m, "IntStack")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("push", &shm_stack<int>::push, "Push element onto stack")
-        .def("pop", [](shm_stack<int>& self) -> py::object {
+        .def("push", &zeroipc::stack<int>::push, "Push element onto stack")
+        .def("pop", [](zeroipc::stack<int>& self) -> py::object {
             auto val = self.pop();
             if (val) return py::cast(*val);
             return py::none();
         }, "Pop element from stack")
-        .def("top", [](shm_stack<int>& self) -> py::object {
+        .def("top", [](zeroipc::stack<int>& self) -> py::object {
             auto val = self.top();
             if (val) return py::cast(*val);
             return py::none();
         }, "Peek at top element")
-        .def("clear", &shm_stack<int>::clear)
-        .def("full", &shm_stack<int>::full)
-        .def("capacity", &shm_stack<int>::capacity)
-        .def("size", &shm_stack<int>::size)
-        .def("empty", &shm_stack<int>::empty)
-        .def("__len__", &shm_stack<int>::size)
-        .def("__bool__", [](const shm_stack<int>& self) { return !self.empty(); });
+        .def("clear", &zeroipc::stack<int>::clear)
+        .def("full", &zeroipc::stack<int>::full)
+        .def("capacity", &zeroipc::stack<int>::capacity)
+        .def("size", &zeroipc::stack<int>::size)
+        .def("empty", &zeroipc::stack<int>::empty)
+        .def("__len__", &zeroipc::stack<int>::size)
+        .def("__bool__", [](const zeroipc::stack<int>& self) { return !self.empty(); });
 
     // ========== Hash Map ==========
     
-    py::class_<shm_hash_map<int, double>>(m, "IntFloatMap")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::map<int, double>>(m, "IntFloatMap")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("insert", &shm_hash_map<int, double>::insert,
+        .def("insert", &zeroipc::map<int, double>::insert,
              "Insert key-value pair")
-        .def("find", [](shm_hash_map<int, double>& self, int key) -> py::object {
+        .def("find", [](zeroipc::map<int, double>& self, int key) -> py::object {
             auto* val = self.find(key);
             if (val) return py::cast(*val);
             return py::none();
         }, "Find value by key")
-        .def("update", &shm_hash_map<int, double>::update,
+        .def("update", &zeroipc::map<int, double>::update,
              "Update existing key")
-        .def("erase", &shm_hash_map<int, double>::erase,
+        .def("erase", &zeroipc::map<int, double>::erase,
              "Remove key-value pair")
-        .def("contains", &shm_hash_map<int, double>::contains,
+        .def("contains", &zeroipc::map<int, double>::contains,
              "Check if key exists")
-        .def("clear", &shm_hash_map<int, double>::clear)
-        .def("__setitem__", [](shm_hash_map<int, double>& self, int key, double value) {
+        .def("clear", &zeroipc::map<int, double>::clear)
+        .def("__setitem__", [](zeroipc::map<int, double>& self, int key, double value) {
             self.insert_or_update(key, value);
         })
-        .def("__getitem__", [](shm_hash_map<int, double>& self, int key) -> double {
+        .def("__getitem__", [](zeroipc::map<int, double>& self, int key) -> double {
             auto* val = self.find(key);
             if (!val) throw py::key_error("Key not found: " + std::to_string(key));
             return *val;
         })
-        .def("__delitem__", [](shm_hash_map<int, double>& self, int key) {
+        .def("__delitem__", [](zeroipc::map<int, double>& self, int key) {
             if (!self.erase(key)) {
                 throw py::key_error("Key not found: " + std::to_string(key));
             }
         })
-        .def("__contains__", &shm_hash_map<int, double>::contains)
-        .def("get", [](shm_hash_map<int, double>& self, int key, py::object default_val) -> py::object {
+        .def("__contains__", &zeroipc::map<int, double>::contains)
+        .def("get", [](zeroipc::map<int, double>& self, int key, py::object default_val) -> py::object {
             auto* val = self.find(key);
             if (val) return py::cast(*val);
             return default_val;
         }, py::arg("key"), py::arg("default") = py::none())
-        .def("items", [](shm_hash_map<int, double>& self) {
+        .def("items", [](zeroipc::map<int, double>& self) {
             py::list items;
             self.for_each([&items](int key, double value) {
                 items.append(py::make_tuple(key, value));
             });
             return items;
         })
-        .def("keys", [](shm_hash_map<int, double>& self) {
+        .def("keys", [](zeroipc::map<int, double>& self) {
             py::list keys;
             self.for_each([&keys](int key, double) {
                 keys.append(key);
             });
             return keys;
         })
-        .def("values", [](shm_hash_map<int, double>& self) {
+        .def("values", [](zeroipc::map<int, double>& self) {
             py::list values;
             self.for_each([&values](int, double value) {
                 values.append(value);
             });
             return values;
         })
-        .def("size", &shm_hash_map<int, double>::size)
-        .def("empty", &shm_hash_map<int, double>::empty)
-        .def("__len__", &shm_hash_map<int, double>::size)
-        .def("__bool__", [](const shm_hash_map<int, double>& self) { return !self.empty(); });
+        .def("size", &zeroipc::map<int, double>::size)
+        .def("empty", &zeroipc::map<int, double>::empty)
+        .def("__len__", &zeroipc::map<int, double>::size)
+        .def("__bool__", [](const zeroipc::map<int, double>& self) { return !self.empty(); });
 
     // String key variant
-    py::class_<shm_hash_map<uint64_t, double>>(m, "StringFloatMap")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::map<uint64_t, double>>(m, "StringFloatMap")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("__setitem__", [](shm_hash_map<uint64_t, double>& self, 
+        .def("__setitem__", [](zeroipc::map<uint64_t, double>& self, 
                                const std::string& key, double value) {
             // Simple string hash for demo
             std::hash<std::string> hasher;
             self.insert_or_update(hasher(key), value);
         })
-        .def("__getitem__", [](shm_hash_map<uint64_t, double>& self, 
+        .def("__getitem__", [](zeroipc::map<uint64_t, double>& self, 
                                const std::string& key) -> double {
             std::hash<std::string> hasher;
             auto* val = self.find(hasher(key));
@@ -232,90 +232,90 @@ PYBIND11_MODULE(posix_shm_py, m) {
 
     // ========== Set ==========
     
-    py::class_<shm_set<int>>(m, "IntSet")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::set<int>>(m, "IntSet")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("capacity") = 0)
-        .def("insert", &shm_set<int>::insert, "Add element to set")
-        .def("add", &shm_set<int>::insert, "Alias for insert")
-        .def("erase", &shm_set<int>::erase, "Remove element from set")
-        .def("remove", &shm_set<int>::erase, "Alias for erase")
-        .def("contains", &shm_set<int>::contains, "Check if element exists")
-        .def("clear", &shm_set<int>::clear)
-        .def("__contains__", &shm_set<int>::contains)
-        .def("union", [](shm_set<int>& self, posix_shm& shm, 
-                        const std::string& name, shm_set<int>& other) {
+        .def("insert", &zeroipc::set<int>::insert, "Add element to set")
+        .def("add", &zeroipc::set<int>::insert, "Alias for insert")
+        .def("erase", &zeroipc::set<int>::erase, "Remove element from set")
+        .def("remove", &zeroipc::set<int>::erase, "Alias for erase")
+        .def("contains", &zeroipc::set<int>::contains, "Check if element exists")
+        .def("clear", &zeroipc::set<int>::clear)
+        .def("__contains__", &zeroipc::set<int>::contains)
+        .def("union", [](zeroipc::set<int>& self, zeroipc::memory& shm, 
+                        const std::string& name, zeroipc::set<int>& other) {
             return self.set_union(shm, name, other);
         })
-        .def("intersection", [](shm_set<int>& self, posix_shm& shm,
-                               const std::string& name, shm_set<int>& other) {
+        .def("intersection", [](zeroipc::set<int>& self, zeroipc::memory& shm,
+                               const std::string& name, zeroipc::set<int>& other) {
             return self.set_intersection(shm, name, other);
         })
-        .def("difference", [](shm_set<int>& self, posix_shm& shm,
-                            const std::string& name, shm_set<int>& other) {
+        .def("difference", [](zeroipc::set<int>& self, zeroipc::memory& shm,
+                            const std::string& name, zeroipc::set<int>& other) {
             return self.set_difference(shm, name, other);
         })
-        .def("is_subset", &shm_set<int>::is_subset_of)
-        .def("is_superset", &shm_set<int>::is_superset_of)
-        .def("is_disjoint", &shm_set<int>::is_disjoint)
-        .def("size", &shm_set<int>::size)
-        .def("empty", &shm_set<int>::empty)
-        .def("__len__", &shm_set<int>::size)
-        .def("__bool__", [](const shm_set<int>& self) { return !self.empty(); });
+        .def("is_subset", &zeroipc::set<int>::is_subset_of)
+        .def("is_superset", &zeroipc::set<int>::is_superset_of)
+        .def("is_disjoint", &zeroipc::set<int>::is_disjoint)
+        .def("size", &zeroipc::set<int>::size)
+        .def("empty", &zeroipc::set<int>::empty)
+        .def("__len__", &zeroipc::set<int>::size)
+        .def("__bool__", [](const zeroipc::set<int>& self) { return !self.empty(); });
 
     // ========== Bitset ==========
     
-    py::class_<shm_bitset<1024>>(m, "Bitset1024")
-        .def(py::init<posix_shm&, const std::string&>(),
+    py::class_<zeroipc::bitset<1024>>(m, "Bitset1024")
+        .def(py::init<zeroipc::memory&, const std::string&>(),
              py::arg("shm"), py::arg("name"))
-        .def("set", py::overload_cast<size_t>(&shm_bitset<1024>::set),
+        .def("set", py::overload_cast<size_t>(&zeroipc::bitset<1024>::set),
              "Set bit to true")
-        .def("set", py::overload_cast<size_t, bool>(&shm_bitset<1024>::set),
+        .def("set", py::overload_cast<size_t, bool>(&zeroipc::bitset<1024>::set),
              "Set bit to value")
-        .def("reset", py::overload_cast<size_t>(&shm_bitset<1024>::reset),
+        .def("reset", py::overload_cast<size_t>(&zeroipc::bitset<1024>::reset),
              "Clear bit")
-        .def("flip", py::overload_cast<size_t>(&shm_bitset<1024>::flip),
+        .def("flip", py::overload_cast<size_t>(&zeroipc::bitset<1024>::flip),
              "Flip bit")
-        .def("test", &shm_bitset<1024>::test, "Test if bit is set")
-        .def("set_all", py::overload_cast<>(&shm_bitset<1024>::set),
+        .def("test", &zeroipc::bitset<1024>::test, "Test if bit is set")
+        .def("set_all", py::overload_cast<>(&zeroipc::bitset<1024>::set),
              "Set all bits")
-        .def("reset_all", py::overload_cast<>(&shm_bitset<1024>::reset),
+        .def("reset_all", py::overload_cast<>(&zeroipc::bitset<1024>::reset),
              "Clear all bits")
-        .def("flip_all", py::overload_cast<>(&shm_bitset<1024>::flip),
+        .def("flip_all", py::overload_cast<>(&zeroipc::bitset<1024>::flip),
              "Flip all bits")
-        .def("count", &shm_bitset<1024>::count, "Count set bits")
-        .def("size", &shm_bitset<1024>::size, "Total number of bits")
-        .def("all", &shm_bitset<1024>::all, "Check if all bits set")
-        .def("any", &shm_bitset<1024>::any, "Check if any bit set")
-        .def("none", &shm_bitset<1024>::none, "Check if no bits set")
-        .def("find_first", &shm_bitset<1024>::find_first,
+        .def("count", &zeroipc::bitset<1024>::count, "Count set bits")
+        .def("size", &zeroipc::bitset<1024>::size, "Total number of bits")
+        .def("all", &zeroipc::bitset<1024>::all, "Check if all bits set")
+        .def("any", &zeroipc::bitset<1024>::any, "Check if any bit set")
+        .def("none", &zeroipc::bitset<1024>::none, "Check if no bits set")
+        .def("find_first", &zeroipc::bitset<1024>::find_first,
              "Find first set bit")
-        .def("find_next", &shm_bitset<1024>::find_next,
+        .def("find_next", &zeroipc::bitset<1024>::find_next,
              "Find next set bit after position")
-        .def("__getitem__", &shm_bitset<1024>::test)
-        .def("__setitem__", [](shm_bitset<1024>& self, size_t pos, bool val) {
+        .def("__getitem__", &zeroipc::bitset<1024>::test)
+        .def("__setitem__", [](zeroipc::bitset<1024>& self, size_t pos, bool val) {
             self.set(pos, val);
         })
-        .def("__len__", &shm_bitset<1024>::size)
-        .def("__repr__", [](shm_bitset<1024>& self) {
+        .def("__len__", &zeroipc::bitset<1024>::size)
+        .def("__repr__", [](zeroipc::bitset<1024>& self) {
             return "<Bitset1024 set=" + std::to_string(self.count()) + 
                    "/" + std::to_string(self.size()) + ">";
         });
 
     // ========== Array ==========
     
-    py::class_<shm_array<double>>(m, "FloatArray")
-        .def(py::init<posix_shm&, const std::string&, size_t>(),
+    py::class_<zeroipc::array<double>>(m, "FloatArray")
+        .def(py::init<zeroipc::memory&, const std::string&, size_t>(),
              py::arg("shm"), py::arg("name"), py::arg("size"))
-        .def("__getitem__", [](shm_array<double>& self, size_t i) {
+        .def("__getitem__", [](zeroipc::array<double>& self, size_t i) {
             if (i >= self.size()) throw py::index_error("Index out of range");
             return self[i];
         })
-        .def("__setitem__", [](shm_array<double>& self, size_t i, double val) {
+        .def("__setitem__", [](zeroipc::array<double>& self, size_t i, double val) {
             if (i >= self.size()) throw py::index_error("Index out of range");
             self[i] = val;
         })
-        .def("__len__", &shm_array<double>::size)
-        .def("to_numpy", [](shm_array<double>& self) {
+        .def("__len__", &zeroipc::array<double>::size)
+        .def("to_numpy", [](zeroipc::array<double>& self) {
             // Zero-copy numpy array view
             return py::array_t<double>(
                 {self.size()},  // shape
@@ -324,7 +324,7 @@ PYBIND11_MODULE(posix_shm_py, m) {
                 py::cast(self)  // parent object to keep alive
             );
         }, "Get numpy array view (zero-copy)")
-        .def("from_numpy", [](shm_array<double>& self, py::array_t<double> arr) {
+        .def("from_numpy", [](zeroipc::array<double>& self, py::array_t<double> arr) {
             if (arr.size() != self.size()) {
                 throw std::runtime_error("Array size mismatch");
             }
@@ -333,12 +333,12 @@ PYBIND11_MODULE(posix_shm_py, m) {
 
     // ========== Utility Functions ==========
     
-    m.def("exists", [](posix_shm& shm, const std::string& type, const std::string& name) {
-        if (type == "queue_int") return shm_queue<int>::exists(shm, name);
-        if (type == "stack_int") return shm_stack<int>::exists(shm, name);
-        if (type == "map_int_float") return shm_hash_map<int, double>::exists(shm, name);
-        if (type == "set_int") return shm_set<int>::exists(shm, name);
-        if (type == "bitset_1024") return shm_bitset<1024>::exists(shm, name);
+    m.def("exists", [](zeroipc::memory& shm, const std::string& type, const std::string& name) {
+        if (type == "queue_int") return zeroipc::queue<int>::exists(shm, name);
+        if (type == "stack_int") return zeroipc::stack<int>::exists(shm, name);
+        if (type == "map_int_float") return zeroipc::map<int, double>::exists(shm, name);
+        if (type == "set_int") return zeroipc::set<int>::exists(shm, name);
+        if (type == "bitset_1024") return zeroipc::bitset<1024>::exists(shm, name);
         return false;
     }, "Check if a data structure exists in shared memory");
 

@@ -1,14 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_array.h"
-#include "shm_queue.h"
-#include "shm_stack.h"
-#include "shm_hash_map.h"
-#include "shm_bitset.h"
-#include "shm_ring_buffer.h"
-#include "shm_object_pool.h"
-#include "shm_set.h"
+#include "zeroipc.h"
+#include "array.h"
+#include "queue.h"
+#include "stack.h"
+#include "map.h"
+#include "bitset.h"
+#include "ring.h"
+#include "pool.h"
+#include "set.h"
 #include <thread>
 #include <vector>
 #include <random>
@@ -18,15 +18,15 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
     shm_unlink(shm_name.c_str());
     
     SECTION("Create one of each data structure type") {
-        posix_shm shm(shm_name, 20 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 20 * 1024 * 1024);
         
         // Create various data structures
-        shm_array<double> array(shm, "sensor_data", 1000);
-        shm_queue<int> queue(shm, "event_queue", 500);
-        shm_stack<float> stack(shm, "undo_stack", 200);
-        shm_hash_map<int, double> map(shm, "config_map", 100);
-        shm_hash_map<uint32_t, bool> set(shm, "id_set", 150);  // Use hash_map as a set
-        shm_bitset<1024> bits(shm, "feature_flags");
+        zeroipc::array<double> array(shm, "sensor_data", 1000);
+        zeroipc::queue<int> queue(shm, "event_queue", 500);
+        zeroipc::stack<float> stack(shm, "undo_stack", 200);
+        zeroipc::map<int, double> map(shm, "config_map", 100);
+        zeroipc::map<uint32_t, bool> set(shm, "id_set", 150);  // Use hash_map as a set
+        zeroipc::bitset<1024> bits(shm, "feature_flags");
         
         // Populate each structure
         for (size_t i = 0; i < 10; i++) {
@@ -76,23 +76,23 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
     }
     
     SECTION("Multiple instances of each type") {
-        posix_shm shm(shm_name, 50 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 50 * 1024 * 1024);
         
         // Create multiple instances of each type
-        std::vector<std::unique_ptr<shm_array<int>>> arrays;
-        std::vector<std::unique_ptr<shm_queue<double>>> queues;
-        std::vector<std::unique_ptr<shm_stack<uint32_t>>> stacks;
-        std::vector<std::unique_ptr<shm_hash_map<int, int>>> maps;
+        std::vector<std::unique_ptr<zeroipc::array<int>>> arrays;
+        std::vector<std::unique_ptr<zeroipc::queue<double>>> queues;
+        std::vector<std::unique_ptr<zeroipc::stack<uint32_t>>> stacks;
+        std::vector<std::unique_ptr<zeroipc::map<int, int>>> maps;
         
         // Create 3 instances of each type
         for (int i = 0; i < 3; i++) {
-            arrays.push_back(std::make_unique<shm_array<int>>(
+            arrays.push_back(std::make_unique<zeroipc::array<int>>(
                 shm, "array_" + std::to_string(i), 100));
-            queues.push_back(std::make_unique<shm_queue<double>>(
+            queues.push_back(std::make_unique<zeroipc::queue<double>>(
                 shm, "queue_" + std::to_string(i), 50));
-            stacks.push_back(std::make_unique<shm_stack<uint32_t>>(
+            stacks.push_back(std::make_unique<zeroipc::stack<uint32_t>>(
                 shm, "stack_" + std::to_string(i), 30));
-            maps.push_back(std::make_unique<shm_hash_map<int, int>>(
+            maps.push_back(std::make_unique<zeroipc::map<int, int>>(
                 shm, "map_" + std::to_string(i), 40));
         }
         
@@ -135,12 +135,12 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
     }
     
     SECTION("Producer-consumer with mixed structures") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
-        shm_queue<int> work_queue(shm, "work_queue", 100);
-        shm_stack<int> result_stack(shm, "results", 100);
-        shm_hash_map<int, int> status_map(shm, "status", 100);
-        shm_array<int> counters(shm, "counters", 10);
+        zeroipc::queue<int> work_queue(shm, "work_queue", 100);
+        zeroipc::stack<int> result_stack(shm, "results", 100);
+        zeroipc::map<int, int> status_map(shm, "status", 100);
+        zeroipc::array<int> counters(shm, "counters", 10);
         
         // Initialize counters
         for (int i = 0; i < 10; i++) {
@@ -198,14 +198,14 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
     SECTION("Persistence test with all structure types") {
         // First process: create and populate
         {
-            posix_shm shm(shm_name, 10 * 1024 * 1024);
+            zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
             
-            shm_array<int> arr(shm, "persist_array", 100);
-            shm_queue<double> queue(shm, "persist_queue", 50);
-            shm_stack<uint64_t> stack(shm, "persist_stack", 30);
-            shm_hash_map<int, float> map(shm, "persist_map", 40);
-            shm_hash_map<int, bool> set(shm, "persist_set", 50);  // Use hash_map as a set
-            shm_bitset<256> bits(shm, "persist_bits");
+            zeroipc::array<int> arr(shm, "persist_array", 100);
+            zeroipc::queue<double> queue(shm, "persist_queue", 50);
+            zeroipc::stack<uint64_t> stack(shm, "persist_stack", 30);
+            zeroipc::map<int, float> map(shm, "persist_map", 40);
+            zeroipc::map<int, bool> set(shm, "persist_set", 50);  // Use hash_map as a set
+            zeroipc::bitset<256> bits(shm, "persist_bits");
             
             // Populate
             arr[0] = 42;
@@ -229,14 +229,14 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
         
         // Second process: open and verify
         {
-            posix_shm shm(shm_name);
+            zeroipc::memory shm(shm_name);
             
-            shm_array<int> arr(shm, "persist_array");
-            shm_queue<double> queue(shm, "persist_queue");
-            shm_stack<uint64_t> stack(shm, "persist_stack");
-            shm_hash_map<int, float> map(shm, "persist_map");
-            shm_hash_map<int, bool> set(shm, "persist_set");  // Use hash_map as a set
-            shm_bitset<256> bits(shm, "persist_bits");
+            zeroipc::array<int> arr(shm, "persist_array");
+            zeroipc::queue<double> queue(shm, "persist_queue");
+            zeroipc::stack<uint64_t> stack(shm, "persist_stack");
+            zeroipc::map<int, float> map(shm, "persist_map");
+            zeroipc::map<int, bool> set(shm, "persist_set");  // Use hash_map as a set
+            zeroipc::bitset<256> bits(shm, "persist_bits");
             
             // Verify all data persisted correctly
             REQUIRE(arr[0] == 42);
@@ -267,15 +267,15 @@ TEST_CASE("Multiple data structure types in same shared memory", "[integration][
     }
     
     SECTION("Memory layout verification") {
-        posix_shm shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
         
         // Create structures in specific order
-        shm_array<uint64_t> arr1(shm, "layout_arr1", 100);
-        shm_queue<int> queue1(shm, "layout_queue1", 50);
-        shm_stack<double> stack1(shm, "layout_stack1", 75);
-        shm_hash_map<int, int> map1(shm, "layout_map1", 60);
-        shm_array<float> arr2(shm, "layout_arr2", 200);
-        shm_queue<uint32_t> queue2(shm, "layout_queue2", 100);
+        zeroipc::array<uint64_t> arr1(shm, "layout_arr1", 100);
+        zeroipc::queue<int> queue1(shm, "layout_queue1", 50);
+        zeroipc::stack<double> stack1(shm, "layout_stack1", 75);
+        zeroipc::map<int, int> map1(shm, "layout_map1", 60);
+        zeroipc::array<float> arr2(shm, "layout_arr2", 200);
+        zeroipc::queue<uint32_t> queue2(shm, "layout_queue2", 100);
         
         // All structures should be properly aligned and not overlap
         // Fill with test data
@@ -329,11 +329,11 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
     
     SECTION("Maximum structures in limited memory") {
         // Use smaller shared memory to test limits
-        posix_shm shm(shm_name, 5 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 5 * 1024 * 1024);
         
-        std::vector<std::unique_ptr<shm_array<int>>> arrays;
-        std::vector<std::unique_ptr<shm_queue<int>>> queues;
-        std::vector<std::unique_ptr<shm_stack<int>>> stacks;
+        std::vector<std::unique_ptr<zeroipc::array<int>>> arrays;
+        std::vector<std::unique_ptr<zeroipc::queue<int>>> queues;
+        std::vector<std::unique_ptr<zeroipc::stack<int>>> stacks;
         
         // Try to create as many structures as possible
         int array_count = 0, queue_count = 0, stack_count = 0;
@@ -341,7 +341,7 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         // Create arrays until we run out of space
         for (int i = 0; i < 100; i++) {
             try {
-                arrays.push_back(std::make_unique<shm_array<int>>(
+                arrays.push_back(std::make_unique<zeroipc::array<int>>(
                     shm, "arr_" + std::to_string(i), 100));
                 array_count++;
             } catch (...) {
@@ -352,7 +352,7 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         // Create queues
         for (int i = 0; i < 100; i++) {
             try {
-                queues.push_back(std::make_unique<shm_queue<int>>(
+                queues.push_back(std::make_unique<zeroipc::queue<int>>(
                     shm, "que_" + std::to_string(i), 50));
                 queue_count++;
             } catch (...) {
@@ -363,7 +363,7 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         // Create stacks
         for (int i = 0; i < 100; i++) {
             try {
-                stacks.push_back(std::make_unique<shm_stack<int>>(
+                stacks.push_back(std::make_unique<zeroipc::stack<int>>(
                     shm, "stk_" + std::to_string(i), 30));
                 stack_count++;
             } catch (...) {
@@ -396,13 +396,13 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
     }
     
     SECTION("Concurrent access to many structures") {
-        posix_shm shm(shm_name, 20 * 1024 * 1024);
+        zeroipc::memory shm(shm_name, 20 * 1024 * 1024);
         
         // Create multiple structures
         const int num_structures = 5;
-        std::vector<shm_queue<int>> queues;
-        std::vector<shm_stack<int>> stacks;
-        std::vector<shm_hash_map<int, int>> maps;
+        std::vector<zeroipc::queue<int>> queues;
+        std::vector<zeroipc::stack<int>> stacks;
+        std::vector<zeroipc::map<int, int>> maps;
         
         for (int i = 0; i < num_structures; i++) {
             queues.emplace_back(shm, "cq_" + std::to_string(i), 1000);
@@ -481,17 +481,17 @@ TEST_CASE("All data structures together", "[integration][all-structures]") {
     shm_unlink(shm_name.c_str());
     
     SECTION("Create and use all structure types") {
-        posix_shm shm(shm_name, 50 * 1024 * 1024);  // 50MB for all structures
+        zeroipc::memory shm(shm_name, 50 * 1024 * 1024);  // 50MB for all structures
         
         // Create all available data structures
-        shm_array<double> array(shm, "array", 1000);
-        shm_queue<int> queue(shm, "queue", 500);
-        shm_stack<float> stack(shm, "stack", 200);
-        shm_hash_map<int, double> map(shm, "map", 100);
-        shm_set<uint32_t> set(shm, "set", 150);
-        shm_bitset<2048> bits(shm, "bits");
-        shm_ring_buffer<int> ring(shm, "ring", 100);
-        shm_object_pool<uint64_t> pool(shm, "pool", 50);
+        zeroipc::array<double> array(shm, "array", 1000);
+        zeroipc::queue<int> queue(shm, "queue", 500);
+        zeroipc::stack<float> stack(shm, "stack", 200);
+        zeroipc::map<int, double> map(shm, "map", 100);
+        zeroipc::set<uint32_t> set(shm, "set", 150);
+        zeroipc::bitset<2048> bits(shm, "bits");
+        zeroipc::ring<int> ring(shm, "ring", 100);
+        zeroipc::pool<uint64_t> pool(shm, "pool", 50);
         
         // Verify all were created successfully
         REQUIRE(array.size() == 1000);
@@ -540,13 +540,13 @@ TEST_CASE("All data structures together", "[integration][all-structures]") {
     SECTION("Cross-process with all structures") {
         // Process 1: Create and populate
         {
-            posix_shm shm1(shm_name, 30 * 1024 * 1024);
+            zeroipc::memory shm1(shm_name, 30 * 1024 * 1024);
             
-            shm_array<int> array(shm1, "persistent_array", 100);
-            shm_queue<double> queue(shm1, "persistent_queue", 50);
-            shm_stack<uint32_t> stack(shm1, "persistent_stack", 30);
-            shm_ring_buffer<float> ring(shm1, "persistent_ring", 20);
-            shm_object_pool<int> pool(shm1, "persistent_pool", 10);
+            zeroipc::array<int> array(shm1, "persistent_array", 100);
+            zeroipc::queue<double> queue(shm1, "persistent_queue", 50);
+            zeroipc::stack<uint32_t> stack(shm1, "persistent_stack", 30);
+            zeroipc::ring<float> ring(shm1, "persistent_ring", 20);
+            zeroipc::pool<int> pool(shm1, "persistent_pool", 10);
             
             // Populate
             for (int i = 0; i < 10; ++i) {
@@ -562,13 +562,13 @@ TEST_CASE("All data structures together", "[integration][all-structures]") {
         
         // Process 2: Verify persistence
         {
-            posix_shm shm2(shm_name, 0);  // Attach only
+            zeroipc::memory shm2(shm_name, 0);  // Attach only
             
-            shm_array<int> array(shm2, "persistent_array");
-            shm_queue<double> queue(shm2, "persistent_queue");
-            shm_stack<uint32_t> stack(shm2, "persistent_stack");
-            shm_ring_buffer<float> ring(shm2, "persistent_ring");
-            shm_object_pool<int> pool(shm2, "persistent_pool");
+            zeroipc::array<int> array(shm2, "persistent_array");
+            zeroipc::queue<double> queue(shm2, "persistent_queue");
+            zeroipc::stack<uint32_t> stack(shm2, "persistent_stack");
+            zeroipc::ring<float> ring(shm2, "persistent_ring");
+            zeroipc::pool<int> pool(shm2, "persistent_pool");
             
             // Verify data
             REQUIRE(array[0] == 0);

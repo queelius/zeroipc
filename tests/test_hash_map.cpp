@@ -1,19 +1,19 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "posix_shm.h"
-#include "shm_hash_map.h"
+#include "zeroipc.h"
+#include "map.h"
 #include <thread>
 #include <vector>
 #include <unordered_set>
 #include <random>
 
-TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map basic operations", "[zeroipc::map]") {
     const std::string shm_name = "/test_hash_map_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use hash map") {
-        shm_hash_map<int, int> map(shm, "test_map", 100);
+        zeroipc::map<int, int> map(shm, "test_map", 100);
         
         REQUIRE(map.empty());
         REQUIRE(map.size() == 0);
@@ -21,7 +21,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Insert and find") {
-        shm_hash_map<uint32_t, double> map(shm, "number_map", 100);
+        zeroipc::map<uint32_t, double> map(shm, "number_map", 100);
         
         // Insert elements
         REQUIRE(map.insert(42, 3.14));
@@ -46,7 +46,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Duplicate key insertion") {
-        shm_hash_map<int, int> map(shm, "dup_map", 10);
+        zeroipc::map<int, int> map(shm, "dup_map", 10);
         
         REQUIRE(map.insert(5, 100));
         REQUIRE(!map.insert(5, 200));  // Should fail
@@ -57,7 +57,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Update existing value") {
-        shm_hash_map<int, int> map(shm, "update_map", 10);
+        zeroipc::map<int, int> map(shm, "update_map", 10);
         
         map.insert(1, 10);
         REQUIRE(map.update(1, 20));
@@ -71,7 +71,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Insert or update") {
-        shm_hash_map<int, int> map(shm, "upsert_map", 10);
+        zeroipc::map<int, int> map(shm, "upsert_map", 10);
         
         // Insert new
         map.insert_or_update(1, 10);
@@ -85,7 +85,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Erase elements") {
-        shm_hash_map<int, int> map(shm, "erase_map", 10);
+        zeroipc::map<int, int> map(shm, "erase_map", 10);
         
         map.insert(1, 10);
         map.insert(2, 20);
@@ -102,7 +102,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Contains check") {
-        shm_hash_map<int, int> map(shm, "contains_map", 10);
+        zeroipc::map<int, int> map(shm, "contains_map", 10);
         
         map.insert(42, 100);
         REQUIRE(map.contains(42));
@@ -110,7 +110,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("Clear operation") {
-        shm_hash_map<int, int> map(shm, "clear_map", 10);
+        zeroipc::map<int, int> map(shm, "clear_map", 10);
         
         for (int i = 0; i < 5; ++i) {
             map.insert(i, i * 10);
@@ -126,7 +126,7 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     }
 
     SECTION("For each iteration") {
-        shm_hash_map<int, int> map(shm, "foreach_map", 10);
+        zeroipc::map<int, int> map(shm, "foreach_map", 10);
         
         for (int i = 0; i < 5; ++i) {
             map.insert(i, i * 10);
@@ -146,14 +146,14 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     SECTION("Hash map discovery by name") {
         // Create and populate
         {
-            shm_hash_map<int, double> map1(shm, "discoverable", 50);
+            zeroipc::map<int, double> map1(shm, "discoverable", 50);
             map1.insert(1, 1.1);
             map1.insert(2, 2.2);
             map1.insert(3, 3.3);
         }
         
         // Open existing
-        shm_hash_map<int, double> map2(shm, "discoverable");
+        zeroipc::map<int, double> map2(shm, "discoverable");
         REQUIRE(map2.size() == 3);
         REQUIRE(*map2.find(2) == Catch::Approx(2.2));
     }
@@ -161,14 +161,14 @@ TEST_CASE("shm_hash_map basic operations", "[shm_hash_map]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map collision handling", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map collision handling", "[zeroipc::map]") {
     const std::string shm_name = "/test_hash_collision";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Linear probing") {
         // Small map to force collisions
-        shm_hash_map<int, int> map(shm, "collision_map", 8);
+        zeroipc::map<int, int> map(shm, "collision_map", 8);
         
         // Insert values that might collide
         for (int i = 0; i < 6; ++i) {
@@ -184,7 +184,7 @@ TEST_CASE("shm_hash_map collision handling", "[shm_hash_map]") {
     }
 
     SECTION("Tombstone handling") {
-        shm_hash_map<int, int> map(shm, "tombstone_map", 8);
+        zeroipc::map<int, int> map(shm, "tombstone_map", 8);
         
         // Create collision chain
         map.insert(0, 100);
@@ -205,13 +205,13 @@ TEST_CASE("shm_hash_map collision handling", "[shm_hash_map]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map concurrent operations", "[shm_hash_map][concurrent]") {
+TEST_CASE("zeroipc::map concurrent operations", "[zeroipc::map][concurrent]") {
     const std::string shm_name = "/test_hash_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Concurrent insertions") {
-        shm_hash_map<int, int> map(shm, "concurrent_insert", 10000);
+        zeroipc::map<int, int> map(shm, "concurrent_insert", 10000);
         const int num_threads = 4;
         const int items_per_thread = 1000;
         
@@ -245,7 +245,7 @@ TEST_CASE("shm_hash_map concurrent operations", "[shm_hash_map][concurrent]") {
     }
 
     SECTION("Concurrent reads") {
-        shm_hash_map<int, int> map(shm, "concurrent_read", 1000);
+        zeroipc::map<int, int> map(shm, "concurrent_read", 1000);
         
         // Pre-populate
         for (int i = 0; i < 100; ++i) {
@@ -277,7 +277,7 @@ TEST_CASE("shm_hash_map concurrent operations", "[shm_hash_map][concurrent]") {
     }
 
     SECTION("Mixed operations") {
-        shm_hash_map<int, int> map(shm, "concurrent_mixed", 1000);
+        zeroipc::map<int, int> map(shm, "concurrent_mixed", 1000);
         const int num_operations = 10000;
         
         std::thread inserter([&map, num_operations]() {
@@ -315,10 +315,10 @@ TEST_CASE("shm_hash_map concurrent operations", "[shm_hash_map][concurrent]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map with complex types", "[shm_hash_map]") {
+TEST_CASE("zeroipc::map with complex types", "[zeroipc::map]") {
     const std::string shm_name = "/test_hash_complex";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     struct Point {
         float x, y, z;
@@ -328,7 +328,7 @@ TEST_CASE("shm_hash_map with complex types", "[shm_hash_map]") {
     };
 
     SECTION("Struct values") {
-        shm_hash_map<uint32_t, Point> map(shm, "point_map", 100);
+        zeroipc::map<uint32_t, Point> map(shm, "point_map", 100);
         
         Point p1{1.0f, 2.0f, 3.0f};
         Point p2{4.0f, 5.0f, 6.0f};
@@ -344,7 +344,7 @@ TEST_CASE("shm_hash_map with complex types", "[shm_hash_map]") {
     }
 
     SECTION("Load factor") {
-        shm_hash_map<int, int> map(shm, "load_map", 100);
+        zeroipc::map<int, int> map(shm, "load_map", 100);
         
         REQUIRE(map.load_factor() == 0.0f);
         
@@ -360,15 +360,15 @@ TEST_CASE("shm_hash_map with complex types", "[shm_hash_map]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_hash_map cross-process", "[shm_hash_map][process]") {
+TEST_CASE("zeroipc::map cross-process", "[zeroipc::map][process]") {
     const std::string shm_name = "/test_hash_process";
     shm_unlink(shm_name.c_str());
     
     SECTION("Hash map persistence across processes") {
         // Process 1: Create and populate
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_hash_map<int, double> map(shm1, "persistent_map", 100);
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::map<int, double> map(shm1, "persistent_map", 100);
             
             map.insert(1, 1.1);
             map.insert(2, 2.2);
@@ -379,8 +379,8 @@ TEST_CASE("shm_hash_map cross-process", "[shm_hash_map][process]") {
         
         // Process 2: Open and verify
         {
-            posix_shm shm2(shm_name, 0);  // Attach only
-            shm_hash_map<int, double> map(shm2, "persistent_map");
+            zeroipc::memory shm2(shm_name, 0);  // Attach only
+            zeroipc::map<int, double> map(shm2, "persistent_map");
             
             REQUIRE(map.size() == 3);
             REQUIRE(*map.find(1) == Catch::Approx(1.1));
@@ -394,8 +394,8 @@ TEST_CASE("shm_hash_map cross-process", "[shm_hash_map][process]") {
         
         // Process 3: Verify modifications
         {
-            posix_shm shm3(shm_name, 0);
-            shm_hash_map<int, double> map(shm3, "persistent_map");
+            zeroipc::memory shm3(shm_name, 0);
+            zeroipc::map<int, double> map(shm3, "persistent_map");
             
             REQUIRE(map.size() == 4);
             REQUIRE(*map.find(2) == Catch::Approx(4.4));

@@ -1,14 +1,14 @@
 /**
- * @file shm_stack.h
+ * @file zeroipc::stack.h
  * @brief Lock-free stack implementation for POSIX shared memory
- * @author POSIX SHM Library Team
+ * @author ZeroIPC Library Team
  * @date 2025
  * @version 2.0.0
  * 
  * @details
  * Provides a thread-safe LIFO (Last-In-First-Out) stack that can be shared
  * across processes. Uses atomic operations for lock-free push/pop operations.
- * This implementation is based on the robust shm_queue design for improved
+ * This implementation is based on the robust zeroipc::queue design for improved
  * reliability and consistency.
  * 
  * @par Thread Safety
@@ -16,8 +16,8 @@
  * 
  * @par Example
  * @code
- * posix_shm shm("simulation", 10 * 1024 * 1024);
- * shm_stack<int> stack(shm, "undo_stack", 100);
+ * memory shm("simulation", 10 * 1024 * 1024);
+ * stack<int> stack(shm, "undo_stack", 100);
  * 
  * // Push operations
  * if (stack.push(42)) {
@@ -36,19 +36,22 @@
  */
 
 #pragma once
-#include "posix_shm.h"
-#include "shm_span.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "span.h"
+#include "table.h"
 #include <atomic>
 #include <concepts>
 #include <optional>
 #include <string_view>
 
+namespace zeroipc {
+
+
 /**
  * @brief Lock-free stack for shared memory
  * 
  * @tparam T Value type (must be trivially copyable)
- * @tparam TableType Table implementation for metadata (default: shm_table)
+ * @tparam TableType Table implementation for metadata (default: table)
  * 
  * @details
  * Implements a bounded stack using an array with atomic top pointer.
@@ -72,9 +75,9 @@
  * @warning T must be trivially copyable for shared memory compatibility
  * @note Maximum capacity limited by available shared memory and table entries
  */
-template<typename T, typename TableType = shm_table>
+template<typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_stack : public shm_span<T, posix_shm_impl<TableType>> {
+class stack : public zeroipc::span<T, memory_impl<TableType>> {
 private:
     struct StackHeader {
         std::atomic<size_t> top{0};  // Index of next free slot
@@ -141,8 +144,8 @@ public:
      * @note Use exists() to check before opening if unsure
      */
     template<typename ShmType>
-    shm_stack(ShmType& shm, std::string_view name, size_t capacity = 0)
-        : shm_span<T, posix_shm_impl<TableType>>(shm, 0, 0) {
+    stack(ShmType& shm, std::string_view name, size_t capacity = 0)
+        : zeroipc::span<T, memory_impl<TableType>>(shm, 0, 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match stack table type");
         
@@ -356,8 +359,9 @@ public:
 };
 
 // Type aliases for common stack types
-using shm_stack_int = shm_stack<int>;
-using shm_stack_float = shm_stack<float>;
-using shm_stack_double = shm_stack<double>;
-using shm_stack_uint32 = shm_stack<uint32_t>;
-using shm_stack_uint64 = shm_stack<uint64_t>;
+using stack_int = stack<int>;
+using stack_float = stack<float>;
+using stack_double = stack<double>;
+using stack_uint32 = stack<uint32_t>;
+using stack_uint64 = stack<uint64_t>;
+} // namespace zeroipc

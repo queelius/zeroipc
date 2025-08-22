@@ -1,5 +1,5 @@
 /**
- * @file shm_simd_utils.h
+ * @file simd_utils.h
  * @brief SIMD-optimized utilities for simulation workloads
  * @author Alex Towell
  * @date 2025
@@ -14,7 +14,10 @@
 #include <cstddef>
 #include <span>
 #include <algorithm>
-#include "shm_array.h"
+#include "array.h"
+
+namespace zeroipc {
+
 
 namespace shm_simd {
 
@@ -40,7 +43,7 @@ inline bool is_aligned(const void* ptr, size_t alignment) noexcept {
  * 
  * @par Example:
  * @code
- * shm_array<float> temps(shm, "temperatures", 1000);
+ * array<float> temps(shm, "temperatures", 1000);
  * float total = shm_simd::sum_floats(temps.data(), temps.size());
  * @endcode
  */
@@ -128,7 +131,7 @@ inline float dot_product(const float* a, const float* b, size_t count) noexcept 
  * 
  * @par Example:
  * @code
- * shm_array<float> values(shm, "values", 1000);
+ * array<float> values(shm, "values", 1000);
  * shm_simd::scale_floats(values.data(), values.size(), 2.0f);
  * @endcode
  */
@@ -297,25 +300,25 @@ inline void stream_store_floats(float* dest, const float* src, size_t count) noe
 }
 
 /**
- * @brief Helper class for SIMD operations on shm_array
+ * @brief Helper class for SIMD operations on zeroipc::array
  * 
  * @tparam TableType Metadata table type
  * 
  * @par Example:
  * @code
- * shm_array<float> data(shm, "data", 10000);
+ * array<float> data(shm, "data", 10000);
  * SimdArray simd(data);
  * float sum = simd.sum();
  * simd.scale(2.0f);
  * @endcode
  */
-template<typename TableType = shm_table>
+template<typename TableType = table>
 class SimdArray {
 private:
-    shm_array<float, TableType>& arr;
+    array<float, TableType>& arr;
 
 public:
-    explicit SimdArray(shm_array<float, TableType>& array) : arr(array) {}
+    explicit SimdArray(array<float, TableType>& array) : arr(array) {}
 
     float sum() const noexcept {
         return sum_floats(arr.data(), arr.size());
@@ -333,10 +336,11 @@ public:
         scale_floats(arr.data(), arr.size(), factor);
     }
 
-    float dot(const shm_array<float, TableType>& other) const noexcept {
+    float dot(const array<float, TableType>& other) const noexcept {
         size_t min_size = std::min(arr.size(), other.size());
         return dot_product(arr.data(), other.data(), min_size);
     }
 };
 
 } // namespace shm_simd
+} // namespace zeroipc

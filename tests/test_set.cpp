@@ -1,24 +1,24 @@
 #include <catch2/catch_test_macros.hpp>
-#include "posix_shm.h"
-#include "shm_set.h"
+#include "zeroipc.h"
+#include "set.h"
 #include <thread>
 #include <vector>
 #include <set>
 
-TEST_CASE("shm_set basic operations", "[shm_set]") {
+TEST_CASE("zeroipc::set basic operations", "[zeroipc::set]") {
     const std::string shm_name = "/test_set_basic";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Create and use set") {
-        shm_set<int> set(shm, "test_set", 100);
+        zeroipc::set<int> set(shm, "test_set", 100);
         
         REQUIRE(set.empty());
         REQUIRE(set.size() == 0);
     }
 
     SECTION("Insert and contains") {
-        shm_set<uint32_t> set(shm, "number_set", 100);
+        zeroipc::set<uint32_t> set(shm, "number_set", 100);
         
         // Insert elements
         REQUIRE(set.insert(42));
@@ -36,7 +36,7 @@ TEST_CASE("shm_set basic operations", "[shm_set]") {
     }
 
     SECTION("Duplicate insertion") {
-        shm_set<int> set(shm, "dup_set", 10);
+        zeroipc::set<int> set(shm, "dup_set", 10);
         
         REQUIRE(set.insert(5));
         REQUIRE(!set.insert(5));  // Should fail
@@ -44,7 +44,7 @@ TEST_CASE("shm_set basic operations", "[shm_set]") {
     }
 
     SECTION("Erase elements") {
-        shm_set<int> set(shm, "erase_set", 10);
+        zeroipc::set<int> set(shm, "erase_set", 10);
         
         set.insert(1);
         set.insert(2);
@@ -61,7 +61,7 @@ TEST_CASE("shm_set basic operations", "[shm_set]") {
     }
 
     SECTION("Clear operation") {
-        shm_set<int> set(shm, "clear_set", 10);
+        zeroipc::set<int> set(shm, "clear_set", 10);
         
         for (int i = 0; i < 5; ++i) {
             set.insert(i);
@@ -77,7 +77,7 @@ TEST_CASE("shm_set basic operations", "[shm_set]") {
     }
 
     SECTION("For each iteration") {
-        shm_set<int> set(shm, "foreach_set", 10);
+        zeroipc::set<int> set(shm, "foreach_set", 10);
         
         for (int i = 0; i < 5; ++i) {
             set.insert(i * 2);
@@ -97,13 +97,13 @@ TEST_CASE("shm_set basic operations", "[shm_set]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_set set operations", "[shm_set]") {
+TEST_CASE("zeroipc::set set operations", "[zeroipc::set]") {
     const std::string shm_name = "/test_set_ops";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
-    shm_set<int> set1(shm, "set1", 10);
-    shm_set<int> set2(shm, "set2", 10);
+    zeroipc::set<int> set1(shm, "set1", 10);
+    zeroipc::set<int> set2(shm, "set2", 10);
     
     // Populate sets
     for (int i = 0; i < 5; ++i) {
@@ -146,8 +146,8 @@ TEST_CASE("shm_set set operations", "[shm_set]") {
     }
 
     SECTION("Subset/Superset") {
-        shm_set<int> small_set(shm, "small", 10);
-        shm_set<int> large_set(shm, "large", 10);
+        zeroipc::set<int> small_set(shm, "small", 10);
+        zeroipc::set<int> large_set(shm, "large", 10);
         
         small_set.insert(1);
         small_set.insert(2);
@@ -168,9 +168,9 @@ TEST_CASE("shm_set set operations", "[shm_set]") {
     }
 
     SECTION("Disjoint sets") {
-        shm_set<int> set_a(shm, "set_a", 10);
-        shm_set<int> set_b(shm, "set_b", 10);
-        shm_set<int> set_c(shm, "set_c", 10);
+        zeroipc::set<int> set_a(shm, "set_a", 10);
+        zeroipc::set<int> set_b(shm, "set_b", 10);
+        zeroipc::set<int> set_c(shm, "set_c", 10);
         
         set_a.insert(1);
         set_a.insert(2);
@@ -191,13 +191,13 @@ TEST_CASE("shm_set set operations", "[shm_set]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_set concurrent operations", "[shm_set][concurrent]") {
+TEST_CASE("zeroipc::set concurrent operations", "[zeroipc::set][concurrent]") {
     const std::string shm_name = "/test_set_concurrent";
     shm_unlink(shm_name.c_str());
-    posix_shm shm(shm_name, 10 * 1024 * 1024);
+    zeroipc::memory shm(shm_name, 10 * 1024 * 1024);
 
     SECTION("Concurrent insertions") {
-        shm_set<int> set(shm, "concurrent_insert", 10000);
+        zeroipc::set<int> set(shm, "concurrent_insert", 10000);
         const int num_threads = 4;
         const int items_per_thread = 1000;
         
@@ -224,7 +224,7 @@ TEST_CASE("shm_set concurrent operations", "[shm_set][concurrent]") {
     }
 
     SECTION("Concurrent membership tests") {
-        shm_set<int> set(shm, "concurrent_contains", 1000);
+        zeroipc::set<int> set(shm, "concurrent_contains", 1000);
         
         // Pre-populate
         for (int i = 0; i < 100; ++i) {
@@ -264,15 +264,15 @@ TEST_CASE("shm_set concurrent operations", "[shm_set][concurrent]") {
     shm.unlink();
 }
 
-TEST_CASE("shm_set cross-process", "[shm_set][process]") {
+TEST_CASE("zeroipc::set cross-process", "[zeroipc::set][process]") {
     const std::string shm_name = "/test_set_process";
     shm_unlink(shm_name.c_str());
     
     SECTION("Set persistence across processes") {
         // Process 1: Create and populate
         {
-            posix_shm shm1(shm_name, 1024 * 1024);
-            shm_set<int> set(shm1, "persistent_set", 100);
+            zeroipc::memory shm1(shm_name, 1024 * 1024);
+            zeroipc::set<int> set(shm1, "persistent_set", 100);
             
             set.insert(10);
             set.insert(20);
@@ -283,8 +283,8 @@ TEST_CASE("shm_set cross-process", "[shm_set][process]") {
         
         // Process 2: Open and verify
         {
-            posix_shm shm2(shm_name, 0);  // Attach only
-            shm_set<int> set(shm2, "persistent_set");
+            zeroipc::memory shm2(shm_name, 0);  // Attach only
+            zeroipc::set<int> set(shm2, "persistent_set");
             
             REQUIRE(set.size() == 3);
             REQUIRE(set.contains(10));
@@ -298,8 +298,8 @@ TEST_CASE("shm_set cross-process", "[shm_set][process]") {
         
         // Process 3: Verify modifications
         {
-            posix_shm shm3(shm_name, 0);
-            shm_set<int> set(shm3, "persistent_set");
+            zeroipc::memory shm3(shm_name, 0);
+            zeroipc::set<int> set(shm3, "persistent_set");
             
             REQUIRE(set.size() == 3);
             REQUIRE(!set.contains(20));

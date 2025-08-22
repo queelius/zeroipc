@@ -1,6 +1,9 @@
 #pragma once
 #include <type_traits>
 
+namespace zeroipc {
+
+
 /**
  * @brief Base class for shared memory data structures that span a region
  * 
@@ -8,14 +11,14 @@
  * @tparam ShmType Type of shared memory manager
  */
 template<typename T, typename ShmType>
-class shm_span {
+class span {
 protected:
     ShmType& shm;
     size_t offset;
     size_t num_elem;
 
 public:
-    shm_span(ShmType& shm, size_t off, size_t count)
+    span(ShmType& shm, size_t off, size_t count)
         : shm(shm), offset(off), num_elem(count) {}
 
     T* data() { 
@@ -35,3 +38,4 @@ public:
     T& operator[](size_t index) { return data()[index]; }
     const T& operator[](size_t index) const { return data()[index]; }
 };
+} // namespace zeroipc

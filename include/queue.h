@@ -1,12 +1,15 @@
 #pragma once
-#include "posix_shm.h"
-#include "shm_span.h"
-#include "shm_table.h"
+#include "zeroipc.h"
+#include "span.h"
+#include "table.h"
 #include <atomic>
 #include <concepts>
 #include <span>
 #include <optional>
 #include <string_view>
+
+namespace zeroipc {
+
 
 /**
  * @brief Lock-free circular queue for shared memory IPC
@@ -17,11 +20,11 @@
  * - Concepts for type constraints
  * 
  * @tparam T The type of elements stored in the queue. Must be trivially copyable.
- * @tparam TableType The type of shm_table to use (default: shm_table)
+ * @tparam TableType The type of table to use (default: table)
  */
-template<typename T, typename TableType = shm_table>
+template<typename T, typename TableType = table>
     requires std::is_trivially_copyable_v<T>
-class shm_queue : public shm_span<T, posix_shm_impl<TableType>> {
+class queue : public zeroipc::span<T, memory_impl<TableType>> {
 private:
     struct QueueHeader {
         std::atomic<size_t> head{0};
@@ -81,8 +84,8 @@ public:
      * @note Use exists() to check before opening if unsure
      */
     template<typename ShmType>
-    shm_queue(ShmType& shm, std::string_view name, size_t capacity = 0)
-        : shm_span<T, posix_shm_impl<TableType>>(shm, 0, 0) {
+    queue(ShmType& shm, std::string_view name, size_t capacity = 0)
+        : zeroipc::span<T, memory_impl<TableType>>(shm, 0, 0) {
         static_assert(std::is_same_v<typename ShmType::table_type, TableType>,
                       "SharedMemory table type must match queue table type");
         
@@ -231,3 +234,4 @@ public:
         return _table_entry ? std::string_view(_table_entry->name.data()) : std::string_view{};
     }
 };
+} // namespace zeroipc

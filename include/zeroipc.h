@@ -375,25 +375,24 @@ using memory = memory_impl<table>;
 /**
  * @brief Small configuration for embedded/constrained systems
  * 
- * @details Uses zeroipc::table_small (16 char names, 16 max entries)
- * Table overhead: ~900 bytes
+ * @details Uses zeroipc::table16 (32 char names, 16 max entries)
+ * Table overhead: ~1.7KB
  */
-using memory_small = memory_impl<table_small>;
+using memory16 = memory_impl<table16>;
 
 /**
  * @brief Large configuration for complex simulations
  * 
- * @details Uses zeroipc::table_large (64 char names, 256 max entries)
- * Table overhead: ~26KB
+ * @details Uses zeroipc::table256 (32 char names, 256 max entries)
+ * Table overhead: ~19KB
  */
-using memory_large = memory_impl<table_large>;
+using memory256 = memory_impl<table256>;
 
 /**
  * @brief Huge configuration for maximum flexibility
  * 
- * @details Uses zeroipc::table_huge (256 char names, 1024 max entries)
- * Table overhead: ~423KB
- * @warning Large overhead - use only when necessary
+ * @details Uses zeroipc::table1024 (32 char names, 1024 max entries)
+ * Table overhead: ~74KB
  */
-using memory_huge = memory_impl<table_huge>;
+using memory1024 = memory_impl<table1024>;
 } // namespace zeroipc

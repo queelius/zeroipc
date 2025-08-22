@@ -194,10 +194,10 @@ Shared Memory (ring buffer):
 
 | Configuration | Table Overhead | Use Case |
 |--------------|---------------|-----------|
-| shm_table_small (16,16) | 904 bytes | Embedded, minimal |
+| shm_table16 (16,16) | 904 bytes | Embedded, minimal |
 | shm_table (32,64) | 4,168 bytes | Default, balanced |
-| shm_table_large (64,256) | 26,632 bytes | Complex simulations |
-| shm_table_huge (256,1024) | 422,920 bytes | Maximum flexibility |
+| shm_table256 (64,256) | 26,632 bytes | Complex simulations |
+| shm_table1024 (256,1024) | 422,920 bytes | Maximum flexibility |
 
 #### Per-Structure Overhead
 

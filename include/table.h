@@ -6,6 +6,7 @@
 #include <optional>
 #include <algorithm>
 #include <string_view>
+#include <stdexcept>
 
 namespace zeroipc {
 
@@ -86,9 +87,13 @@ public:
     bool add(std::string_view name, size_t offset, size_t size,
              size_t elem_size = 0, size_t num_elem = 0)
     {
+        if (name.size() >= MAX_NAME_SIZE) {
+            throw std::invalid_argument(
+                "Name '" + std::string(name) + "' exceeds maximum length of " + 
+                std::to_string(MAX_NAME_SIZE - 1) + " characters");
+        }
         char name_buf[MAX_NAME_SIZE]{};
-        size_t copy_len = std::min(name.size(), sizeof(name_buf) - 1);
-        std::copy_n(name.begin(), copy_len, name_buf);
+        std::copy_n(name.begin(), name.size(), name_buf);
         return add(name_buf, offset, size, elem_size, num_elem);
     }
 
@@ -221,11 +226,22 @@ public:
     }
 };
 
-// Default table type for backward compatibility
-using table = table_impl<32, 64>;
+// Predefined table types - all use 32-char names
+// Naming convention: table{N} where N is the number of entries
+using table1 = table_impl<32, 1>;          // Minimal: 1 entry
+using table2 = table_impl<32, 2>;          // Dual: 2 entries
+using table4 = table_impl<32, 4>;          // Quad: 4 entries
+using table8 = table_impl<32, 8>;          // Tiny: 8 entries
+using table16 = table_impl<32, 16>;        // Small: 16 entries  
+using table32 = table_impl<32, 32>;        // Compact: 32 entries
+using table64 = table_impl<32, 64>;        // Standard: 64 entries
+using table128 = table_impl<32, 128>;      // Medium: 128 entries
+using table256 = table_impl<32, 256>;      // Large: 256 entries
+using table512 = table_impl<32, 512>;      // XLarge: 512 entries
+using table1024 = table_impl<32, 1024>;    // Huge: 1024 entries
+using table2048 = table_impl<32, 2048>;    // XHuge: 2048 entries
+using table4096 = table_impl<32, 4096>;    // Maximum: 4096 entries
 
-// Common alternative configurations
-using table_small = table_impl<16, 16>;   // Minimal overhead
-using table_large = table_impl<64, 256>;   // More entries, longer names
-using table_huge = table_impl<256, 1024>;  // Maximum flexibility
+// Default table type
+using table = table64;
 } // namespace zeroipc

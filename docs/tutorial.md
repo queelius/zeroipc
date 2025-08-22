@@ -83,28 +83,28 @@ private:
     posix_shm_large shm;  // Using large table for many structures
     
     // Game entities (dynamic allocation)
-    shm_object_pool<Player, shm_table_large> player_pool;
-    shm_object_pool<Monster, shm_table_large> monster_pool;
-    shm_object_pool<Projectile, shm_table_large> projectile_pool;
+    shm_object_pool<Player, shm_table256> player_pool;
+    shm_object_pool<Monster, shm_table256> monster_pool;
+    shm_object_pool<Projectile, shm_table256> projectile_pool;
     
     // Spatial grid for collision detection
-    shm_array<uint32_t, shm_table_large> collision_grid;
+    shm_array<uint32_t, shm_table256> collision_grid;
     
     // Event queues for different systems
-    shm_queue<DamageEvent, shm_table_large> damage_events;
-    shm_queue<SpawnRequest, shm_table_large> spawn_requests;
-    shm_queue<NetworkMessage, shm_table_large> network_msgs;
+    shm_queue<DamageEvent, shm_table256> damage_events;
+    shm_queue<SpawnRequest, shm_table256> spawn_requests;
+    shm_queue<NetworkMessage, shm_table256> network_msgs;
     
     // Performance metrics
-    shm_ring_buffer<FrameStats, shm_table_large> frame_history;
+    shm_ring_buffer<FrameStats, shm_table256> frame_history;
     
     // Global state
-    shm_atomic_uint64<shm_table_large> tick_counter;
-    shm_atomic_uint32<shm_table_large> player_count;
-    shm_atomic_bool<shm_table_large> match_active;
+    shm_atomic_uint64<shm_table256> tick_counter;
+    shm_atomic_uint32<shm_table256> player_count;
+    shm_atomic_bool<shm_table256> match_active;
     
     // Leaderboard
-    shm_array<ScoreEntry, shm_table_large> leaderboard;
+    shm_array<ScoreEntry, shm_table256> leaderboard;
     
 public:
     GameServer() 
@@ -133,7 +133,7 @@ public:
         
         std::cout << "Shared Memory Layout:\n";
         std::cout << "Total size: 500MB\n";
-        std::cout << "Table overhead: " << sizeof(shm_table_large) << " bytes\n";
+        std::cout << "Table overhead: " << sizeof(shm_table256) << " bytes\n";
         std::cout << "Structures allocated: " << table->get_entry_count() << "\n\n";
         
         // We could iterate through all entries if the table exposed that
@@ -159,11 +159,11 @@ private:
     posix_shm_large shm;
     
     // Discover existing structures by name
-    shm_object_pool<Player, shm_table_large> players;
-    shm_object_pool<Monster, shm_table_large> monsters;
-    shm_array<uint32_t, shm_table_large> collision_grid;
-    shm_queue<SpawnRequest, shm_table_large> spawn_queue;
-    shm_atomic_uint64<shm_table_large> tick;
+    shm_object_pool<Player, shm_table256> players;
+    shm_object_pool<Monster, shm_table256> monsters;
+    shm_array<uint32_t, shm_table256> collision_grid;
+    shm_queue<SpawnRequest, shm_table256> spawn_queue;
+    shm_atomic_uint64<shm_table256> tick;
     
 public:
     AISystem()
@@ -208,9 +208,9 @@ public:
 class Analytics {
 private:
     posix_shm_large shm;
-    shm_ring_buffer<FrameStats, shm_table_large> frame_history;
-    shm_atomic_uint32<shm_table_large> player_count;
-    shm_array<ScoreEntry, shm_table_large> leaderboard;
+    shm_ring_buffer<FrameStats, shm_table256> frame_history;
+    shm_atomic_uint32<shm_table256> player_count;
+    shm_array<ScoreEntry, shm_table256> leaderboard;
     
 public:
     Analytics()
@@ -256,7 +256,7 @@ Here's what the shared memory segment looks like with all these structures:
 │ Offset    | Size    | Structure               │
 ├────────────────────────────────────────────────┤
 │ 0x0000    | 4B      | Reference Counter       │
-│ 0x0004    | 26KB    | shm_table_large         │
+│ 0x0004    | 26KB    | shm_table256         │
 │           |         |   ├─ "players"          │
 │           |         |   ├─ "monsters"         │
 │           |         |   ├─ "projectiles"      │

@@ -9,16 +9,16 @@
 void example_minimal_overhead() {
     std::cout << "=== Minimal Overhead Configuration ===\n";
     
-    // Use small table: 16-char names, 16 max entries
+    // Use small table: 32-char names, 16 max entries
     // Good for embedded systems or when you know you'll have few structures
-    zeroipc::memory_small shm("minimal_shm", 64 * 1024); // 64KB
+    zeroipc::memory16 shm("minimal_shm", 64 * 1024); // 64KB
     
-    std::cout << "Table overhead: " << sizeof(zeroipc::table_small) << " bytes\n";
-    std::cout << "Max name length: " << zeroipc::table_small::MAX_NAME_SIZE << "\n";
-    std::cout << "Max entries: " << zeroipc::table_small::MAX_ENTRIES << "\n\n";
+    std::cout << "Table overhead: " << sizeof(zeroipc::table16) << " bytes\n";
+    std::cout << "Max name length: " << zeroipc::table16::MAX_NAME_SIZE << "\n";
+    std::cout << "Max entries: " << zeroipc::table16::MAX_ENTRIES << "\n\n";
     
     // Arrays and queues automatically use the same table type
-    zeroipc::array<int, zeroipc::table_small> small_array(shm, "data", 100);
+    zeroipc::array<int, zeroipc::table16> small_array(shm, "data", 100);
     small_array[0] = 42;
     
     std::cout << "Created array '" << small_array.name() << "' with " 
@@ -28,20 +28,20 @@ void example_minimal_overhead() {
 void example_large_simulation() {
     std::cout << "=== Large Simulation Configuration ===\n";
     
-    // Use large table: 64-char names, 256 max entries
+    // Use large table: 32-char names, 256 max entries
     // Good for complex simulations with many data structures
-    zeroipc::memory_large shm("simulation_shm", 100 * 1024 * 1024); // 100MB
+    zeroipc::memory256 shm("simulation_shm", 100 * 1024 * 1024); // 100MB
     
-    std::cout << "Table overhead: " << sizeof(zeroipc::table_large) << " bytes\n";
-    std::cout << "Max name length: " << zeroipc::table_large::MAX_NAME_SIZE << "\n";
-    std::cout << "Max entries: " << zeroipc::table_large::MAX_ENTRIES << "\n\n";
+    std::cout << "Table overhead: " << sizeof(zeroipc::table256) << " bytes\n";
+    std::cout << "Max name length: " << zeroipc::table256::MAX_NAME_SIZE << "\n";
+    std::cout << "Max entries: " << zeroipc::table256::MAX_ENTRIES << "\n\n";
     
     // Can have descriptive names and many structures
-    zeroipc::array<double, zeroipc::table_large> sensor_data(
-        shm, "sensor_data_from_camera_01_preprocessed", 1000);
+    zeroipc::array<double, zeroipc::table256> sensor_data(
+        shm, "sensor_camera_01_preprocessed", 1000);
     
-    zeroipc::queue<float, zeroipc::table_large> event_queue(
-        shm, "high_priority_event_queue_for_controller", 500);
+    zeroipc::queue<float, zeroipc::table256> event_queue(
+        shm, "high_priority_event_queue", 500);
     
     std::cout << "Created structures with long descriptive names:\n";
     std::cout << "  - " << sensor_data.name() << "\n";

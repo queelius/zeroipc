@@ -125,9 +125,9 @@ TEST_CASE("zeroipc::array with custom types", "[zeroipc::array]") {
 TEST_CASE("zeroipc::array with custom table sizes", "[zeroipc::array][template]") {
     SECTION("Array with small table") {
         const std::string shm_name = "/test_array_small_table";
-        zeroipc::memory_small shm(shm_name, 1024 * 1024);
+        zeroipc::memory16 shm(shm_name, 1024 * 1024);
         
-        zeroipc::array<uint32_t, zeroipc::table_small> arr(shm, "small_arr", 100);
+        zeroipc::array<uint32_t, zeroipc::table16> arr(shm, "small_arr", 100);
         REQUIRE(arr.size() == 100);
         
         arr[0] = 0xDEADBEEF;
@@ -136,12 +136,12 @@ TEST_CASE("zeroipc::array with custom table sizes", "[zeroipc::array][template]"
 
     SECTION("Array with large table") {
         const std::string shm_name = "/test_array_large_table";
-        zeroipc::memory_large shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory256 shm(shm_name, 10 * 1024 * 1024);
         
-        zeroipc::array<double, zeroipc::table_large> arr(
-            shm, "array_with_very_long_descriptive_name_for_testing", 1000);
+        zeroipc::array<double, zeroipc::table256> arr(
+            shm, "long_descriptive_array", 1000);
         REQUIRE(arr.size() == 1000);
-        REQUIRE(arr.name() == "array_with_very_long_descriptive_name_for_testing");
+        REQUIRE(arr.name() == "long_descriptive_array");
     }
 }
 

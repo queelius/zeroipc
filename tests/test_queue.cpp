@@ -207,9 +207,9 @@ TEST_CASE("zeroipc::queue lock-free concurrency", "[zeroipc::queue][concurrency]
 TEST_CASE("zeroipc::queue with custom table sizes", "[zeroipc::queue][template]") {
     SECTION("Queue with small table") {
         const std::string shm_name = "/test_queue_small_table";
-        zeroipc::memory_small shm(shm_name, 1024 * 1024);
+        zeroipc::memory16 shm(shm_name, 1024 * 1024);
         
-        zeroipc::queue<uint32_t, zeroipc::table_small> queue(shm, "small_q", 50);
+        zeroipc::queue<uint32_t, zeroipc::table16> queue(shm, "small_q", 50);
         REQUIRE(queue.capacity() == 50);
         
         queue.enqueue(0xCAFEBABE);
@@ -220,12 +220,12 @@ TEST_CASE("zeroipc::queue with custom table sizes", "[zeroipc::queue][template]"
 
     SECTION("Queue with large table") {
         const std::string shm_name = "/test_queue_large_table";
-        zeroipc::memory_large shm(shm_name, 10 * 1024 * 1024);
+        zeroipc::memory256 shm(shm_name, 10 * 1024 * 1024);
         
-        zeroipc::queue<double, zeroipc::table_large> queue(
-            shm, "queue_with_very_long_descriptive_name", 500);
+        zeroipc::queue<double, zeroipc::table256> queue(
+            shm, "long_descriptive_queue", 500);
         REQUIRE(queue.capacity() == 500);
-        REQUIRE(queue.name() == "queue_with_very_long_descriptive_name");
+        REQUIRE(queue.name() == "long_descriptive_queue");
     }
 }
 

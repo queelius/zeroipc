@@ -68,11 +68,23 @@ All structures support dynamic creation/discovery via the table metadata system.
 - **No Automatic Defragmentation**: Users manage memory layout to avoid blocking operations
 
 - **Parameterized Table Sizes**: The metadata table is fully parameterized via templates:
-  - Default `table`: 32-char names, 64 entries max
-  - `table_small`: 16-char names, 16 entries (minimal overhead)
-  - `table_large`: 64-char names, 256 entries
-  - `table_huge`: 256-char names, 1024 entries
+  - All predefined tables use 32-char names (sufficient for most identifiers)
+  - Granular size options with clear naming: `table{N}` where N = number of entries
+    - `table1`: 1 entry (minimal)
+    - `table2`: 2 entries (dual)
+    - `table4`: 4 entries (quad)
+    - `table8`: 8 entries (tiny)
+    - `table16`: 16 entries (small)
+    - `table32`: 32 entries (compact)
+    - `table64`: 64 entries (standard, default as `table`)
+    - `table128`: 128 entries (medium)
+    - `table256`: 256 entries (large)
+    - `table512`: 512 entries (xlarge)
+    - `table1024`: 1024 entries (huge)
+    - `table2048`: 2048 entries (xhuge)
+    - `table4096`: 4096 entries (maximum)
   - Custom sizes: `table_impl<name_size, max_entries>`
+  - **Important**: Names exceeding the table's max name size will throw `std::invalid_argument`
   - **Important**: When creating many structures, ensure the table size is sufficient. The 64-entry default limit can be hit quickly in tests or applications creating many named structures.
 
 - **Exception-Based Error Handling**: Uses C++ exceptions for allocation failures and bounds checking
@@ -80,7 +92,9 @@ All structures support dynamic creation/discovery via the table metadata system.
 ## Recent Insights and Gotchas
 
 ### Queue Lock-Free Implementation
+
 The queue must use proper CAS operations for true lock-free behavior:
+
 ```cpp
 // CORRECT - uses CAS
 if (hdr->tail.compare_exchange_weak(current_tail, next_tail,
@@ -93,19 +107,24 @@ if (hdr->tail.compare_exchange_weak(current_tail, next_tail,
 ```
 
 ### Table Entry Limits
+
 When writing tests or applications that create many structures:
+
 1. Count the total number of named structures you'll create
 2. If exceeding 64, use a larger table type:
+
 ```cpp
-zeroipc::memory<table_large> shm("/my_shm", size);  // 256 entries
+zeroipc::memory<table256> shm("/my_shm", size);   // 256 entries
 // or
-zeroipc::memory<table_huge> shm("/my_shm", size);   // 1024 entries
+zeroipc::memory<table1024> shm("/my_shm", size);  // 1024 entries
 ```
 
 ### String Views Over Fixed Arrays
+
 The table uses fixed-size char arrays for names but provides string_view interfaces to avoid unnecessary allocations. Always prefer string_view when passing or returning names.
 
 ### Test Isolation
+
 Tests should use unique shared memory names (e.g., including process ID) to avoid conflicts when tests run in parallel or shared memory isn't properly cleaned up.
 
 ## Testing

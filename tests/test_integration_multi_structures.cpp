@@ -338,8 +338,9 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         // Try to create as many structures as possible
         int array_count = 0, queue_count = 0, stack_count = 0;
         
-        // Create arrays until we run out of space
-        for (int i = 0; i < 100; i++) {
+        // Create arrays until we run out of space or hit a reasonable limit
+        // Leave room for other structure types (table has 64 entry limit by default)
+        for (int i = 0; i < 20; i++) {
             try {
                 arrays.push_back(std::make_unique<zeroipc::array<int>>(
                     shm, "arr_" + std::to_string(i), 100));
@@ -350,7 +351,7 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         }
         
         // Create queues
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 20; i++) {
             try {
                 queues.push_back(std::make_unique<zeroipc::queue<int>>(
                     shm, "que_" + std::to_string(i), 50));
@@ -361,7 +362,7 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         }
         
         // Create stacks
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 20; i++) {
             try {
                 stacks.push_back(std::make_unique<zeroipc::stack<int>>(
                     shm, "stk_" + std::to_string(i), 30));
@@ -459,8 +460,11 @@ TEST_CASE("Stress test with many structures", "[integration][stress]") {
         
         // Verify structures are not corrupted
         for (int i = 0; i < num_structures; i++) {
-            // Just verify we can perform operations
-            queues[i].enqueue(999999);
+            // Clear any remaining items first
+            while (queues[i].dequeue().has_value()) {}
+            
+            // Now verify we can perform operations
+            REQUIRE(queues[i].enqueue(999999));
             REQUIRE(queues[i].dequeue().value_or(-1) == 999999);
             
             stacks[i].push(888888);

@@ -151,40 +151,63 @@ public:
     }
     
     /**
-     * @brief Enqueue an element (lock-free)
+     * @brief Enqueue an element (lock-free using CAS)
      * @return true if successful, false if queue is full
      */
     [[nodiscard]] bool enqueue(const T& value) noexcept {
         auto* hdr = header();
-        size_t current_tail = hdr->tail.load(std::memory_order_relaxed);
-        size_t next_tail = (current_tail + 1) % hdr->capacity;
         
-        if (next_tail == hdr->head.load(std::memory_order_acquire)) {
-            return false; // Queue is full
+        while (true) {
+            size_t current_tail = hdr->tail.load(std::memory_order_acquire);
+            size_t current_head = hdr->head.load(std::memory_order_acquire);
+            size_t next_tail = (current_tail + 1) % hdr->capacity;
+            
+            // Check if full
+            if (next_tail == current_head) {
+                return false; // Queue is full
+            }
+            
+            // Try to claim the tail slot using CAS
+            if (hdr->tail.compare_exchange_weak(current_tail, next_tail,
+                                                 std::memory_order_release,
+                                                 std::memory_order_acquire)) {
+                // We own slot current_tail, write the value
+                data_start()[current_tail] = value;
+                return true;
+            }
+            // CAS failed, another thread beat us, retry
         }
-        
-        data_start()[current_tail] = value;
-        hdr->tail.store(next_tail, std::memory_order_release);
-        return true;
     }
     
     /**
-     * @brief Dequeue an element (lock-free)
+     * @brief Dequeue an element (lock-free using CAS)
      * @return std::optional with value if successful, empty if queue is empty
      */
     [[nodiscard]] std::optional<T> dequeue() noexcept {
         auto* hdr = header();
-        size_t current_head = hdr->head.load(std::memory_order_relaxed);
         
-        if (current_head == hdr->tail.load(std::memory_order_acquire)) {
-            return std::nullopt; // Queue is empty
+        while (true) {
+            size_t current_head = hdr->head.load(std::memory_order_acquire);
+            size_t current_tail = hdr->tail.load(std::memory_order_acquire);
+            
+            // Check if empty
+            if (current_head == current_tail) {
+                return std::nullopt; // Queue is empty
+            }
+            
+            size_t next_head = (current_head + 1) % hdr->capacity;
+            
+            // Try to claim this slot using CAS
+            if (hdr->head.compare_exchange_weak(current_head, next_head,
+                                                 std::memory_order_release,
+                                                 std::memory_order_acquire)) {
+                // We successfully claimed slot current_head
+                // Now we can safely read it
+                T value = data_start()[current_head];
+                return value;
+            }
+            // CAS failed, another thread beat us, retry
         }
-        
-        T value = data_start()[current_head];
-        size_t next_head = (current_head + 1) % hdr->capacity;
-        hdr->head.store(next_head, std::memory_order_release);
-        
-        return value;
     }
     
     /**

@@ -1,10 +1,10 @@
-# posix_shm
+# ZeroIPC
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://queelius.github.io/posix_shm/)
+[![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://queelius.github.io/zeroipc/)
 
-High-performance POSIX shared memory library for C++23 with lock-free data structures and zero-copy IPC.
+High-performance zero-copy IPC library for C++23 with lock-free data structures built on POSIX shared memory.
 
 ## Features
 
@@ -31,58 +31,58 @@ Add to your `CMakeLists.txt`:
 ```cmake
 include(FetchContent)
 FetchContent_Declare(
-    posix_shm
-    GIT_REPOSITORY https://github.com/queelius/posix_shm.git
+    zeroipc
+    GIT_REPOSITORY https://github.com/queelius/zeroipc.git
     GIT_TAG        v1.0.0
 )
-FetchContent_MakeAvailable(posix_shm)
+FetchContent_MakeAvailable(zeroipc)
 
-target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
+target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
 ```
 
 ### Using CPM.cmake
 
 ```cmake
 CPMAddPackage(
-    NAME posix_shm
-    GITHUB_REPOSITORY queelius/posix_shm
+    NAME zeroipc
+    GITHUB_REPOSITORY queelius/zeroipc
     VERSION 1.0.0
 )
 
-target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
+target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
 ```
 
 ### Using Conan
 
 ```bash
-conan install posix_shm/1.0.0@
+conan install zeroipc/1.0.0@
 ```
 
 Add to your `CMakeLists.txt`:
 
 ```cmake
-find_package(posix_shm REQUIRED)
-target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
+find_package(zeroipc REQUIRED)
+target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
 ```
 
 ### Using vcpkg
 
 ```bash
-vcpkg install posix-shm
+vcpkg install zeroipc
 ```
 
 Add to your `CMakeLists.txt`:
 
 ```cmake
-find_package(posix_shm CONFIG REQUIRED)
-target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
+find_package(zeroipc CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://github.com/queelius/posix_shm.git
-cd posix_shm
+git clone https://github.com/queelius/zeroipc.git
+cd zeroipc
 mkdir build && cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
 make install
@@ -91,33 +91,33 @@ make install
 Then in your project:
 
 ```cmake
-find_package(posix_shm REQUIRED)
-target_link_libraries(your_target PRIVATE posix_shm::posix_shm)
+find_package(zeroipc REQUIRED)
+target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
 ```
 
 ## Quick Start
 
 ```cpp
-#include <posix_shm.h>
-#include <shm_array.h>
-#include <shm_queue.h>
+#include <zeroipc.h>
+#include <array.h>
+#include <queue.h>
 
 int main() {
     // Create shared memory segment
-    posix_shm shm("my_simulation", 10 * 1024 * 1024);  // 10MB
+    zeroipc::memory shm("my_simulation", 10 * 1024 * 1024);  // 10MB
     
     // Create array in shared memory
-    shm_array<float> sensors(shm, "sensor_data", 1000);
+    zeroipc::array<float> sensors(shm, "sensor_data", 1000);
     sensors[0] = 42.0f;
     
     // Create lock-free queue
-    shm_queue<int> events(shm, "event_queue", 100);
+    zeroipc::queue<int> events(shm, "event_queue", 100);
     events.enqueue(123);
     
     // In another process, attach and use:
-    posix_shm shm2("my_simulation", 0);  // 0 = attach to existing
-    auto* sensors2 = shm_array<float>::open(shm2, "sensor_data");
-    float value = (*sensors2)[0];  // Read: 42.0f
+    zeroipc::memory shm2("my_simulation", 0);  // 0 = attach to existing
+    zeroipc::array<float> sensors2(shm2, "sensor_data");  // Attach to existing
+    float value = sensors2[0];  // Read: 42.0f
     
     // Clean up when done
     shm.unlink();  // Remove from system
@@ -128,15 +128,19 @@ int main() {
 
 ## Data Structures
 
-- **shm_array\<T\>** - Fixed-size array with O(1) access
-- **shm_queue\<T\>** - Lock-free circular queue  
-- **shm_atomic\<T\>** - Atomic types for synchronization
-- **shm_ring_buffer\<T\>** - Ring buffer for streaming data
-- **shm_object_pool\<T\>** - Object pool for allocation
+- **zeroipc::array\<T\>** - Fixed-size array with O(1) access
+- **zeroipc::queue\<T\>** - Lock-free circular queue  
+- **zeroipc::atomic_value\<T\>** - Atomic types for synchronization
+- **zeroipc::ring\<T\>** - Ring buffer for streaming data
+- **zeroipc::pool\<T\>** - Object pool for allocation
+- **zeroipc::map\<K,V\>** - Hash map for key-value storage
+- **zeroipc::set\<T\>** - Set for unique elements
+- **zeroipc::bitset\<N\>** - Compact bit array
+- **zeroipc::stack\<T\>** - LIFO stack
 
 ## Documentation
 
-- [API Reference](https://queelius.github.io/posix_shm/)
+- [API Reference](https://queelius.github.io/zeroipc/)
 - [Design Philosophy](docs/design_philosophy.md)
 - [Performance Guide](docs/performance.md)
 - [Examples](examples/)

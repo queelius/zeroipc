@@ -14,9 +14,9 @@
 #include <chrono>
 #include <random>
 #include <iomanip>
-#include "zeroipc.h"
-#include "array.h"
-#include "simd_utils.h"
+#include <zeroipc.h>
+#include <array.h>
+#include <simd_utils.h>
 
 using namespace std::chrono;
 

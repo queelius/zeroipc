@@ -2,11 +2,12 @@
 #include <random>
 #include <chrono>
 #include <thread>
-#include "zeroipc.h"
-#include "pool.h"
-#include "ring.h"
-#include "atomic.h"
-#include "array.h"
+#include <zeroipc.h>
+#include <pool.h>
+#include <ring.h>
+#include <atomic.h>
+#include <array.h>
+#include <bitset.h>
 
 // Example: High-performance particle simulation using shared memory
 
@@ -34,8 +35,8 @@ void particle_simulation_example() {
     zeroipc::pool<Particle> particles(shm, "particles", MAX_PARTICLES);
     
     // Statistics
-    shm_atomic_uint64 total_spawned(shm, "total_spawned", 0);
-    shm_atomic_uint64 total_destroyed(shm, "total_destroyed", 0);
+    zeroipc::atomic_uint64<> total_spawned(shm, "total_spawned", 0);
+    zeroipc::atomic_uint64<> total_destroyed(shm, "total_destroyed", 0);
     
     std::cout << "Pool capacity: " << particles.capacity() << " particles\n";
     
@@ -153,7 +154,7 @@ void grid_simulation_example() {
     zeroipc::array<Cell> grid_next(shm, "grid_next", GRID_SIZE);
     
     // Simulation step counter
-    shm_atomic_uint64 step_counter(shm, "step", 0);
+    zeroipc::atomic_uint64<> step_counter(shm, "step", 0);
     
     std::cout << "Grid size: " << 256 << "x" << 256 
               << " = " << GRID_SIZE << " cells\n";

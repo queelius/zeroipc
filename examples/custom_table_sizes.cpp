@@ -1,7 +1,8 @@
 #include <iostream>
-#include "zeroipc.h"
-#include "array.h"
-#include "queue.h"
+#include <zeroipc.h>
+#include <array.h>
+#include <queue.h>
+#include <table.h>
 
 // Example showing how to use custom table sizes for different use cases
 
@@ -51,8 +52,8 @@ void example_custom_config() {
     std::cout << "=== Custom Configuration ===\n";
     
     // Define your own configuration
-    using my_custom_table = table_impl<48, 128>;
-    using my_custom_shm = memory_impl<my_custom_table>;
+    using my_custom_table = zeroipc::table_impl<48, 128>;
+    using my_custom_shm = zeroipc::memory_impl<my_custom_table>;
     
     my_custom_shm shm("custom_shm", 10 * 1024 * 1024); // 10MB
     

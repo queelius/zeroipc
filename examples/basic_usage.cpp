@@ -2,9 +2,9 @@
 #include <chrono>
 #include <thread>
 #include <cstring>
-#include "zeroipc.h"
-#include "array.h"
-#include "queue.h"
+#include <zeroipc.h>
+#include <array.h>
+#include <queue.h>
 
 int main() {
     try {

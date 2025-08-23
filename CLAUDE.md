@@ -4,7 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a C++ library implementing shared memory data structures using POSIX shared memory, now renamed to **zeroipc** for zero-copy inter-process communication. The library provides efficient IPC through various lock-free data structures that can be shared across processes.
+**ZeroIPC** is a cross-language shared memory IPC library. It defines a binary format specification that allows different processes (potentially written in different languages) to share data structures through POSIX shared memory with zero-copy access.
+
+## Architecture
+
+The project has been reorganized with parallel implementations in multiple languages:
+- `cpp/` - C++ implementation 
+- `python/` - Pure Python implementation (not bindings!)
+- `interop/` - Cross-language integration tests
+- `SPECIFICATION.md` - The binary format all implementations follow
+
+Key design changes:
+- **Minimal metadata**: Table stores only name, offset, and size
+- **No type information**: Users specify types (duck typing in Python)
+- **Runtime configurable**: Table size determined at creation
+- **Language equality**: Each language implementation is standalone
 
 ## Build Commands
 
@@ -89,6 +103,27 @@ All structures support dynamic creation/discovery via the table metadata system.
 
 - **Exception-Based Error Handling**: Uses C++ exceptions for allocation failures and bounds checking
 
+## Architecture Insights
+
+### Minimal Metadata Philosophy
+The new design stores NO type information - only name, offset, and size. This enables:
+- True duck typing in Python
+- Zero overhead in C++
+- Complete language independence
+- User responsibility for type consistency
+
+### Cross-Language Compatibility Verified
+C++ creates data → Python reads it perfectly using only:
+- Shared binary format (SPECIFICATION.md)
+- User-specified types (numpy dtypes in Python)
+- No binding layer needed!
+
+### Table Size Considerations
+- Minimum memory needed: Table::calculate_size(max_entries) 
+- Default 64 entries = 2576 bytes overhead
+- Runtime configurable, not template parameter
+- All languages see same table layout
+
 ## Recent Insights and Gotchas
 
 ### Queue Lock-Free Implementation
@@ -130,6 +165,7 @@ Tests should use unique shared memory names (e.g., including process ID) to avoi
 ## Testing
 
 Tests use GoogleTest framework and are located in `tests/`. Key test files:
+
 - `zeroipc_tests`: Main test suite with all unit and integration tests
 - Test coverage includes single-threaded, multi-threaded, and multi-process scenarios
 - Stress tests validate lock-free implementations under high contention

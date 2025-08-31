@@ -1,180 +1,227 @@
-# ZeroIPC
+# ZeroIPC - Cross-Language Shared Memory IPC
 
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](https://queelius.github.io/zeroipc/)
+## Overview
 
-High-performance zero-copy IPC library for C++23 with lock-free data structures built on POSIX shared memory.
+ZeroIPC is a high-performance inter-process communication library that enables zero-copy data sharing through POSIX shared memory. It provides true language independence with parallel implementations in C++ and Python.
 
-## Features
+### Key Features
 
-- **Header-only** library with C++23 support
-- **Lock-free** data structures (queue, atomic types)
-- **Zero-copy** inter-process communication
-- **Dynamic discovery** of named structures
-- **SIMD optimizations** for performance-critical paths
-- **Stack allocation** strategy (no fragmentation)
-- **Multi-process safe** with reference counting
-
-## Requirements
-
-- C++23 compatible compiler (GCC 12+, Clang 15+)
-- POSIX-compliant system (Linux, macOS, BSD)
-- CMake 3.14+
-
-## Installation
-
-### Using CMake FetchContent (Recommended)
-
-Add to your `CMakeLists.txt`:
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(
-    zeroipc
-    GIT_REPOSITORY https://github.com/queelius/zeroipc.git
-    GIT_TAG        v1.0.0
-)
-FetchContent_MakeAvailable(zeroipc)
-
-target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
-```
-
-### Using CPM.cmake
-
-```cmake
-CPMAddPackage(
-    NAME zeroipc
-    GITHUB_REPOSITORY queelius/zeroipc
-    VERSION 1.0.0
-)
-
-target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
-```
-
-### Using Conan
-
-```bash
-conan install zeroipc/1.0.0@
-```
-
-Add to your `CMakeLists.txt`:
-
-```cmake
-find_package(zeroipc REQUIRED)
-target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
-```
-
-### Using vcpkg
-
-```bash
-vcpkg install zeroipc
-```
-
-Add to your `CMakeLists.txt`:
-
-```cmake
-find_package(zeroipc CONFIG REQUIRED)
-target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
-```
-
-### Manual Installation
-
-```bash
-git clone https://github.com/queelius/zeroipc.git
-cd zeroipc
-mkdir build && cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
-make install
-```
-
-Then in your project:
-
-```cmake
-find_package(zeroipc REQUIRED)
-target_link_libraries(your_target PRIVATE zeroipc::zeroipc)
-```
+- 🚀 **Zero-Copy Performance** - Direct memory access without serialization
+- 🌐 **Language Independence** - C++ and Python are equal partners, not bindings
+- 🔒 **Lock-Free Operations** - Atomic operations for concurrent access
+- 📦 **Minimal Metadata** - Only store name/offset/size - no type information
+- 🦆 **Duck Typing** - Python users specify types at runtime, C++ uses templates
+- 🎯 **Simple Discovery** - Named structures for easy cross-process lookup
 
 ## Quick Start
 
-```cpp
-#include <zeroipc.h>
-#include <array.h>
-#include <queue.h>
+### C++ Creates, Python Reads
 
-int main() {
-    // Create shared memory segment
-    zeroipc::memory shm("my_simulation", 10 * 1024 * 1024);  // 10MB
-    
-    // Create array in shared memory
-    zeroipc::array<float> sensors(shm, "sensor_data", 1000);
-    sensors[0] = 42.0f;
-    
-    // Create lock-free queue
-    zeroipc::queue<int> events(shm, "event_queue", 100);
-    events.enqueue(123);
-    
-    // In another process, attach and use:
-    zeroipc::memory shm2("my_simulation", 0);  // 0 = attach to existing
-    zeroipc::array<float> sensors2(shm2, "sensor_data");  // Attach to existing
-    float value = sensors2[0];  // Read: 42.0f
-    
-    // Clean up when done
-    shm.unlink();  // Remove from system
-    
-    return 0;
-}
+**C++ Producer:**
+```cpp
+#include <zeroipc/memory.h>
+#include <zeroipc/array.h>
+
+// Create shared memory
+zeroipc::Memory mem("/sensor_data", 10*1024*1024);  // 10MB
+
+// Create typed array
+zeroipc::Array<float> temps(mem, "temperature", 1000);
+temps[0] = 23.5f;
 ```
+
+**Python Consumer:**
+```python
+from zeroipc import Memory, Array
+import numpy as np
+
+# Open same shared memory
+mem = Memory("/sensor_data")
+
+# Read with duck typing - user specifies type
+temps = Array(mem, "temperature", dtype=np.float32)
+print(temps[0])  # 23.5
+```
+
+### Python Creates, C++ Reads
+
+**Python Producer:**
+```python
+from zeroipc import Memory, Array
+import numpy as np
+
+# Create shared memory
+mem = Memory("/analytics", size=10*1024*1024)
+
+# Python CREATES new array (allocates in shared memory)
+results = Array(mem, "scores", capacity=100, dtype=np.float64)
+results[0] = 0.95
+
+# Create another structure
+metrics = Array(mem, "metrics", capacity=50, dtype=np.int32)
+metrics[0] = 42
+```
+
+**C++ Consumer:**
+```cpp
+// Open existing shared memory
+zeroipc::Memory mem("/analytics");
+
+// C++ reads what Python created
+zeroipc::Array<double> results(mem, "scores");
+std::cout << results[0];  // 0.95
+
+zeroipc::Array<int32_t> metrics(mem, "metrics");
+std::cout << metrics[0];  // 42
+```
+
+## Architecture
+
+### Binary Format Specification
+
+All implementations follow the same binary format defined in [SPECIFICATION.md](SPECIFICATION.md):
+
+```
+[Table Header][Table Entries][Data Structure 1][Data Structure 2]...
+```
+
+- **Table Header**: Magic number, version, entry count, next offset
+- **Table Entry**: Name (32 bytes), offset (4 bytes), size (4 bytes)
+- **Data Structures**: Raw binary data, layout determined by structure type
+
+### Minimal Metadata Philosophy
+
+Unlike traditional IPC systems, ZeroIPC stores NO type information:
+- **Name**: For discovery
+- **Offset**: Where data starts
+- **Size**: How much memory is used
+
+This enables true language independence:
+- **Both languages can create**: Python and C++ can both allocate new structures
+- **Both languages can read**: Either can discover and access existing structures
+- **Type safety per language**: C++ uses templates, Python uses NumPy dtypes
 
 ## Data Structures
 
-- **zeroipc::array\<T\>** - Fixed-size array with O(1) access
-- **zeroipc::queue\<T\>** - Lock-free circular queue  
-- **zeroipc::atomic_value\<T\>** - Atomic types for synchronization
-- **zeroipc::ring\<T\>** - Ring buffer for streaming data
-- **zeroipc::pool\<T\>** - Object pool for allocation
-- **zeroipc::map\<K,V\>** - Hash map for key-value storage
-- **zeroipc::set\<T\>** - Set for unique elements
-- **zeroipc::bitset\<N\>** - Compact bit array
-- **zeroipc::stack\<T\>** - LIFO stack
+Currently implemented:
+- ✅ **Array** - Fixed-size contiguous storage
+- ✅ **Table** - Metadata registry for discovery
 
-## Documentation
+Coming soon:
+- 🔄 **Queue** - Lock-free FIFO circular buffer
+- 📚 **Stack** - Lock-free LIFO 
+- 🗺️ **Map** - Hash table with linear probing
+- 🎱 **Pool** - Object pool with free list
+- ⚛️ **Atomic** - Single atomic variables
+- 🔮 **Future** - Async result handling
+- 🚀 **Function** - RPC through shared memory
+- ∞ **Codata** - Streams and infinite data structures
 
-- [API Reference](https://queelius.github.io/zeroipc/)
-- [Design Philosophy](docs/design_philosophy.md)
-- [Performance Guide](docs/performance.md)
-- [Examples](examples/)
+## Language Implementations
 
-## Building Tests & Examples
+### [C Implementation](c/)
+- Pure C99 for maximum portability
+- Zero dependencies beyond POSIX
+- Static library (libzeroipc.a)
+- Minimal overhead
 
+### [C++ Implementation](cpp/)
+- Template-based for zero overhead
+- Header-only library
+- Modern C++23 features
+- RAII resource management
+
+### [Python Implementation](python/)
+- Pure Python, no compilation required
+- NumPy integration for performance
+- Duck typing for flexibility
+- mmap for direct memory access
+
+## Building and Testing
+
+### C
 ```bash
-mkdir build && cd build
-cmake .. -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
-make
-ctest  # Run tests
+cd c
+make            # Build library
+make test       # Run tests
 ```
+
+### C++
+```bash
+cd cpp
+cmake -B build .
+cmake --build build
+ctest --test-dir build
+```
+
+### Python
+```bash
+cd python
+pip install -e .
+python -m pytest tests/
+```
+
+### Cross-Language Tests
+```bash
+cd interop
+./test_interop.sh          # C++ writes, Python reads
+./test_reverse_interop.sh  # Python writes, C++ reads
+```
+
+## Design Principles
+
+1. **Language Equality** - No language is "primary", all are first-class
+2. **Minimal Overhead** - Table stores only what's absolutely necessary
+3. **User Responsibility** - Users ensure type consistency across languages
+4. **Zero Dependencies** - Each implementation stands alone
+5. **Binary Compatibility** - All languages read/write the same format
 
 ## Performance
 
-Benchmarks on Intel i7-12700K (single-threaded):
+- **Array Access**: Identical to native arrays (zero overhead)
+- **Queue Operations**: Lock-free with atomic CAS
+- **Memory Allocation**: O(1) bump allocation
+- **Discovery**: O(n) where n ≤ max_entries
 
-- Array read: 3.5 GB/s
-- Array write: 2.8 GB/s  
-- Queue enqueue/dequeue: 15M ops/sec
-- Atomic increment: 50M ops/sec
+## Use Cases
 
-## License
+ZeroIPC excels at:
+- ✅ High-frequency sensor data sharing
+- ✅ Multi-process simulations
+- ✅ Real-time analytics pipelines
+- ✅ Cross-language scientific computing
+- ✅ Zero-copy producer-consumer patterns
 
-MIT License - see [LICENSE](LICENSE) file
+Not designed for:
+- ❌ General-purpose memory allocation
+- ❌ Network-distributed systems
+- ❌ Persistent storage
+- ❌ Garbage collection
 
-## Author
+## Documentation
 
-Alex Towell
+- [Architecture](docs/architecture.md) - System design and memory layout
+- [Design Philosophy](docs/design_philosophy.md) - Core principles and trade-offs
+- [Binary Specification](SPECIFICATION.md) - Wire format all implementations follow
+- [C++ Documentation](cpp/README.md) - C++ specific details
+- [Python Documentation](python/README.md) - Python specific details
 
 ## Contributing
 
-Pull requests welcome! Please ensure:
+Contributions welcome! When adding new language implementations:
+1. Follow the binary specification exactly
+2. Create a new directory for your language
+3. Implement Memory, Table, and Array as minimum
+4. Add cross-language tests in `interop/`
 
-- All tests pass
-- Code follows C++23 best practices
-- Documentation is updated
+## Future Vision
+
+The boundary between data and code is fluid. Future explorations:
+- **Codata**: Infinite streams and lazy evaluation
+- **Functions**: First-class functions as data structures
+- **Continuations**: Suspended computations in shared memory
+- **Reactive Streams**: Event-driven data flows
+
+## License
+
+MIT

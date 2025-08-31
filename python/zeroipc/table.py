@@ -178,6 +178,10 @@ class Table:
         """Set the next allocation offset"""
         struct.pack_into('<I', self.buffer, 12, offset)
     
+    def set_next_offset(self, offset: int):
+        """Public method to set the next allocation offset"""
+        self._set_next_offset(offset)
+    
     @staticmethod
     def calculate_size(max_entries: int) -> int:
         """Calculate the total size of the table in bytes"""

@@ -1,19 +1,19 @@
-# Design Philosophy & Trade-offs
+# Design Philosophy
 
 ## Core Philosophy: Simplicity Through Constraints
 
 > "Perfection is achieved not when there is nothing more to add, but when there is nothing left to take away." - Antoine de Saint-Exupéry
 
-This library makes **deliberate constraints** that enable extraordinary simplicity and performance. We're not trying to be a general-purpose shared memory allocator. We're building the **fastest possible IPC for simulations**.
+ZeroIPC makes **deliberate constraints** that enable extraordinary simplicity and performance. We're not trying to be a general-purpose shared memory allocator. We're building **fast, cross-language IPC**.
 
-## The Original Vision
+## The Vision
 
-We set out to solve a specific problem:
-- **Performance-critical simulations** with multiple processes
-- **Fixed data structures** known at compile time
-- **Zero-overhead reads** matching native array performance
+We set out to solve these problems:
+- **Cross-language IPC** between C++, Python, and other languages
+- **Zero-copy data sharing** through shared memory
 - **Lock-free operations** where algorithmically possible
 - **Simple discovery** via named structures
+- **Minimal metadata** for true language independence
 
 What we explicitly did NOT try to build:
 - ❌ A general-purpose memory allocator
@@ -28,23 +28,16 @@ What we explicitly did NOT try to build:
 **The Decision:**
 We use stack/bump allocation - memory only grows forward, no individual deallocation.
 
-```cpp
-// What we do (dead simple)
-size_t allocate(size_t size) {
-    size_t offset = current_offset;
-    current_offset += size;  // Just bump forward
-    return offset;
-}
+**What we do (simple):**
+- Allocate by incrementing offset
+- O(1) allocation time
+- No fragmentation
 
-// What we DON'T do (complex)
-size_t allocate(size_t size) {
-    scan_free_list();
-    find_best_fit();
-    handle_fragmentation();
-    update_metadata();
-    // ... 100s of lines of allocator code
-}
-```
+**What we DON'T do (complex):**
+- Free lists
+- Best-fit algorithms
+- Defragmentation
+- Complex allocator metadata
 
 **Why This Is The Right Choice:**
 
@@ -73,17 +66,10 @@ size_t allocate(size_t size) {
 - Initialize once, use forever
 - This constraint makes the system simpler AND faster
 
-### 2. Fixed-Size Tables: Predictability Over Flexibility
+### 2. Runtime-Configured Tables: Balance of Flexibility
 
 **The Decision:**
-Compile-time table sizes, no dynamic growth.
-
-```cpp
-template<size_t MaxNameSize = 32, size_t MaxEntries = 64>
-class shm_table_impl {
-    entry entries[MAX_ENTRIES];  // Fixed size
-};
-```
+Table size determined at creation time, not compile time.
 
 **Why This Is The Right Choice:**
 
@@ -97,12 +83,10 @@ class shm_table_impl {
 - Memory usage known at compile time
 - No reallocation pauses
 
-✅ **Template Flexibility**
-```cpp
-// Choose what YOU need
-using tiny = shm_table_impl<16, 8>;    // 520 bytes
-using huge = shm_table_impl<256, 1024>; // 400KB
-```
+✅ **Runtime Flexibility**
+- Choose table size when creating shared memory
+- Different processes can open same memory
+- Language-agnostic configuration
 
 **The Trade-off:**
 - Must know limits at compile time
@@ -113,23 +97,17 @@ using huge = shm_table_impl<256, 1024>; // 400KB
 - If you need 1000 structures, compile with 1024
 - Explicit is better than implicit
 
-### 3. No STL Allocator Interface: Focus Over Features
+### 3. Minimal Metadata: True Language Independence
 
-**The Temptation:**
-"Let's add STL allocators so users can use any container!"
+**The Decision:**
+Store only name, offset, and size - NO type information.
 
-**Why We Said No:**
+**Why This Matters:**
 
-✅ **Maintains Simplicity**
-```cpp
-// Our way (clear, obvious)
-shm_array<float> data(shm, "sensor_data", 1000);
-
-// STL allocator way (complex, subtle)
-using Alloc = shm_allocator<float>;
-std::vector<float, Alloc> data(Alloc(shm));
-// Where does it allocate? How much? When?
-```
+✅ **Language Equality**
+- Python and C++ are equal partners
+- No language is "primary"
+- Each reads the binary format directly
 
 ✅ **Preserves Performance Guarantees**
 - `shm_array[i]` is EXACTLY a pointer dereference
@@ -141,17 +119,16 @@ std::vector<float, Alloc> data(Alloc(shm));
 - We don't support that (by design)
 - Would lead to confusion and bugs
 
-✅ **We Already Solved The Problem**
+✅ **Duck Typing in Python**
+```python
+# User specifies type at access time
+data = Array(mem, "sensor_data", dtype=np.float32)
+```
+
+✅ **Templates in C++**
 ```cpp
-// Need dynamic objects? Use the pool!
-shm_object_pool<Particle> particles(shm, "particles", 10000);
-auto handle = particles.acquire();
-
-// Need a queue? We have that!
-shm_queue<Event> events(shm, "events", 1000);
-
-// Need an array? Done!
-shm_array<float> data(shm, "data", 50000);
+// Type specified at compile time
+Array<float> data(mem, "sensor_data", 1000);
 ```
 
 **The Trade-off:**

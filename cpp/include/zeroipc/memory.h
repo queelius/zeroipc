@@ -107,10 +107,23 @@ public:
     }
     
     /**
+     * Static method to unlink shared memory by name
+     */
+    static void unlink(const std::string& name) {
+        shm_unlink(name.c_str());
+    }
+    
+    /**
      * Get pointer to the shared memory
      */
     void* data() { return memory_; }
     const void* data() const { return memory_; }
+    
+    /**
+     * Get base pointer (alias for data())
+     */
+    void* base() { return memory_; }
+    const void* base() const { return memory_; }
     
     /**
      * Get pointer to memory at specific offset
@@ -127,6 +140,41 @@ public:
             throw std::out_of_range("Offset out of bounds");
         }
         return static_cast<const char*>(memory_) + offset;
+    }
+    
+    /**
+     * Allocate space in shared memory
+     * @param name Name for the table entry
+     * @param size Size to allocate
+     * @return Offset of allocated space
+     */
+    size_t allocate(std::string_view name, size_t size) {
+        // First allocate the space
+        uint32_t offset = table_->allocate(size);
+        
+        // Then add to table
+        if (!table_->add(name, offset, size)) {
+            throw std::runtime_error("Failed to add entry to table");
+        }
+        
+        return offset;
+    }
+    
+    /**
+     * Find an entry in the table
+     * @param name Name to find
+     * @param offset Output: offset of the entry
+     * @param size Output: size of the entry
+     * @return true if found, false otherwise
+     */
+    bool find(std::string_view name, size_t& offset, size_t& size) {
+        auto entry = table_->find(name);
+        if (entry) {
+            offset = entry->offset;
+            size = entry->size;
+            return true;
+        }
+        return false;
     }
     
     /**

@@ -17,6 +17,8 @@ __all__ = ["Table", "Memory"]
 try:
     import numpy
     from .array import Array
-    __all__.append("Array")
+    from .queue import Queue
+    from .stack import Stack
+    __all__.extend(["Array", "Queue", "Stack"])
 except ImportError:
     pass

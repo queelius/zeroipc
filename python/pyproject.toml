@@ -1,23 +1,36 @@
 [build-system]
-requires = ["setuptools>=61.0", "pybind11>=2.10.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "posix-shm"
+name = "zeroipc"
 version = "1.0.0"
-authors = [
-    {name = "Alex Towell"},
-]
-description = "High-performance lock-free data structures in POSIX shared memory for Python"
+description = "Zero-copy inter-process communication via POSIX shared memory"
 readme = "README.md"
 requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "ZeroIPC Contributors"},
+]
+maintainers = [
+    {name = "ZeroIPC Contributors"},
+]
+keywords = [
+    "ipc",
+    "shared-memory",
+    "zero-copy",
+    "inter-process",
+    "posix",
+    "lock-free",
+    "queue",
+    "stack",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: C++",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -26,57 +39,95 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries",
     "Topic :: System :: Hardware :: Symmetric Multi-processing",
-    "Topic :: Scientific/Engineering",
 ]
-keywords = ["shared-memory", "ipc", "lock-free", "data-structures", "multiprocessing"]
 
-[project.urls]
-"Homepage" = "https://github.com/queelius/posix_shm"
-"Bug Reports" = "https://github.com/queelius/posix_shm/issues"
-"Documentation" = "https://queelius.github.io/posix_shm/"
-"Source" = "https://github.com/queelius/posix_shm"
+dependencies = [
+    "numpy>=1.20.0",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "numpy>=1.20",
+    "pytest-xdist>=3.0",
     "black>=22.0",
+    "isort>=5.0",
     "mypy>=1.0",
     "ruff>=0.1.0",
 ]
 docs = [
-    "mkdocs>=1.5",
-    "mkdocs-material>=9.0",
-    "mkdocstrings[python]>=0.24",
+    "sphinx>=5.0",
+    "sphinx-rtd-theme>=1.0",
 ]
+benchmark = [
+    "matplotlib>=3.5",
+    "pandas>=1.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/queelius/posix_shm"
+Documentation = "https://github.com/queelius/posix_shm/tree/main/python"
+Repository = "https://github.com/queelius/posix_shm"
+Issues = "https://github.com/queelius/posix_shm/issues"
 
 [tool.setuptools]
-packages = ["posix_shm"]
-package-dir = {"" = "."}
+packages = ["zeroipc"]
 
 [tool.setuptools.package-data]
-posix_shm = ["py.typed"]
+zeroipc = ["py.typed"]
 
 [tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311", "py312"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py38"
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-]
+[tool.isort]
+profile = "black"
+line_length = 88
 
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["zeroipc"]
+omit = ["*/tests/*", "*/benchmarks/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

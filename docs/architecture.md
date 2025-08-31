@@ -1,4 +1,4 @@
-# Architecture Deep Dive
+# Architecture
 
 ## System Architecture Overview
 
@@ -13,20 +13,20 @@
 ┌───────────────────────▼──────────────────────────────────┐
 │                Data Structure Layer                       │
 │  ┌────────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐   │
-│  │ Array  │ │ Queue  │ │ Pool │ │ Ring │ │ Atomic │   │
+│  │ Array  │ │ Queue  │ │ Stack │ │ Map  │ │  Set   │   │
 │  └────────┘ └────────┘ └──────┘ └──────┘ └────────┘   │
 └───────────────────────┬──────────────────────────────────┘
                         │
 ┌───────────────────────▼──────────────────────────────────┐
 │                  Foundation Layer                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ posix_shm│  │ shm_table│  │ shm_span │              │
-│  └──────────┘  └──────────┘  └──────────┘              │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────────────┐   │
+│  │  Memory  │  │   Table  │  │  Language Bindings  │   │
+│  └──────────┘  └──────────┘  └─────────────────────┘   │
 └───────────────────────┬──────────────────────────────────┘
                         │
 ┌───────────────────────▼──────────────────────────────────┐
 │                    POSIX API Layer                        │
-│         shm_open, mmap, shm_unlink, futex                │
+│           shm_open, mmap, shm_unlink, futex              │
 └───────────────────────┬──────────────────────────────────┘
                         │
 ┌───────────────────────▼──────────────────────────────────┐
@@ -42,8 +42,8 @@
 ```
 Offset   Size     Component
 ──────────────────────────────────────────
-0x0000   4        Reference Counter (atomic)
-0x0004   4-424KB  Metadata Table (configurable)
+0x0000   16       Table Header
+0x0010   Variable Metadata Table Entries
 0xXXXX   Variable Data Structure 1
 0xYYYY   Variable Data Structure 2
 ...
@@ -51,20 +51,17 @@ Offset   Size     Component
 
 ### Metadata Table Entry
 
-```cpp
-struct entry {
-    char name[MAX_NAME_SIZE];  // Unique identifier
-    size_t offset;              // Byte offset in segment
-    size_t size;                // Total size in bytes
-    size_t elem_size;           // Element size (for arrays)
-    size_t num_elem;            // Number of elements
-    bool active;                // Entry valid flag
-};
+```
+Field    Size     Description
+──────────────────────────────────────────
+name     32       Structure identifier
+offset   4        Byte offset in segment
+size     4        Total size in bytes
 ```
 
 ## Component Design
 
-### 1. posix_shm - Memory Management
+### 1. Memory Management
 
 **Responsibilities:**
 - POSIX shared memory lifecycle
@@ -74,22 +71,12 @@ struct entry {
 
 **Key Design Decisions:**
 
-1. **RAII Pattern**: Automatic cleanup in destructor
-2. **Reference Counting**: Last process cleans up
-3. **Header Embedding**: Table stored in shared memory
-4. **Template Configuration**: Compile-time table sizing
+1. **Automatic Cleanup**: Resources managed automatically
+2. **Table Embedding**: Metadata stored in shared memory
+3. **Runtime Configuration**: Table size determined at creation
+4. **Language Independence**: Each implementation manages its own way
 
-```cpp
-template<typename TableType>
-class posix_shm_impl {
-    struct header {
-        std::atomic<int> ref_count;
-        TableType table;  // Embedded metadata
-    };
-};
-```
-
-### 2. shm_table - Discovery System
+### 2. Table - Discovery System
 
 **Responsibilities:**
 - Name-to-offset mapping
@@ -99,30 +86,18 @@ class posix_shm_impl {
 
 **Design Pattern: Service Locator**
 
-```cpp
-// Register service
-table->add("sensor_data", offset, size);
-
-// Discover service
-auto* entry = table->find("sensor_data");
-```
+- Register structures by name
+- Discover structures at runtime
+- Language-agnostic lookup
 
 **Trade-offs:**
-- Fixed maximum entries (compile-time)
+- Fixed maximum entries (runtime-configured)
 - Linear search (simple, cache-friendly)
 - No defragmentation (predictable performance)
 
 **Memory Management: Stack/Bump Allocation**
 
-Our current implementation uses **stack allocation** (also called bump allocation):
-```cpp
-// Allocation strategy (simplified)
-size_t allocate(size_t size) {
-    size_t offset = sizeof(table) + get_total_allocated_size();
-    total_allocated += size;
-    return offset;
-}
-```
+The implementation uses **stack allocation** (also called bump allocation):
 
 This means:
 - ✅ **Simple**: O(1) allocation, no scanning
@@ -141,97 +116,74 @@ A free-list allocator could reuse gaps, but adds complexity and potential fragme
 
 ### 3. Data Structure Implementations
 
-#### shm_array<T> - Contiguous Storage
+#### Array - Contiguous Storage
 
 **Memory Layout:**
 ```
-[T][T][T][T][T][T][T][T]...
+[Element][Element][Element][Element]...
 ```
 
 **Operations:**
-- `operator[]`: Direct pointer arithmetic
-- Iterators: Raw pointers
-- No dynamic growth (fixed size)
+- Direct indexing
+- Fixed size (no dynamic growth)
+- Zero-copy access
 
-#### shm_queue<T> - Lock-Free FIFO
-
-**Memory Layout:**
-```
-[Header]
-  atomic<size_t> head
-  atomic<size_t> tail
-  size_t capacity
-[T][T][T][T]... (circular buffer)
-```
-
-**Algorithm: Lock-Free Enqueue**
-```cpp
-bool enqueue(T value) {
-    size_t tail = tail_.load(acquire);
-    size_t next = (tail + 1) % capacity;
-    
-    if (next == head_.load(acquire))
-        return false;  // Full
-        
-    buffer[tail] = value;
-    tail_.store(next, release);
-    return true;
-}
-```
-
-#### shm_object_pool<T> - Free List
+#### Queue - Lock-Free FIFO
 
 **Memory Layout:**
 ```
 [Header]
-  atomic<uint32_t> free_head
-  uint32_t next[capacity]
-[T][T][T][T]... (object storage)
+  head index
+  tail index
+  capacity
+[Element][Element][Element]... (circular buffer)
 ```
 
-**Algorithm: Lock-Free Stack**
-```cpp
-uint32_t acquire() {
-    uint32_t old_head = free_head.load();
-    while (old_head != NULL) {
-        uint32_t new_head = next[old_head];
-        if (CAS(&free_head, old_head, new_head))
-            return old_head;
-    }
-    return NULL;
-}
+**Properties:**
+- Lock-free enqueue/dequeue using atomic operations
+- Bounded capacity
+- Wait-free progress for single producer/consumer
+
+#### Stack - Lock-Free LIFO
+
+**Memory Layout:**
+```
+[Header]
+  top index
+  capacity
+[Element][Element][Element]...
 ```
 
-#### shm_ring_buffer<T> - Bulk Operations
+**Properties:**
+- Lock-free push/pop using CAS
+- Bounded capacity
+- ABA problem mitigation
 
-**Design Goals:**
-- Optimize for throughput over latency
-- Support non-consuming reads
-- Allow overwrite mode for streaming
+#### Map - Hash Table
 
-**Key Features:**
-```cpp
-// Bulk operations for efficiency
-size_t push_bulk(span<T> values);
-size_t pop_bulk(span<T> output);
-
-// Streaming mode
-void push_overwrite(T value);  // Drops oldest
-
-// Analytics
-uint64_t total_written();  // Monitor throughput
+**Memory Layout:**
 ```
+[Header]
+  bucket count
+  size
+[Bucket][Bucket][Bucket]...
+```
+
+**Properties:**
+- Linear probing for collision resolution
+- Fixed bucket count
+- Key-value storage
 
 ## Synchronization Strategies
 
 ### 1. Lock-Free Algorithms
 
-**Used In:** Queue, Pool, Ring Buffer
+**Used In:** Queue, Stack, Map operations
 
 **Techniques:**
 - Compare-And-Swap (CAS)
-- Fetch-And-Add (FAA)
-- Memory ordering (acquire-release)
+- Atomic operations
+- Memory ordering semantics
 
 **Benefits:**
 - No kernel involvement
@@ -240,131 +192,78 @@ uint64_t total_written();  // Monitor throughput
 
 ### 2. Wait-Free Readers
 
-**Used In:** Array, Atomic
+**Used In:** Array, read-only operations
 
 **Guarantee:** Readers never block
 
-```cpp
-T read(size_t index) {
-    return data[index];  // Always wait-free
-}
-```
-
 ### 3. Memory Ordering
 
-```cpp
-// Writer
-data[index] = value;
-flag.store(true, memory_order_release);
+**Consistency Model:**
+- Acquire-release semantics for synchronization
+- Sequential consistency where needed
+- Relaxed ordering for counters
 
-// Reader  
-if (flag.load(memory_order_acquire)) {
-    auto value = data[index];  // Synchronized
-}
-```
+## Language Implementation Strategies
 
-## Template Metaprogramming
+### C++ Implementation
 
-### Compile-Time Configuration
+**Approach:**
+- Template-based for compile-time optimization
+- Zero-overhead abstractions
+- RAII for resource management
+- Type constraints for safety
 
-```cpp
-template<size_t MaxNameSize, size_t MaxEntries>
-class shm_table_impl {
-    static constexpr size_t size_bytes() {
-        return sizeof(entry) * MaxEntries + sizeof(size_t);
-    }
-};
-```
+### Python Implementation
 
-**Benefits:**
-- Zero runtime overhead
-- Custom memory footprints
-- Type safety
-
-### Concept Constraints
-
-```cpp
-template<typename T>
-    requires std::is_trivially_copyable_v<T>
-class shm_array {
-    // Ensures T can be safely shared
-};
-```
+**Approach:**
+- Duck typing for flexibility
+- NumPy integration for performance
+- mmap for direct memory access
+- Runtime type specification
 
 ## Performance Optimizations
 
 ### 1. Cache Line Alignment
 
-```cpp
-struct alignas(64) CacheLine {
-    std::atomic<uint64_t> value;
-    char padding[56];
-};
-```
+**Strategy:** Align data structures to cache line boundaries (typically 64 bytes)
 
 **Prevents:** False sharing between cores
 
-### 2. Memory Prefetching
+### 2. Memory Access Patterns
 
-```cpp
-for (size_t i = 0; i < n; i++) {
-    __builtin_prefetch(&data[i + 8], 0, 1);
-    process(data[i]);
-}
-```
+**Strategy:** Sequential access patterns for prefetcher efficiency
 
-**Benefit:** Hides memory latency
+**Benefit:** Maximizes memory bandwidth utilization
 
 ### 3. Bulk Operations
 
-```cpp
-// Bad: Multiple system calls
-for (auto& item : items)
-    queue.push(item);
+**Strategy:** Process multiple elements in single operation
 
-// Good: Single operation
-queue.push_bulk(items);
-```
+**Benefit:** Amortizes overhead and improves throughput
 
-**Benefit:** Amortizes overhead
+### 4. Zero-Copy Design
 
-### 4. Branch-Free Code
+**Strategy:** Direct memory access without serialization
 
-```cpp
-// Branch-free min
-size_t min = a ^ ((a ^ b) & -(a > b));
-```
-
-**Benefit:** No pipeline stalls
+**Benefit:** Eliminates copying overhead
 
 ## Error Handling Philosophy
 
-### 1. Constructor Failures
+### 1. Creation Failures
 
-```cpp
-shm_array(shm, name, size) {
-    if (!initialize())
-        throw std::runtime_error("...");
-}
-```
+**Strategy:** Report errors during structure creation
 
-**Rationale:** RAII requires successful construction
+**Rationale:** Fail fast at initialization
 
 ### 2. Operation Failures
 
-```cpp
-[[nodiscard]] bool enqueue(T value);
-[[nodiscard]] std::optional<T> dequeue();
-```
+**Strategy:** Return success/failure indicators
 
 **Rationale:** Let caller decide on failure handling
 
 ### 3. Resource Exhaustion
 
-```cpp
-if (pool.full())
-    return invalid_handle;  // Graceful degradation
-```
+**Strategy:** Graceful degradation
 
 **Rationale:** System continues with reduced capacity
 
@@ -428,38 +327,29 @@ if (size > MAX_ALLOCATION)
 
 ## Future Directions
 
-### 1. Persistent Memory Support
+### 1. Additional Language Support
 
-```cpp
-// Intel Optane DC support
-class pmem_shm : public posix_shm {
-    void persist() {
-        pmem_persist(base_addr, size);
-    }
-};
-```
+- Rust implementation for safety guarantees
+- Go implementation for concurrent systems
+- Java implementation via JNI or Panama
 
-### 2. GPU Shared Memory
+### 2. Persistent Memory Support
 
-```cpp
-// CUDA unified memory integration
-class cuda_shm {
-    void* allocate(size_t size) {
-        cudaMallocManaged(&ptr, size);
-    }
-};
-```
+- Intel Optane DC integration
+- Battery-backed NVDIMM support
+- Crash-consistent data structures
 
-### 3. Distributed Shared Memory
+### 3. GPU Shared Memory
 
-```cpp
-// Network-transparent shared memory
-class dsm_array : public shm_array {
-    void sync() {
-        rdma_write(remote_addr, local_addr, size);
-    }
-};
-```
+- CUDA unified memory integration
+- OpenCL buffer sharing
+- Heterogeneous computing support
+
+### 4. Distributed Shared Memory
+
+- RDMA support for cluster computing
+- Network-transparent operations
+- Coherence protocols
 
 ## Design Principles Summary
 

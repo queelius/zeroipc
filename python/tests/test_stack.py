@@ -1,254 +1,153 @@
-"""
-Test suite for Stack functionality.
-"""
+"""Tests for Stack implementation."""
 
 import pytest
-import sys
-import os
+import numpy as np
 import threading
-import multiprocessing as mp
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-import posix_shm_py as shm
+from zeroipc import Memory, Stack
 
 
 class TestStack:
     """Test Stack functionality."""
     
     def setup_method(self):
-        """Set up test fixtures."""
-        self.shm_name = "/test_stack"
-        self.mem = shm.SharedMemory(self.shm_name, 10 * 1024 * 1024)
-    
-    def teardown_method(self):
-        """Clean up after tests."""
+        """Clean up before each test."""
         try:
-            self.mem.unlink()
+            Memory.unlink("/test_stack")
         except:
             pass
     
-    def test_basic_operations(self):
-        """Test basic stack operations."""
-        stack = shm.IntStack(self.mem, "basic_stack", capacity=100)
+    def teardown_method(self):
+        """Clean up after each test."""
+        try:
+            Memory.unlink("/test_stack")
+        except:
+            pass
+    
+    def test_create_and_basic_ops(self):
+        """Test stack creation and basic operations."""
+        mem = Memory("/test_stack", size=1024*1024)
+        stack = Stack(mem, "int_stack", capacity=100, dtype=np.int32)
         
-        # Test empty stack
         assert stack.empty()
+        assert not stack.full()
+        assert stack.size() == 0
         assert len(stack) == 0
-        assert not stack  # __bool__
         
-        # Test push
-        stack.push(10)
-        stack.push(20)
-        stack.push(30)
+        # Push some values
+        assert stack.push(10)
+        assert stack.push(20)
+        assert stack.push(30)
         
         assert not stack.empty()
-        assert len(stack) == 3
-        assert stack  # __bool__
+        assert stack.size() == 3
+        assert bool(stack)  # Should be truthy when not empty
         
-        # Test pop (LIFO order)
+        # Check top
+        assert stack.top() == 30
+        assert stack.size() == 3  # Top doesn't remove
+        
+        # Pop values (LIFO order)
         assert stack.pop() == 30
         assert stack.pop() == 20
         assert stack.pop() == 10
         
         assert stack.empty()
-        assert stack.pop() is None  # Pop from empty stack
-    
-    def test_top_peek(self):
-        """Test top/peek operation."""
-        stack = shm.IntStack(self.mem, "peek_stack", capacity=100)
-        
-        # Top of empty stack
+        assert stack.pop() is None
         assert stack.top() is None
-        
-        # Push and peek
-        stack.push(42)
-        assert stack.top() == 42
-        assert len(stack) == 1  # Top doesn't remove
-        
-        stack.push(84)
-        assert stack.top() == 84
-        assert len(stack) == 2
-        
-        # Pop and peek
-        stack.pop()
-        assert stack.top() == 42
     
-    def test_capacity_and_full(self):
-        """Test capacity limits and full status."""
-        stack = shm.IntStack(self.mem, "capacity_stack", capacity=5)
+    def test_full_stack(self):
+        """Test behavior when stack is full."""
+        mem = Memory("/test_stack", size=1024*1024)
+        stack = Stack(mem, "small_stack", capacity=3, dtype=np.int32)
         
-        assert stack.capacity() == 5
-        assert not stack.full()
-        
-        # Fill to capacity
-        for i in range(5):
-            stack.push(i)
+        assert stack.push(1)
+        assert stack.push(2)
+        assert stack.push(3)
+        assert not stack.push(4)  # Should fail - stack full
         
         assert stack.full()
-        assert len(stack) == 5
         
-        # Try to push beyond capacity
-        # Behavior depends on implementation
-        stack.push(99)  # Might fail or succeed
+        stack.pop()
+        assert not stack.full()
+        assert stack.push(4)
     
-    def test_clear(self):
-        """Test clear operation."""
-        stack = shm.IntStack(self.mem, "clear_stack", capacity=100)
+    def test_open_existing(self):
+        """Test opening an existing stack."""
+        mem = Memory("/test_stack", size=1024*1024)
         
-        # Add items
-        for i in range(10):
-            stack.push(i)
+        # Create and populate stack
+        stack1 = Stack(mem, "double_stack", capacity=50, dtype=np.float64)
+        stack1.push(3.14)
+        stack1.push(2.71)
+        stack1.push(1.41)
         
-        assert len(stack) == 10
-        
-        # Clear
-        stack.clear()
-        assert stack.empty()
-        assert len(stack) == 0
-        
-        # Should be able to push after clear
-        stack.push(42)
-        assert stack.pop() == 42
-    
-    def test_lifo_order(self):
-        """Test LIFO (Last In First Out) ordering."""
-        stack = shm.IntStack(self.mem, "lifo_stack", capacity=100)
-        
-        items = [1, 2, 3, 4, 5]
-        
-        # Push items
-        for item in items:
-            stack.push(item)
-        
-        # Pop items - should be in reverse order
-        popped = []
-        while not stack.empty():
-            popped.append(stack.pop())
-        
-        assert popped == list(reversed(items))
-    
-    def test_concurrent_push_pop(self):
-        """Test concurrent push and pop operations."""
-        stack = shm.IntStack(self.mem, "concurrent_stack", capacity=1000)
-        
-        def pusher(start, count):
-            for i in range(start, start + count):
-                stack.push(i)
-        
-        def popper(count):
-            results = []
-            for _ in range(count):
-                val = stack.pop()
-                if val is not None:
-                    results.append(val)
-            return results
-        
-        # Start pushers
-        threads = []
-        for i in range(4):
-            t = threading.Thread(target=pusher, args=(i * 100, 100))
-            threads.append(t)
-            t.start()
-        
-        for t in threads:
-            t.join()
-        
-        # Verify all items were pushed
-        assert len(stack) == 400
-        
-        # Pop all items
-        all_items = []
-        while not stack.empty():
-            val = stack.pop()
-            if val is not None:
-                all_items.append(val)
-        
-        assert len(all_items) == 400
-        assert len(set(all_items)) == 400  # All unique
-    
-    def test_multiprocess_stack(self):
-        """Test stack across multiple processes."""
-        stack = shm.IntStack(self.mem, "mp_stack", capacity=1000)
-        
-        def worker(shm_name, worker_id, count):
-            mem = shm.SharedMemory(shm_name, 0)
-            stack = shm.IntStack(mem, "mp_stack")
-            
-            # Each worker pushes unique values
-            for i in range(count):
-                stack.push(worker_id * 1000 + i)
-        
-        processes = []
-        num_workers = 4
-        items_per_worker = 50
-        
-        for i in range(num_workers):
-            p = mp.Process(target=worker, args=(self.shm_name, i, items_per_worker))
-            processes.append(p)
-            p.start()
-        
-        for p in processes:
-            p.join()
-        
-        # Verify total items
-        assert len(stack) == num_workers * items_per_worker
-        
-        # Pop all and verify uniqueness
-        all_items = []
-        while not stack.empty():
-            val = stack.pop()
-            if val is not None:
-                all_items.append(val)
-        
-        assert len(set(all_items)) == len(all_items)  # All unique
-    
-    def test_persistence(self):
-        """Test that stack persists across connections."""
-        # Create and populate
-        stack1 = shm.IntStack(self.mem, "persist_stack", capacity=100)
-        test_data = [10, 20, 30, 40, 50]
-        for val in test_data:
-            stack1.push(val)
-        
-        size1 = len(stack1)
-        del stack1
-        
-        # Re-attach and verify
-        stack2 = shm.IntStack(self.mem, "persist_stack")
-        assert len(stack2) == size1
+        # Open same stack
+        stack2 = Stack(mem, "double_stack", dtype=np.float64)
+        assert stack2.size() == 3
         
         # Pop in LIFO order
-        popped = []
-        while not stack2.empty():
-            popped.append(stack2.pop())
-        
-        assert popped == list(reversed(test_data))
+        assert pytest.approx(stack2.pop()) == 1.41
+        assert pytest.approx(stack2.pop()) == 2.71
+        assert pytest.approx(stack2.pop()) == 3.14
     
-    def test_mixed_operations(self):
-        """Test mixed push, pop, and peek operations."""
-        stack = shm.IntStack(self.mem, "mixed_stack", capacity=100)
+    def test_struct_type(self):
+        """Test stack with structured dtype."""
+        mem = Memory("/test_stack", size=1024*1024)
         
-        # Interleave operations
-        stack.push(1)
-        stack.push(2)
-        assert stack.top() == 2
+        # Define a structured dtype
+        point_dtype = np.dtype([('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
+        stack = Stack(mem, "point_stack", capacity=10, dtype=point_dtype)
         
-        stack.push(3)
-        assert stack.pop() == 3
-        assert stack.top() == 2
+        # Push structured data
+        point1 = np.array((1.0, 2.0, 3.0), dtype=point_dtype)
+        point2 = np.array((4.0, 5.0, 6.0), dtype=point_dtype)
         
-        stack.push(4)
-        stack.push(5)
-        assert len(stack) == 4
+        assert stack.push(point1)
+        assert stack.push(point2)
         
-        stack.clear()
+        # Pop and verify (LIFO)
+        p = stack.pop()
+        assert p['x'] == 4.0
+        assert p['y'] == 5.0
+        assert p['z'] == 6.0
+    
+    def test_concurrent_push_pop(self):
+        """Test concurrent push/pop operations."""
+        mem = Memory("/test_stack", size=10*1024*1024)
+        stack = Stack(mem, "concurrent_stack", capacity=10000, dtype=np.int32)
+        
+        num_threads = 4
+        items_per_thread = 1000
+        
+        def worker(thread_id):
+            # Push phase
+            for i in range(items_per_thread):
+                value = thread_id * items_per_thread + i
+                while not stack.push(value):
+                    pass  # Spin until successful
+            
+            # Pop phase (half the items)
+            for i in range(items_per_thread // 2):
+                while stack.pop() is None:
+                    if stack.empty():
+                        break
+        
+        # Run workers in parallel
+        threads = []
+        for t in range(num_threads):
+            thread = threading.Thread(target=worker, args=(t,))
+            threads.append(thread)
+            thread.start()
+        
+        for thread in threads:
+            thread.join()
+        
+        # Should have half the items left
+        assert stack.size() == num_threads * items_per_thread // 2
+        
+        # Pop remaining
+        count = 0
+        while stack.pop() is not None:
+            count += 1
+        assert count == num_threads * items_per_thread // 2
         assert stack.empty()
-        
-        stack.push(99)
-        assert stack.top() == 99
-        assert stack.pop() == 99
-        assert stack.empty()
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

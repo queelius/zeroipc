@@ -18,7 +18,7 @@ class TestArray(unittest.TestCase):
     def tearDown(self):
         """Clean up"""
         self.memory.close()
-        self.memory.unlink()
+        Memory.unlink(self.test_name)
     
     def test_create_new_array(self):
         """Test creating a new array"""

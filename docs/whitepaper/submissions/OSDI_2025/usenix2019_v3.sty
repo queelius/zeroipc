@@ -1,0 +1,96 @@
+% usenix2019_v3.sty - For OSDI 2025 submission
+% USENIX conference style
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{usenix2019_v3}[2019/09/01 USENIX Conference Style v3]
+
+% Page setup
+\RequirePackage[letterpaper,left=1in,right=1in,top=1in,bottom=1in,columnsep=0.25in]{geometry}
+
+% Font setup
+\RequirePackage{times}
+\RequirePackage[T1]{fontenc}
+
+% Math packages
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+
+% Graphics
+\RequirePackage{graphicx}
+\RequirePackage{xcolor}
+
+% Tables
+\RequirePackage{booktabs}
+\RequirePackage{array}
+
+% References and links
+\RequirePackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=black,
+    bookmarks=false
+}
+
+% Section formatting
+\RequirePackage{titlesec}
+\titleformat{\section}
+    {\normalfont\large\bfseries}
+    {\thesection}{1em}{}
+\titleformat{\subsection}
+    {\normalfont\normalsize\bfseries}
+    {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+    {\normalfont\normalsize\bfseries}
+    {\thesubsubsection}{1em}{}
+
+% Paragraph spacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+% Caption formatting
+\RequirePackage[font=small,labelfont=bf]{caption}
+
+% Abstract formatting
+\renewenvironment{abstract}{
+    \centerline{\large\bfseries Abstract}
+    \begin{quotation}\noindent\small
+}{
+    \end{quotation}
+}
+
+% Author and title formatting for anonymous submission
+\def\@maketitle{%
+  \newpage
+  \null
+  \vskip 2em%
+  \begin{center}%
+    \let\footnote\thanks
+    {\LARGE\bfseries \@title \par}%
+    \vskip 1.5em%
+    {\large
+      \lineskip .5em%
+      \begin{tabular}[t]{c}%
+        \@author
+      \end{tabular}\par}%
+  \end{center}%
+  \par
+  \vskip 1.5em}
+
+% Page numbering
+\pagestyle{plain}
+
+% Bibliography style
+\bibliographystyle{plain}
+
+% Floats
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.8}
+
+% Spacing
+\RequirePackage{setspace}
+\singlespacing
+
+\endinput

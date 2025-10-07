@@ -202,7 +202,7 @@ private:
         
         int sum = 0;
         for (int i = 0; i < iterations; i++) {
-            size_t idx = (i * stride) % array.size();
+            size_t idx = (i * stride) % array.capacity();
             sum += array[idx];
         }
         

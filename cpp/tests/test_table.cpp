@@ -19,7 +19,7 @@ protected:
 };
 
 TEST_F(TableTest, CreateNewTable) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     EXPECT_EQ(table.entry_count(), 0);
     EXPECT_EQ(table.max_entries(), 64);
@@ -27,7 +27,7 @@ TEST_F(TableTest, CreateNewTable) {
 }
 
 TEST_F(TableTest, AddAndFindEntry) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     EXPECT_TRUE(table.add("test_entry", 1000, 500));
     EXPECT_EQ(table.entry_count(), 1);
@@ -43,7 +43,7 @@ TEST_F(TableTest, AddAndFindEntry) {
 }
 
 TEST_F(TableTest, MultipleEntries) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     EXPECT_TRUE(table.add("entry1", 1000, 100));
     EXPECT_TRUE(table.add("entry2", 2000, 200));
@@ -65,14 +65,14 @@ TEST_F(TableTest, MultipleEntries) {
 }
 
 TEST_F(TableTest, DuplicateNameThrows) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     EXPECT_TRUE(table.add("test", 1000, 100));
     EXPECT_THROW(table.add("test", 2000, 200), std::invalid_argument);
 }
 
 TEST_F(TableTest, LongNameThrows) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     std::string long_name(32, 'x'); // 32 chars, too long
     EXPECT_THROW(table.add(long_name, 1000, 100), std::invalid_argument);
@@ -82,7 +82,7 @@ TEST_F(TableTest, LongNameThrows) {
 }
 
 TEST_F(TableTest, TableFull) {
-    Table table(buffer.data(), 4, true); // Small table for testing
+    Table table(buffer.data(), 4, buffer.size(), true); // Small table for testing
     
     EXPECT_TRUE(table.add("entry1", 1000, 100));
     EXPECT_TRUE(table.add("entry2", 2000, 100));
@@ -95,7 +95,7 @@ TEST_F(TableTest, TableFull) {
 }
 
 TEST_F(TableTest, Allocation) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     uint32_t initial = table.next_offset();
     
@@ -113,13 +113,13 @@ TEST_F(TableTest, Allocation) {
 TEST_F(TableTest, OpenExistingTable) {
     // Create a table
     {
-        Table table(buffer.data(), 64, true);
+        Table table(buffer.data(), 64, buffer.size(), true);
         table.add("persistent", 1000, 500);
     }
     
     // Open the existing table
     {
-        Table table(buffer.data(), 64, false);
+        Table table(buffer.data(), 64, buffer.size(), false);
         EXPECT_EQ(table.entry_count(), 1);
         
         auto* entry = table.find("persistent");
@@ -132,7 +132,7 @@ TEST_F(TableTest, OpenExistingTable) {
 
 TEST_F(TableTest, InvalidMagicThrows) {
     // Create a table and corrupt the magic number
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     *reinterpret_cast<uint32_t*>(buffer.data()) = 0xDEADBEEF;
     
     EXPECT_THROW(Table(buffer.data(), 64, false), std::runtime_error);
@@ -149,7 +149,7 @@ TEST_F(TableTest, CalculateSize) {
 }
 
 TEST_F(TableTest, AlignmentWorks) {
-    Table table(buffer.data(), 64, true);
+    Table table(buffer.data(), 64, buffer.size(), true);
     
     // Start at unaligned position
     table.allocate(7); // Now next_offset is not aligned to 8

@@ -6,7 +6,6 @@ import os
 import mmap
 import tempfile
 from typing import Optional
-from .table import Table
 
 
 class Memory:
@@ -28,8 +27,17 @@ class Memory:
             table_size: Alias for max_entries for compatibility
         """
         self.name = name
-        self.size = size
         self.max_entries = table_size if table_size is not None else max_entries
+
+        # Import Table here to avoid circular imports
+        from .table import Table
+
+        # Ensure size is large enough for the table
+        min_size = Table.calculate_size(self.max_entries)
+        if size > 0 and size < min_size:
+            size = min_size
+
+        self.size = size
         self.fd = None
         self.mmap = None
         self.table = None
@@ -41,7 +49,8 @@ class Memory:
             self._open()
         
         # Initialize table
-        self.table = Table(self.mmap, max_entries, self.owner)
+        from .table import Table
+        self.table = Table(memoryview(self.mmap), self.max_entries, self.owner, self.size)
     
     def _create(self):
         """Create new shared memory"""
@@ -79,9 +88,11 @@ class Memory:
         # Map the memory
         self.mmap = mmap.mmap(self.fd, self.size)
     
-    def unlink(self):
+    def unlink_instance(self, name=None):
         """Unlink (delete) the shared memory"""
-        Memory.unlink_static(self.name)
+        if name is None:
+            name = self.name
+        Memory.unlink_static(name)
     
     def allocate(self, name: str, size: int) -> int:
         """
@@ -152,8 +163,22 @@ class Memory:
     
     def close(self):
         """Close the shared memory"""
+        # Close table first to release memoryview
+        if hasattr(self, 'table') and self.table:
+            if hasattr(self.table, 'buffer') and self.table.buffer:
+                try:
+                    # Try to release the memoryview reference
+                    self.table.buffer.release()
+                except (AttributeError, ValueError):
+                    pass
+                self.table.buffer = None
+            self.table = None
         if self.mmap:
-            self.mmap.close()
+            try:
+                self.mmap.close()
+            except BufferError:
+                # Ignore buffer errors - this happens when there are still exported pointers
+                pass
             self.mmap = None
         if self.fd is not None:
             os.close(self.fd)
@@ -175,20 +200,26 @@ class Memory:
     def unlink_static(name: str):
         """
         Unlink (delete) shared memory by name.
-        
+
         Args:
             name: Shared memory name
         """
         shm_path = f"/dev/shm{name}"
         if os.path.exists(shm_path):
             os.unlink(shm_path)
-    
-    @staticmethod
-    def unlink(name: str):
-        """
-        Unlink (delete) shared memory by name.
-        
-        Args:
-            name: Shared memory name
-        """
-        Memory.unlink_static(name)
+
+
+# Flexible unlink function that works for both static and instance calls
+def _unlink_flexible(self_or_name, name_arg=None):
+    """Flexible unlink that handles both Memory.unlink(name) and mem.unlink()"""
+    if isinstance(self_or_name, str):
+        # Static call: Memory.unlink("name")
+        Memory.unlink_static(self_or_name)
+    else:
+        # Instance call: mem.unlink() or mem.unlink("name")
+        if name_arg is None:
+            name_arg = self_or_name.name
+        Memory.unlink_static(name_arg)
+
+Memory.unlink = _unlink_flexible
+

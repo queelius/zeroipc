@@ -8,6 +8,8 @@
 #include <string>
 #include <stdexcept>
 #include <memory>
+#include <cerrno>
+#include <cstring>
 
 namespace zeroipc {
 
@@ -41,8 +43,7 @@ public:
         }
         
         // Initialize table
-        size_t table_size = Table::calculate_size(max_entries_);
-        table_ = std::make_unique<Table>(memory_, max_entries_, owner_);
+        table_ = std::make_unique<Table>(memory_, max_entries_, size_, owner_);
     }
     
     ~Memory() {
@@ -150,7 +151,7 @@ public:
      */
     size_t allocate(std::string_view name, size_t size) {
         // First allocate the space
-        uint32_t offset = table_->allocate(size);
+        uint64_t offset = table_->allocate(size);
         
         // Then add to table
         if (!table_->add(name, offset, size)) {

@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: 'ZeroIPC: Lock-Free Shared Memory IPC with Codata Structures'
+message: 'If you use this software, please cite it as below.'
+type: software
+authors:
+  - given-names: 'Alex'
+    family-names: 'Towell'
+    email: 'atowell@siue.edu'
+    affiliation: 'Southern Illinois University Edwardsville'
+identifiers:
+  - type: url
+    value: 'https://github.com/queelius/zeroipc'
+    description: 'GitHub repository'
+repository-code: 'https://github.com/queelius/zeroipc'
+url: 'https://github.com/queelius/zeroipc'
+repository: 'https://github.com/queelius/zeroipc'
+abstract: >-
+  ZeroIPC is a high-performance shared memory IPC library that
+  introduces codata structures (lazy evaluation, futures, streams,
+  channels) as lock-free primitives. It enables functional programming
+  patterns across process boundaries with zero-copy efficiency,
+  supporting C++23, C99, and Python through a minimal binary format.
+keywords:
+  - shared-memory
+  - inter-process-communication
+  - lock-free
+  - codata
+  - lazy-evaluation
+  - futures
+  - streams
+  - cpp23
+  - python
+license: MIT
+version: 2.0.0
+date-released: '2025-01-15'

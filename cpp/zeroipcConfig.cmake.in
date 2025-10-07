@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(Threads REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/zeroipcTargets.cmake")
+
+# Set up variables for consumers
+set(zeroipc_FOUND TRUE)
+
+check_required_components(zeroipc)

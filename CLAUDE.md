@@ -4,168 +4,219 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ZeroIPC** is a cross-language shared memory IPC library. It defines a binary format specification that allows different processes (potentially written in different languages) to share data structures through POSIX shared memory with zero-copy access.
+**ZeroIPC** is a high-performance cross-language shared memory IPC library that enables zero-copy data sharing between processes. The project implements a binary format specification allowing different languages to share data structures through POSIX shared memory without serialization overhead.
 
 ## Architecture
 
-The project has been reorganized with parallel implementations in multiple languages:
-- `cpp/` - C++ implementation 
-- `python/` - Pure Python implementation (not bindings!)
+### Parallel Language Implementations
+- `c/` - Pure C99 implementation with static library
+- `cpp/` - Modern C++23 header-only template library  
+- `python/` - Pure Python implementation using mmap and numpy
 - `interop/` - Cross-language integration tests
-- `SPECIFICATION.md` - The binary format all implementations follow
+- `SPECIFICATION.md` - Binary format all implementations must follow
 
-Key design changes:
-- **Minimal metadata**: Table stores only name, offset, and size
-- **No type information**: Users specify types (duck typing in Python)
-- **Runtime configurable**: Table size determined at creation
-- **Language equality**: Each language implementation is standalone
+### Core Design Principles
+- **Minimal metadata**: Table stores only name, offset, and size (no type information)
+- **Duck typing**: Users specify types at runtime (Python) or compile time (C++)
+- **Lock-free operations**: All concurrent structures use atomic CAS operations
+- **No automatic memory management**: Users control layout, no defragmentation
+- **Binary compatibility**: All languages read/write identical format
+
+### Memory Layout
+```
+[Table Header][Table Entries][Structure 1][Structure 2]...[Structure N]
+```
 
 ## Build Commands
 
+### C++ (Primary development focus)
 ```bash
-# Configure the project with CMake (requires C++23)
+# Configure with CMake (requires C++23, GoogleTest auto-downloaded)
 cmake -B build .
 
-# Build all targets
+# Build everything
 cmake --build build
 
-# Run tests (requires GoogleTest)
-cd build && ctest
-# Or directly:
-./build/tests/zeroipc_tests
+# Run all tests
+cd build && ctest --output-on-failure
 
-# Build and run examples
-./build/examples/basic_usage
+# Run specific test
+./build/tests/test_queue
+./build/tests/test_lockfree_comprehensive
+
+# Run tests with verbose output
+cd build && ctest -V
+
+# Clean build
+rm -rf build/
 ```
 
-## Modern C++ Features
+### C
+```bash
+cd c
+make            # Build static library
+make test       # Run tests  
+make clean      # Clean artifacts
+```
 
-The library uses C++23 features for efficiency and safety:
-- **Concepts** for type constraints (`requires std::is_trivially_copyable_v<T>`)
-- **std::string_view** for zero-allocation string handling
-- **[[nodiscard]]** attributes for API safety
-- **std::optional** for safe error handling
-- **std::span** for safe array views
-- **Designated initializers** for clear struct initialization
-- **std::atomic** with explicit memory ordering for lock-free operations
+### Python
+```bash
+cd python
+make install-dev  # Set up dev environment with all dependencies
+make test         # Run tests
+make test-cov     # Run with coverage report
+make lint         # Run linting (ruff, mypy)
+make format       # Format code (black, isort)
+```
 
-## Core Architecture
+### Cross-Language Testing
+```bash
+cd interop
+./test_interop.sh          # C++ writes, Python reads
+./test_reverse_interop.sh  # Python writes, C++ reads  
+```
 
-The library is built on three foundational components:
+## C++ Implementation Details
 
-1. **`zeroipc::memory`** (include/zeroipc.h): POSIX shared memory wrapper with reference counting and automatic cleanup.
+### Modern C++23 Features Used
+- **Concepts**: `requires std::is_trivially_copyable_v<T>` for type constraints
+- **std::atomic**: Explicit memory ordering for lock-free operations
+- **std::optional**: Safe error handling without exceptions
+- **std::string_view**: Zero-allocation string handling
+- **[[nodiscard]]**: API safety attributes
+- **Designated initializers**: Clear struct initialization
 
-2. **`zeroipc::table`** (include/table.h): Metadata manager that enables dynamic discovery of shared structures by name. Stores metadata at the beginning of shared memory segments.
+### Lock-Free Implementation
 
-3. **`zeroipc::span<T>`** (include/span.h): Base template class providing common functionality for shared memory data structures.
-
-Data structures are laid out in shared memory as: `[table][structure1][structure2]...[structureN]`
-
-## Data Structure Implementations
-
-The library implements various lockfree data structures optimized for shared memory:
-- `zeroipc::array<T>`: Contiguous array with atomic compare-and-swap operations
-- `zeroipc::queue<T>`: Lock-free circular buffer using CAS for enqueue/dequeue
-- `zeroipc::stack<T>`: Lock-free stack with CAS push/pop operations
-- `zeroipc::set<T>`: Hash set implementation
-- `zeroipc::map<K,V>`: Hash map with linear probing
-- `zeroipc::bitset<N>`: Atomic bit operations
-- `zeroipc::ring<T>`: High-performance ring buffer
-- `zeroipc::pool<T>`: Object pool for memory reuse
-
-All structures support dynamic creation/discovery via the table metadata system.
-
-## Key Design Decisions
-
-- **Lock-free Operations**: All concurrent data structures (queue, stack, etc.) use atomic compare-and-swap (CAS) operations for true lock-free behavior. The queue implementation specifically uses CAS loops in both enqueue and dequeue to prevent race conditions.
-
-- **No Automatic Defragmentation**: Users manage memory layout to avoid blocking operations
-
-- **Parameterized Table Sizes**: The metadata table is fully parameterized via templates:
-  - All predefined tables use 32-char names (sufficient for most identifiers)
-  - Granular size options with clear naming: `table{N}` where N = number of entries
-    - `table1`: 1 entry (minimal)
-    - `table2`: 2 entries (dual)
-    - `table4`: 4 entries (quad)
-    - `table8`: 8 entries (tiny)
-    - `table16`: 16 entries (small)
-    - `table32`: 32 entries (compact)
-    - `table64`: 64 entries (standard, default as `table`)
-    - `table128`: 128 entries (medium)
-    - `table256`: 256 entries (large)
-    - `table512`: 512 entries (xlarge)
-    - `table1024`: 1024 entries (huge)
-    - `table2048`: 2048 entries (xhuge)
-    - `table4096`: 4096 entries (maximum)
-  - Custom sizes: `table_impl<name_size, max_entries>`
-  - **Important**: Names exceeding the table's max name size will throw `std::invalid_argument`
-  - **Important**: When creating many structures, ensure the table size is sufficient. The 64-entry default limit can be hit quickly in tests or applications creating many named structures.
-
-- **Exception-Based Error Handling**: Uses C++ exceptions for allocation failures and bounds checking
-
-## Architecture Insights
-
-### Minimal Metadata Philosophy
-The new design stores NO type information - only name, offset, and size. This enables:
-- True duck typing in Python
-- Zero overhead in C++
-- Complete language independence
-- User responsibility for type consistency
-
-### Cross-Language Compatibility Verified
-C++ creates data → Python reads it perfectly using only:
-- Shared binary format (SPECIFICATION.md)
-- User-specified types (numpy dtypes in Python)
-- No binding layer needed!
-
-### Table Size Considerations
-- Minimum memory needed: Table::calculate_size(max_entries) 
-- Default 64 entries = 2576 bytes overhead
-- Runtime configurable, not template parameter
-- All languages see same table layout
-
-## Recent Insights and Gotchas
-
-### Queue Lock-Free Implementation
-
-The queue must use proper CAS operations for true lock-free behavior:
+All concurrent structures (Queue, Stack) use compare-and-swap (CAS) loops:
 
 ```cpp
-// CORRECT - uses CAS
-if (hdr->tail.compare_exchange_weak(current_tail, next_tail,
-                                     std::memory_order_release,
-                                     std::memory_order_acquire)) {
-    // We own the slot, safe to write
-    data_start()[current_tail] = value;
-    return true;
-}
+// CORRECT lock-free enqueue pattern
+do {
+    current_tail = tail.load(std::memory_order_relaxed);
+    next_tail = (current_tail + 1) % capacity;
+    if (queue_full) return false;
+} while (!tail.compare_exchange_weak(current_tail, next_tail,
+                                     std::memory_order_relaxed,
+                                     std::memory_order_relaxed));
+// Write data with proper fence
+data[current_tail] = value;
+std::atomic_thread_fence(std::memory_order_release);
 ```
 
-### Table Entry Limits
+### Table Size Configuration
 
-When writing tests or applications that create many structures:
-
-1. Count the total number of named structures you'll create
-2. If exceeding 64, use a larger table type:
+The metadata table uses template parameters for compile-time size configuration:
 
 ```cpp
-zeroipc::memory<table256> shm("/my_shm", size);   // 256 entries
-// or
-zeroipc::memory<table1024> shm("/my_shm", size);  // 1024 entries
+// Predefined table sizes (N = number of entries)
+table1      // 1 entry (minimal)
+table4      // 4 entries (quad)  
+table8      // 8 entries (tiny)
+table16     // 16 entries (small)
+table32     // 32 entries (compact)
+table64     // 64 entries (standard, aliased as 'table')
+table128    // 128 entries (medium)
+table256    // 256 entries (large)
+table512    // 512 entries (xlarge)
+table1024   // 1024 entries (huge)
+table2048   // 2048 entries (xhuge)
+table4096   // 4096 entries (maximum)
+
+// Custom configuration
+table_impl<name_size, max_entries>  // Full control
 ```
 
-### String Views Over Fixed Arrays
+**Important**: Tests creating many structures need larger tables:
+```cpp
+zeroipc::memory<table256> shm("/test", size);  // For tests with >64 structures
+```
 
-The table uses fixed-size char arrays for names but provides string_view interfaces to avoid unnecessary allocations. Always prefer string_view when passing or returning names.
+## Data Structures
+
+### Currently Implemented
+- `memory`: POSIX shared memory wrapper with reference counting
+- `table`: Metadata registry for dynamic structure discovery  
+- `array<T>`: Fixed-size contiguous array with atomic operations
+- `queue<T>`: Lock-free MPMC circular buffer using CAS
+- `stack<T>`: Lock-free stack with CAS push/pop
+
+### Structure Creation Pattern
+
+Both languages can create and discover structures:
+
+```cpp
+// C++ creates
+zeroipc::memory mem("/data", 10*1024*1024);
+zeroipc::array<float> temps(mem, "temperatures", 1000);
+
+// Python discovers and reads
+mem = Memory("/data")
+temps = Array(mem, "temperatures", dtype=np.float32)
+```
+
+## Testing Approach
+
+### Unit Tests
+- GoogleTest for C++ (`tests/test_*.cpp`)
+- pytest for Python (`tests/test_*.py`)
+- Each structure has dedicated test file
+
+### Integration Tests  
+- `test_lockfree_comprehensive.cpp`: Multi-threaded stress testing
+- `test_stress.cpp`: High contention scenarios
+- `test_aba_problem.cpp`: ABA problem verification
+- `test_memory_boundaries.cpp`: Memory safety validation
+- `test_failure_recovery.cpp`: Process crash recovery
 
 ### Test Isolation
+Tests use unique shared memory names (often with PID) to avoid conflicts:
+```cpp
+std::string shm_name = "/test_" + std::to_string(getpid());
+```
 
-Tests should use unique shared memory names (e.g., including process ID) to avoid conflicts when tests run in parallel or shared memory isn't properly cleaned up.
+## Common Development Tasks
 
-## Testing
+### Adding a New Data Structure
+1. Define binary format in SPECIFICATION.md
+2. Implement C++ version in `cpp/include/zeroipc/`
+3. Add comprehensive tests in `cpp/tests/test_<structure>.cpp`
+4. Implement Python version in `python/zeroipc/`
+5. Add Python tests in `python/tests/`
+6. Create interop tests in `interop/`
 
-Tests use GoogleTest framework and are located in `tests/`. Key test files:
+### Debugging Lock-Free Issues
+1. Run `test_lockfree_comprehensive` with thread sanitizer
+2. Check `test_aba_problem` for ABA vulnerabilities
+3. Verify memory ordering in CAS loops
+4. Use `test_stress` to reproduce race conditions
 
-- `zeroipc_tests`: Main test suite with all unit and integration tests
-- Test coverage includes single-threaded, multi-threaded, and multi-process scenarios
-- Stress tests validate lock-free implementations under high contention
+### Performance Profiling
+```bash
+cd cpp/build
+./benchmarks/benchmark_queue --benchmark_repetitions=10
+./benchmarks/benchmark_array
+```
+
+## Key Gotchas
+
+1. **Table Entry Limits**: Default 64 entries fills quickly in tests. Use larger table types when needed.
+
+2. **String Names**: Limited to 31 characters (32 with null terminator). Longer names throw `std::invalid_argument`.
+
+3. **Type Consistency**: No runtime type checking - users must ensure type agreement across languages.
+
+4. **Memory Fences**: Lock-free operations require careful fence placement for visibility.
+
+5. **Shared Memory Cleanup**: Failed tests may leave `/dev/shm/test_*` files. Clean with:
+   ```bash
+   rm -f /dev/shm/test_* /dev/shm/zeroipc_*
+   ```
+
+## Recent Changes
+
+- Switched to minimal metadata design (v1.0) - only name/offset/size stored
+- Implemented proper lock-free queue with CAS loops
+- Added comprehensive test suite for concurrency edge cases
+- Standardized table naming: `tableN` where N = entry count
+- Fixed ABA problems in lock-free structures

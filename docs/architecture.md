@@ -11,9 +11,16 @@
 └───────────────────────┬──────────────────────────────────┘
                         │
 ┌───────────────────────▼──────────────────────────────────┐
+│                   Codata Layer                            │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐          │
+│  │ Future │ │  Lazy  │ │ Stream │ │ Channel │          │
+│  └────────┘ └────────┘ └────────┘ └─────────┘          │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+┌───────────────────────▼──────────────────────────────────┐
 │                Data Structure Layer                       │
 │  ┌────────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐   │
-│  │ Array  │ │ Queue  │ │ Stack │ │ Map  │ │  Set   │   │
+│  │ Array  │ │ Queue  │ │ Stack │ │ Map  │ │  Pool  │   │
 │  └────────┘ └────────┘ └──────┘ └──────┘ └────────┘   │
 └───────────────────────┬──────────────────────────────────┘
                         │
@@ -173,6 +180,81 @@ A free-list allocator could reuse gaps, but adds complexity and potential fragme
 - Linear probing for collision resolution
 - Fixed bucket count
 - Key-value storage
+
+### 4. Codata Structure Implementations
+
+#### Future - Asynchronous Results
+
+**Memory Layout:**
+```
+[Header]
+  state (PENDING/COMPUTING/READY/ERROR)
+  waiters count
+  completion time
+[Value Storage]
+[Error Message Buffer]
+```
+
+**Properties:**
+- Single-assignment semantics
+- Multiple readers supported
+- Timeout-based waiting
+- Error propagation
+
+#### Lazy - Deferred Computation
+
+**Memory Layout:**
+```
+[Header]
+  computed flag
+  computing flag
+  version
+[Cached Value]
+[Computation State]
+```
+
+**Properties:**
+- Computation on first access
+- Automatic memoization
+- Thread-safe evaluation
+- Cache invalidation support
+
+#### Stream - Reactive Data Flow
+
+**Memory Layout:**
+```
+[Header]
+  sequence number
+  subscribers count
+  closed flag
+[Ring Buffer]
+[Transform Metadata]
+```
+
+**Properties:**
+- Push-based data flow
+- Functional operators (map, filter, fold)
+- Backpressure via ring buffer
+- Multi-cast to subscribers
+
+#### Channel - CSP Communication
+
+**Memory Layout:**
+```
+[Header]
+  buffer capacity
+  read index
+  write index
+  closed flag
+[Circular Buffer]
+[Synchronization Primitives]
+```
+
+**Properties:**
+- Synchronous (unbuffered) or asynchronous (buffered)
+- FIFO ordering
+- Blocking/non-blocking operations
+- Select operation support
 
 ## Synchronization Strategies
 

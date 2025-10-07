@@ -1,5 +1,4 @@
-#ifndef ZEROIPC_STACK_H
-#define ZEROIPC_STACK_H
+#pragma once
 
 #include "memory.h"
 #include <atomic>
@@ -150,5 +149,3 @@ private:
 };
 
 } // namespace zeroipc
-
-#endif // ZEROIPC_STACK_H

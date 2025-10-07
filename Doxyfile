@@ -1,23 +1,24 @@
-# Doxyfile for POSIX Shared Memory Data Structures
+# Doxyfile for ZeroIPC
 
 # Project information
-PROJECT_NAME           = "POSIX Shared Memory Data Structures"
+PROJECT_NAME           = "ZeroIPC"
 PROJECT_NUMBER         = "1.0"
-PROJECT_BRIEF          = "High-performance lock-free data structures for inter-process communication"
+PROJECT_BRIEF          = "Active Computational Substrate for Shared Memory IPC"
 PROJECT_LOGO           = 
 
 # Input/output directories
 INPUT                  = README.md \
-                        docs/mainpage.md \
-                        docs/performance.md \
-                        docs/tutorial.md \
+                        docs/codata_guide.md \
+                        docs/api_reference.md \
+                        docs/patterns.md \
+                        docs/cli_tools.md \
                         docs/architecture.md \
-                        include \
-                        examples
+                        cpp/include/zeroipc \
+                        docs/examples
 INPUT_ENCODING         = UTF-8
 FILE_PATTERNS          = *.h *.hpp *.cpp *.md
 RECURSIVE              = YES
-USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
+USE_MDFILE_AS_MAINPAGE = README.md
 
 # Output configuration
 OUTPUT_DIRECTORY       = docs/html
@@ -102,6 +103,9 @@ ALIASES                = "complexity=\par Complexity:\n" \
                         "thread_safe=\par Thread Safety:\n" \
                         "lock_free=\par Lock-Free Guarantee:\n" \
                         "performance=\par Performance:\n" \
-                        "usage_example=\par Usage Example:\n"
+                        "usage_example=\par Usage Example:\n" \
+                        "motivation=\par Motivation:\n" \
+                        "theory=\par Theory:\n" \
+                        "operators=\par Operators:\n"
 
 HTML_EXTRA_STYLESHEET = docs/doxygen-awesome.css

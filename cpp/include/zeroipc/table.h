@@ -22,24 +22,28 @@ public:
         uint32_t magic;
         uint32_t version;
         uint32_t entry_count;
-        uint32_t next_offset;
+        uint32_t reserved;      // Padding/reserved for future use
+        uint64_t memory_size;   // Total size of the shared memory segment (supports >4GB)
+        uint64_t next_offset;   // Next allocation offset (supports >4GB)
     };
     
     struct Entry {
         char name[32];
-        uint32_t offset;
-        uint32_t size;
+        uint64_t offset;        // Supports offsets >4GB
+        uint64_t size;          // Supports sizes >4GB
     };
     
     /**
      * Initialize a table in existing memory
      * @param memory Pointer to the start of shared memory
      * @param max_entries Maximum number of entries this table can hold
+     * @param memory_size Total size of the shared memory segment
      * @param create If true, initialize a new table; if false, open existing
      */
-    Table(void* memory, size_t max_entries, bool create = false)
+    Table(void* memory, size_t max_entries, size_t memory_size, bool create = false)
         : memory_(static_cast<char*>(memory))
-        , max_entries_(max_entries) {
+        , max_entries_(max_entries)
+        , memory_size_(memory_size) {
         
         if (create) {
             initialize();
@@ -68,7 +72,7 @@ public:
      * Add a new entry to the table
      * @return true if successful, false if table is full
      */
-    bool add(std::string_view name, uint32_t offset, uint32_t size) {
+    [[nodiscard]] bool add(std::string_view name, uint64_t offset, uint64_t size) {
         if (name.size() >= 32) {
             throw std::invalid_argument("Name too long (max 31 characters)");
         }
@@ -99,12 +103,21 @@ public:
      * @param alignment Alignment requirement (default 8)
      * @return Offset of allocated space
      */
-    uint32_t allocate(size_t size, size_t alignment = 8) {
+    uint64_t allocate(size_t size, size_t alignment = 8) {
         auto* header = get_header();
         
         // Align the offset
-        uint32_t aligned = (header->next_offset + alignment - 1) & ~(alignment - 1);
-        uint32_t result = aligned;
+        uint64_t aligned = (header->next_offset + alignment - 1) & ~(alignment - 1);
+        uint64_t result = aligned;
+        
+        // Check if allocation would exceed memory bounds
+        if (aligned + size < aligned) {  // Check for overflow
+            throw std::runtime_error("Allocation size overflow");
+        }
+        
+        if (aligned + size > memory_size_) {  // Check against total memory size
+            throw std::runtime_error("Allocation would exceed memory bounds");
+        }
         
         header->next_offset = aligned + size;
         return result;
@@ -134,7 +147,7 @@ public:
     /**
      * Get the next allocation offset
      */
-    uint32_t next_offset() const {
+    uint64_t next_offset() const {
         return get_header()->next_offset;
     }
     
@@ -144,7 +157,9 @@ private:
         header->magic = TABLE_MAGIC;
         header->version = TABLE_VERSION;
         header->entry_count = 0;
-        header->next_offset = calculate_size(max_entries_);
+        header->reserved = 0;
+        header->memory_size = memory_size_;
+        header->next_offset = calculate_size(max_entries_);  // Already aligned due to struct sizes
         
         // Zero out entries
         auto* entries = get_entries();
@@ -165,6 +180,9 @@ private:
         if (header->entry_count > max_entries_) {
             throw std::runtime_error("Table corruption: entry count exceeds maximum");
         }
+        
+        // Use the stored memory size when opening existing table
+        memory_size_ = header->memory_size;
     }
     
     Header* get_header() {
@@ -185,6 +203,7 @@ private:
     
     char* memory_;
     size_t max_entries_;
+    size_t memory_size_;
 };
 
 } // namespace zeroipc

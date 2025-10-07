@@ -1,9 +1,7 @@
-#ifndef ZEROIPC_QUEUE_H
-#define ZEROIPC_QUEUE_H
+#pragma once
 
 #include "memory.h"
 #include <atomic>
-#include <cstring>
 #include <optional>
 
 namespace zeroipc {
@@ -24,6 +22,15 @@ public:
     // Create new queue
     Queue(Memory& memory, std::string_view name, size_t capacity)
         : memory_(memory), name_(name) {
+        
+        if (capacity == 0) {
+            throw std::invalid_argument("Queue capacity must be greater than 0");
+        }
+        
+        // Check for overflow
+        if (capacity > (SIZE_MAX - sizeof(Header)) / sizeof(T)) {
+            throw std::overflow_error("Queue capacity too large");
+        }
         
         size_t total_size = sizeof(Header) + sizeof(T) * capacity;
         size_t offset = memory.allocate(name, total_size);
@@ -62,7 +69,7 @@ public:
     }
     
     // Enqueue (lock-free MPMC)
-    bool push(const T& value) {
+    [[nodiscard]] bool push(const T& value) {
         uint32_t current_tail, next_tail;
         
         // Reserve a slot atomically
@@ -89,7 +96,7 @@ public:
     }
     
     // Dequeue (lock-free MPMC)
-    std::optional<T> pop() {
+    [[nodiscard]] std::optional<T> pop() {
         uint32_t current_head, next_head;
         
         // Reserve a slot to read atomically
@@ -150,5 +157,3 @@ private:
 };
 
 } // namespace zeroipc
-
-#endif // ZEROIPC_QUEUE_H

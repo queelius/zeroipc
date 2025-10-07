@@ -1,21 +1,25 @@
-# ZeroIPC - Cross-Language Shared Memory IPC
+# ZeroIPC - Active Computational Substrate for Shared Memory
 
 ## Overview
 
-ZeroIPC is a high-performance inter-process communication library that enables zero-copy data sharing through POSIX shared memory. It provides true language independence with parallel implementations in C++ and Python.
+ZeroIPC transforms shared memory from passive storage into an active computational substrate, enabling both imperative and functional programming paradigms across process boundaries. It provides zero-copy data sharing with sophisticated concurrency primitives, reactive streams, and codata structures - bringing modern programming abstractions to inter-process communication.
 
 ### Key Features
 
 - 🚀 **Zero-Copy Performance** - Direct memory access without serialization
-- 🌐 **Language Independence** - C++ and Python are equal partners, not bindings
-- 🔒 **Lock-Free Operations** - Atomic operations for concurrent access
-- 📦 **Minimal Metadata** - Only store name/offset/size - no type information
-- 🦆 **Duck Typing** - Python users specify types at runtime, C++ uses templates
+- 🌐 **Language Independence** - C++ and Python implementations, not bindings
+- 🔒 **Lock-Free Concurrency** - Atomic operations and CAS-based algorithms
+- 📦 **Minimal Metadata** - Only store name/offset/size for true flexibility
+- 🦆 **Duck Typing** - Runtime type specification (Python) or compile-time templates (C++)
 - 🎯 **Simple Discovery** - Named structures for easy cross-process lookup
+- ⚡ **Reactive Programming** - Functional reactive streams with operators
+- 🔮 **Codata Support** - Futures, lazy evaluation, and infinite streams
+- 🚪 **CSP Concurrency** - Channels for synchronous message passing
+- 🛠️ **CLI Tools** - Comprehensive inspection and debugging utilities
 
 ## Quick Start
 
-### C++ Creates, Python Reads
+### Basic Data Sharing
 
 **C++ Producer:**
 ```cpp
@@ -43,36 +47,89 @@ temps = Array(mem, "temperature", dtype=np.float32)
 print(temps[0])  # 23.5
 ```
 
-### Python Creates, C++ Reads
+### Reactive Streams Example
 
-**Python Producer:**
-```python
-from zeroipc import Memory, Array
-import numpy as np
+**Process A - Sensor Data Producer:**
+```cpp
+#include <zeroipc/memory.h>
+#include <zeroipc/stream.h>
 
-# Create shared memory
-mem = Memory("/analytics", size=10*1024*1024)
+zeroipc::Memory mem("/sensors", 10*1024*1024);
+zeroipc::Stream<double> temperature(mem, "temp_stream", 1000);
 
-# Python CREATES new array (allocates in shared memory)
-results = Array(mem, "scores", capacity=100, dtype=np.float64)
-results[0] = 0.95
-
-# Create another structure
-metrics = Array(mem, "metrics", capacity=50, dtype=np.int32)
-metrics[0] = 42
+while (running) {
+    double temp = read_sensor();
+    temperature.emit(temp);
+    std::this_thread::sleep_for(100ms);
+}
 ```
 
-**C++ Consumer:**
+**Process B - Stream Processing:**
 ```cpp
-// Open existing shared memory
-zeroipc::Memory mem("/analytics");
+zeroipc::Memory mem("/sensors");
+zeroipc::Stream<double> temperature(mem, "temp_stream");
 
-// C++ reads what Python created
-zeroipc::Array<double> results(mem, "scores");
-std::cout << results[0];  // 0.95
+// Create derived streams with functional transformations
+auto fahrenheit = temperature.map(mem, "temp_f", 
+    [](double c) { return c * 9/5 + 32; });
 
-zeroipc::Array<int32_t> metrics(mem, "metrics");
-std::cout << metrics[0];  // 42
+auto warnings = fahrenheit.filter(mem, "warnings",
+    [](double f) { return f > 100.0; });
+
+// Subscribe to processed stream
+warnings.subscribe([](double high_temp) {
+    send_alert("High temperature: " + std::to_string(high_temp));
+});
+```
+
+### Futures for Async Results
+
+**Process A - Computation:**
+```cpp
+#include <zeroipc/future.h>
+
+zeroipc::Memory mem("/compute", 10*1024*1024);
+zeroipc::Future<double> result(mem, "expensive_calc");
+
+// Perform expensive computation
+double value = run_simulation();
+result.set_value(value);
+```
+
+**Process B - Waiting for Result:**
+```cpp
+zeroipc::Memory mem("/compute");
+zeroipc::Future<double> result(mem, "expensive_calc", true);
+
+// Wait with timeout
+if (auto value = result.get_for(std::chrono::seconds(5))) {
+    process_result(*value);
+} else {
+    handle_timeout();
+}
+```
+
+### CSP-Style Channels
+
+**Process A - Producer:**
+```cpp
+#include <zeroipc/channel.h>
+
+zeroipc::Memory mem("/messages", 10*1024*1024);
+zeroipc::Channel<Message> ch(mem, "commands", 100);  // buffered
+
+Message msg{.type = CMD_START, .data = 42};
+ch.send(msg);  // Blocks if buffer full
+```
+
+**Process B - Consumer:**
+```cpp
+zeroipc::Memory mem("/messages");
+zeroipc::Channel<Message> ch(mem, "commands");
+
+while (auto msg = ch.receive()) {
+    process_command(*msg);
+}
 ```
 
 ## Architecture
@@ -103,19 +160,30 @@ This enables true language independence:
 
 ## Data Structures
 
-Currently implemented:
-- ✅ **Array** - Fixed-size contiguous storage
-- ✅ **Table** - Metadata registry for discovery
+### Traditional Data Structures
+- ✅ **Array** - Fixed-size contiguous storage with atomic operations
+- ✅ **Queue** - Lock-free MPMC circular buffer using CAS
+- ✅ **Stack** - Lock-free LIFO with ABA-safe operations
+- ✅ **Map** - Lock-free hash map with linear probing
+- ✅ **Set** - Lock-free hash set for unique elements
+- ✅ **Pool** - Object pool with free list management
+- ✅ **Ring** - High-performance ring buffer for streaming
+- ✅ **Table** - Metadata registry for dynamic discovery
 
-Coming soon:
-- 🔄 **Queue** - Lock-free FIFO circular buffer
-- 📚 **Stack** - Lock-free LIFO 
-- 🗺️ **Map** - Hash table with linear probing
-- 🎱 **Pool** - Object pool with free list
-- ⚛️ **Atomic** - Single atomic variables
-- 🔮 **Future** - Async result handling
-- 🚀 **Function** - RPC through shared memory
-- ∞ **Codata** - Streams and infinite data structures
+### Codata & Computational Structures
+- ✅ **Future** - Asynchronous computation results across processes
+- ✅ **Lazy** - Deferred computations with automatic memoization
+- ✅ **Stream** - Reactive data flows with FRP operators (map, filter, fold)
+- ✅ **Channel** - CSP-style synchronous/buffered message passing
+
+### Why Codata?
+Traditional data structures store values in space. Codata structures represent computations over time. This enables:
+- **Cross-process async/await** - Future results shared between processes
+- **Lazy evaluation** - Expensive computations cached and shared
+- **Reactive pipelines** - Event-driven processing with backpressure
+- **CSP concurrency** - Go-style channels for structured communication
+
+See [Codata Guide](docs/codata_guide.md) for detailed explanation.
 
 ## Language Implementations
 
@@ -198,9 +266,37 @@ Not designed for:
 - ❌ Persistent storage
 - ❌ Garbage collection
 
+## CLI Tools
+
+### zeroipc-inspect
+Comprehensive tool for inspecting and debugging shared memory:
+
+```bash
+# Build the tool
+cd cpp && cmake -B build . && cmake --build build
+./build/tools/zeroipc-inspect
+
+# List all ZeroIPC shared memory segments
+./zeroipc-inspect list
+
+# Show detailed information about a segment
+./zeroipc-inspect show /sensor_data
+
+# Monitor a stream in real-time
+./zeroipc-inspect monitor /sensors temperature_stream
+
+# Dump raw memory contents
+./zeroipc-inspect dump /compute --offset 0 --size 1024
+```
+
 ## Documentation
 
+- [Codata Guide](docs/codata_guide.md) - Understanding codata and computational structures
+- [API Reference](docs/api_reference.md) - Complete API documentation
 - [Architecture](docs/architecture.md) - System design and memory layout
+- [Design Patterns](docs/patterns.md) - Cross-process communication patterns
+- [CLI Tools](docs/cli_tools.md) - Command-line utilities documentation
+- [Examples](docs/examples/) - Complete working examples
 - [Design Philosophy](docs/design_philosophy.md) - Core principles and trade-offs
 - [Binary Specification](SPECIFICATION.md) - Wire format all implementations follow
 - [C++ Documentation](cpp/README.md) - C++ specific details
@@ -214,13 +310,30 @@ Contributions welcome! When adding new language implementations:
 3. Implement Memory, Table, and Array as minimum
 4. Add cross-language tests in `interop/`
 
-## Future Vision
+## Advanced Features
 
-The boundary between data and code is fluid. Future explorations:
-- **Codata**: Infinite streams and lazy evaluation
-- **Functions**: First-class functions as data structures
-- **Continuations**: Suspended computations in shared memory
-- **Reactive Streams**: Event-driven data flows
+### Functional Programming in Shared Memory
+ZeroIPC brings functional programming paradigms to IPC:
+- **Lazy Evaluation**: Defer expensive computations until needed
+- **Memoization**: Automatic caching of computation results
+- **Stream Combinators**: map, filter, fold, take, skip, window
+- **Monadic Composition**: Chain asynchronous operations with Futures
+
+### Cross-Process Patterns
+- **Producer-Consumer**: Lock-free queues with backpressure
+- **Pub-Sub**: Multiple consumers on reactive streams
+- **Request-Response**: Futures for RPC-like patterns
+- **Pipeline**: Stream transformations across processes
+- **Fork-Join**: Parallel computation with result aggregation
+
+## Future Explorations
+
+The boundary between data and code continues to blur:
+- **Persistent Data Structures**: Immutable structures with structural sharing
+- **Software Transactional Memory**: ACID transactions in shared memory
+- **Dataflow Programming**: Computational graphs in shared memory
+- **Actors**: Message-passing actors with mailboxes
+- **Continuations**: Suspended computations for coroutines
 
 ## License
 

@@ -1,0 +1,59 @@
+/* Custom styling for ZeroIPC documentation */
+
+:root {
+  --zeroipc-primary: #5c6bc0;
+  --zeroipc-accent: #7e57c2;
+}
+
+/* Code block enhancements */
+.highlight {
+  border-radius: 4px;
+}
+
+/* Admonition customization */
+.admonition {
+  border-left: 4px solid var(--zeroipc-primary);
+}
+
+/* Table styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+table th {
+  background-color: var(--md-primary-fg-color--light);
+  font-weight: 600;
+}
+
+/* Performance badge */
+.performance-badge {
+  display: inline-block;
+  padding: 0.25em 0.5em;
+  background-color: #4caf50;
+  color: white;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+/* Lock-free badge */
+.lockfree-badge {
+  display: inline-block;
+  padding: 0.25em 0.5em;
+  background-color: #ff9800;
+  color: white;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+/* Memory layout diagram styling */
+.memory-layout {
+  font-family: monospace;
+  background-color: #f5f5f5;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+}

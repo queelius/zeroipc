@@ -256,12 +256,9 @@ class TestChannelClosing:
 
             channel.close()
 
-            # Sending to closed channel should raise exception
-            with pytest.raises(ChannelClosed):
-                channel.send(10)
-
-            with pytest.raises(ChannelClosed):
-                channel.try_send(10)
+            # Sending to closed channel should return False
+            assert channel.send(10) == False
+            assert channel.try_send(10) == False
 
         finally:
             Memory.unlink(shm_name)

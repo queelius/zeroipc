@@ -1,0 +1,215 @@
+# Improved CMakeLists.txt for ZeroIPC tests with proper categorization
+# This demonstrates the recommended test organization strategy
+
+# Test executables organized by category
+# Each test should be tagged with appropriate labels
+
+# ============================================================================
+# FAST TESTS - Core functionality, <100ms runtime
+# ============================================================================
+
+add_executable(test_table tests/test_table.cpp)
+target_link_libraries(test_table gtest_main Threads::Threads)
+add_test(NAME table_test COMMAND test_table)
+set_tests_properties(table_test PROPERTIES
+    LABELS "fast;unit;core"
+    TIMEOUT 5)
+
+add_executable(test_memory tests/test_memory.cpp)
+target_link_libraries(test_memory gtest_main Threads::Threads rt)
+add_test(NAME memory_test COMMAND test_memory)
+set_tests_properties(memory_test PROPERTIES
+    LABELS "fast;unit;core"
+    TIMEOUT 5)
+
+add_executable(test_array tests/test_array.cpp)
+target_link_libraries(test_array gtest_main Threads::Threads rt)
+add_test(NAME array_test COMMAND test_array)
+set_tests_properties(array_test PROPERTIES
+    LABELS "fast;unit;structures"
+    TIMEOUT 5)
+
+add_executable(test_queue tests/test_queue.cpp)
+target_link_libraries(test_queue gtest_main Threads::Threads rt)
+add_test(NAME queue_test COMMAND test_queue)
+set_tests_properties(queue_test PROPERTIES
+    LABELS "fast;unit;structures;lockfree"
+    TIMEOUT 5)
+
+add_executable(test_stack tests/test_stack.cpp)
+target_link_libraries(test_stack gtest_main Threads::Threads rt)
+add_test(NAME stack_test COMMAND test_stack)
+set_tests_properties(stack_test PROPERTIES
+    LABELS "fast;unit;structures;lockfree"
+    TIMEOUT 5)
+
+add_executable(test_edge_cases tests/test_edge_cases.cpp)
+target_link_libraries(test_edge_cases gtest_main Threads::Threads rt)
+add_test(NAME edge_cases_test COMMAND test_edge_cases)
+set_tests_properties(edge_cases_test PROPERTIES
+    LABELS "fast;unit;edge-cases"
+    TIMEOUT 5)
+
+add_executable(test_latch tests/test_latch.cpp)
+target_link_libraries(test_latch gtest_main Threads::Threads rt)
+add_test(NAME latch_test COMMAND test_latch)
+set_tests_properties(latch_test PROPERTIES
+    LABELS "fast;unit;sync"
+    TIMEOUT 5)
+
+# ============================================================================
+# MEDIUM TESTS - Multi-threaded, <5s runtime
+# ============================================================================
+
+add_executable(test_lockfree_comprehensive tests/test_lockfree_comprehensive.cpp)
+target_link_libraries(test_lockfree_comprehensive gtest_main Threads::Threads rt)
+add_test(NAME lockfree_comprehensive_test COMMAND test_lockfree_comprehensive)
+set_tests_properties(lockfree_comprehensive_test PROPERTIES
+    LABELS "medium;integration;lockfree;concurrent"
+    TIMEOUT 10)
+
+add_executable(test_table_stress tests/test_table_stress.cpp)
+target_link_libraries(test_table_stress gtest_main Threads::Threads rt)
+add_test(NAME table_stress_test COMMAND test_table_stress)
+set_tests_properties(table_stress_test PROPERTIES
+    LABELS "medium;stress;concurrent"
+    TIMEOUT 10)
+
+add_executable(test_new_structures tests/test_new_structures.cpp)
+target_link_libraries(test_new_structures gtest_main Threads::Threads rt)
+add_test(NAME new_structures_test COMMAND test_new_structures)
+set_tests_properties(new_structures_test PROPERTIES
+    LABELS "medium;integration;structures"
+    TIMEOUT 10)
+
+add_executable(test_codata tests/test_codata.cpp)
+target_link_libraries(test_codata gtest_main Threads::Threads rt)
+add_test(NAME codata_test COMMAND test_codata)
+set_tests_properties(codata_test PROPERTIES
+    LABELS "medium;integration;codata"
+    TIMEOUT 10)
+
+add_executable(test_cli_tool tests/test_cli_tool.cpp)
+target_link_libraries(test_cli_tool gtest_main Threads::Threads rt)
+add_test(NAME cli_tool_test COMMAND test_cli_tool)
+set_tests_properties(cli_tool_test PROPERTIES
+    LABELS "medium;integration;tools"
+    TIMEOUT 10)
+
+add_executable(test_coverage_improvement tests/test_coverage_improvement.cpp)
+target_link_libraries(test_coverage_improvement gtest_main Threads::Threads rt)
+add_test(NAME coverage_improvement_test COMMAND test_coverage_improvement)
+set_tests_properties(coverage_improvement_test PROPERTIES
+    LABELS "medium;coverage"
+    TIMEOUT 10)
+
+# Optimized semaphore tests (fast version)
+add_executable(test_semaphore_fast tests/test_semaphore_optimized.cpp)
+target_link_libraries(test_semaphore_fast gtest_main Threads::Threads rt)
+add_test(NAME semaphore_test_fast COMMAND test_semaphore_fast)
+set_tests_properties(semaphore_test_fast PROPERTIES
+    LABELS "medium;unit;sync"
+    TIMEOUT 10)
+
+# ============================================================================
+# SLOW TESTS - Full synchronization tests, >5s runtime
+# ============================================================================
+
+# Original semaphore tests (for comprehensive validation)
+add_executable(test_semaphore tests/test_semaphore.cpp)
+target_link_libraries(test_semaphore gtest_main Threads::Threads rt)
+add_test(NAME semaphore_test COMMAND test_semaphore)
+set_tests_properties(semaphore_test PROPERTIES
+    LABELS "slow;integration;sync"
+    TIMEOUT 300  # 5 minutes
+    DISABLED TRUE)  # Disabled by default
+
+add_executable(test_barrier tests/test_barrier.cpp)
+target_link_libraries(test_barrier gtest_main Threads::Threads rt)
+add_test(NAME barrier_test COMMAND test_barrier)
+set_tests_properties(barrier_test PROPERTIES
+    LABELS "slow;integration;sync"
+    TIMEOUT 300
+    DISABLED TRUE)
+
+add_executable(test_failure_recovery tests/test_failure_recovery.cpp)
+target_link_libraries(test_failure_recovery gtest_main Threads::Threads rt)
+add_test(NAME failure_recovery_test COMMAND test_failure_recovery)
+set_tests_properties(failure_recovery_test PROPERTIES
+    LABELS "slow;integration;recovery"
+    TIMEOUT 60)
+
+# ============================================================================
+# STRESS TESTS - Exhaustive testing, optional
+# ============================================================================
+
+add_executable(test_stress tests/test_stress.cpp)
+target_link_libraries(test_stress gtest_main Threads::Threads rt)
+add_test(NAME stress_test COMMAND test_stress)
+set_tests_properties(stress_test PROPERTIES
+    LABELS "stress;performance;concurrent"
+    TIMEOUT 120
+    DISABLED TRUE)  # Only run when explicitly requested
+
+add_executable(test_aba_problem tests/test_aba_problem.cpp)
+target_link_libraries(test_aba_problem gtest_main Threads::Threads rt)
+add_test(NAME aba_problem_test COMMAND test_aba_problem)
+set_tests_properties(aba_problem_test PROPERTIES
+    LABELS "stress;lockfree;concurrent"
+    TIMEOUT 120
+    DISABLED TRUE)
+
+add_executable(test_memory_boundaries tests/test_memory_boundaries.cpp)
+target_link_libraries(test_memory_boundaries gtest_main Threads::Threads rt)
+add_test(NAME memory_boundaries_test COMMAND test_memory_boundaries)
+set_tests_properties(memory_boundaries_test PROPERTIES
+    LABELS "stress;memory;edge-cases"
+    TIMEOUT 120
+    DISABLED TRUE)
+
+# ============================================================================
+# Test Suites - Convenient grouping
+# ============================================================================
+
+# Add custom targets for running specific test categories
+add_custom_target(test_fast
+    COMMAND ${CMAKE_CTEST_COMMAND} -L fast --output-on-failure
+    COMMENT "Running fast tests (<100ms)"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_custom_target(test_medium
+    COMMAND ${CMAKE_CTEST_COMMAND} -L medium --output-on-failure
+    COMMENT "Running medium tests (<5s)"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_custom_target(test_slow
+    COMMAND ${CMAKE_CTEST_COMMAND} -L slow --output-on-failure
+    COMMENT "Running slow tests (>5s)"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_custom_target(test_stress_all
+    COMMAND ${CMAKE_CTEST_COMMAND} -L stress --output-on-failure
+    COMMENT "Running stress tests"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_custom_target(test_lockfree
+    COMMAND ${CMAKE_CTEST_COMMAND} -L lockfree --output-on-failure
+    COMMENT "Running lock-free tests"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_custom_target(test_sync
+    COMMAND ${CMAKE_CTEST_COMMAND} -L sync --output-on-failure
+    COMMENT "Running synchronization tests"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Default test run: fast + medium tests only
+add_custom_target(test_default
+    COMMAND ${CMAKE_CTEST_COMMAND} -L "fast|medium" --output-on-failure
+    COMMENT "Running default test suite (fast + medium)"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# CI test run: all non-stress tests
+add_custom_target(test_ci
+    COMMAND ${CMAKE_CTEST_COMMAND} -LE stress --output-on-failure
+    COMMENT "Running CI test suite (excludes stress tests)"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

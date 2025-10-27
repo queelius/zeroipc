@@ -35,6 +35,11 @@ try:
     from .stream import Stream, create_number_stream, create_random_stream
     from .channel import Channel, ChannelClosed, Select, make_channel, make_unbuffered_channel, make_buffered_channel
 
+    # Synchronization primitives
+    from .semaphore import Semaphore
+    from .barrier import Barrier
+    from .latch import Latch
+
     # Atomic operations
     from .atomic import AtomicInt, AtomicInt64, atomic_thread_fence, spin_wait
     from .atomic import MEMORY_ORDER_RELAXED, MEMORY_ORDER_ACQUIRE, MEMORY_ORDER_RELEASE, MEMORY_ORDER_ACQ_REL, MEMORY_ORDER_SEQ_CST
@@ -49,6 +54,8 @@ try:
         "Lazy", "LazyState", "lazy_constant", "lazy_function",
         "Stream", "create_number_stream", "create_random_stream",
         "Channel", "ChannelClosed", "Select", "make_channel", "make_unbuffered_channel", "make_buffered_channel",
+        # Synchronization primitives
+        "Semaphore", "Barrier", "Latch",
         # Atomic operations
         "AtomicInt", "AtomicInt64", "atomic_thread_fence", "spin_wait",
         "MEMORY_ORDER_RELAXED", "MEMORY_ORDER_ACQUIRE", "MEMORY_ORDER_RELEASE", "MEMORY_ORDER_ACQ_REL", "MEMORY_ORDER_SEQ_CST"

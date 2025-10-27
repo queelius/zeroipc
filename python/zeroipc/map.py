@@ -163,8 +163,13 @@ class Map(Generic[K, V]):
         Returns:
             True if keys are equal
         """
+        # For numeric types, normalize both to the target dtype to handle
+        # float32/float64 precision differences
         if isinstance(key1, (int, float, np.number)) and isinstance(key2, (int, float, np.number)):
-            return key1 == key2
+            # Convert both to target dtype for proper comparison
+            norm1 = np.array([key1], dtype=self.key_dtype)[0]
+            norm2 = np.array([key2], dtype=self.key_dtype)[0]
+            return norm1 == norm2
         elif isinstance(key1, str) and isinstance(key2, str):
             return key1 == key2
         elif isinstance(key1, bytes) and isinstance(key2, bytes):

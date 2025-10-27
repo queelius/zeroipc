@@ -11,19 +11,19 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 find_package(Threads REQUIRED)
 
 # Create header-only library
-add_library(zeroipc INTERFACE)
-target_include_directories(zeroipc INTERFACE 
+add_library(libzeroipc INTERFACE)
+target_include_directories(libzeroipc INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(zeroipc INTERFACE Threads::Threads)
+target_link_libraries(libzeroipc INTERFACE Threads::Threads)
 
 # Link rt library on Linux/Unix systems
 if(UNIX AND NOT APPLE)
-    target_link_libraries(zeroipc INTERFACE rt)
+    target_link_libraries(libzeroipc INTERFACE rt)
 endif()
 
 # Set up installation
-install(TARGETS zeroipc
+install(TARGETS libzeroipc
     EXPORT zeroipcTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -115,33 +115,144 @@ target_link_libraries(test_cli_tool gtest_main Threads::Threads rt)
 add_executable(test_coverage_improvement tests/test_coverage_improvement.cpp)
 target_link_libraries(test_coverage_improvement gtest_main Threads::Threads rt)
 
-# Add tests
+add_executable(test_semaphore tests/test_semaphore.cpp)
+target_link_libraries(test_semaphore gtest_main Threads::Threads rt)
+
+add_executable(test_barrier tests/test_barrier.cpp)
+target_link_libraries(test_barrier gtest_main Threads::Threads rt)
+
+add_executable(test_latch tests/test_latch.cpp)
+target_link_libraries(test_latch gtest_main Threads::Threads rt)
+
+# Add tests with proper categorization
+# FAST tests: <100ms, core functionality
 add_test(NAME table_test COMMAND test_table)
+set_tests_properties(table_test PROPERTIES
+    LABELS "fast;unit"
+    TIMEOUT 5)
+
 add_test(NAME memory_test COMMAND test_memory)
+set_tests_properties(memory_test PROPERTIES
+    LABELS "fast;unit"
+    TIMEOUT 5)
+
 add_test(NAME array_test COMMAND test_array)
+set_tests_properties(array_test PROPERTIES
+    LABELS "fast;unit;lockfree"
+    TIMEOUT 5)
+
 add_test(NAME queue_test COMMAND test_queue)
+set_tests_properties(queue_test PROPERTIES
+    LABELS "fast;unit;lockfree"
+    TIMEOUT 5)
+
 add_test(NAME stack_test COMMAND test_stack)
-add_test(NAME lockfree_comprehensive_test COMMAND test_lockfree_comprehensive)
-set_tests_properties(lockfree_comprehensive_test PROPERTIES TIMEOUT 5)
-add_test(NAME stress_test COMMAND test_stress)
+set_tests_properties(stack_test PROPERTIES
+    LABELS "fast;unit;lockfree"
+    TIMEOUT 5)
+
 add_test(NAME edge_cases_test COMMAND test_edge_cases)
-add_test(NAME aba_problem_test COMMAND test_aba_problem)
-add_test(NAME table_stress_test COMMAND test_table_stress)
-add_test(NAME memory_boundaries_test COMMAND test_memory_boundaries)
-add_test(NAME failure_recovery_test COMMAND test_failure_recovery)
+set_tests_properties(edge_cases_test PROPERTIES
+    LABELS "fast;unit"
+    TIMEOUT 5)
+
 add_test(NAME new_structures_test COMMAND test_new_structures)
+set_tests_properties(new_structures_test PROPERTIES
+    LABELS "fast;unit"
+    TIMEOUT 10)
+
+# MEDIUM tests: <5s, multi-threaded with minimal delays
+add_test(NAME lockfree_comprehensive_test COMMAND test_lockfree_comprehensive)
+set_tests_properties(lockfree_comprehensive_test PROPERTIES
+    LABELS "medium;integration;lockfree"
+    TIMEOUT 5)
+
+add_test(NAME aba_problem_test COMMAND test_aba_problem)
+set_tests_properties(aba_problem_test PROPERTIES
+    LABELS "medium;integration;lockfree"
+    TIMEOUT 10)
+
+add_test(NAME memory_boundaries_test COMMAND test_memory_boundaries)
+set_tests_properties(memory_boundaries_test PROPERTIES
+    LABELS "medium;integration"
+    TIMEOUT 10)
+
+add_test(NAME failure_recovery_test COMMAND test_failure_recovery)
+set_tests_properties(failure_recovery_test PROPERTIES
+    LABELS "medium;integration"
+    TIMEOUT 15)
+
 add_test(NAME codata_test COMMAND test_codata)
+set_tests_properties(codata_test PROPERTIES
+    LABELS "medium;unit"
+    TIMEOUT 10)
+
 add_test(NAME cli_tool_test COMMAND test_cli_tool)
+set_tests_properties(cli_tool_test PROPERTIES
+    LABELS "medium;integration"
+    TIMEOUT 10)
+
 add_test(NAME coverage_improvement_test COMMAND test_coverage_improvement)
+set_tests_properties(coverage_improvement_test PROPERTIES
+    LABELS "medium;unit"
+    TIMEOUT 10)
+
+add_test(NAME latch_test COMMAND test_latch)
+set_tests_properties(latch_test PROPERTIES
+    LABELS "medium;unit;sync"
+    TIMEOUT 10)
+
+# SLOW tests: >5s, full synchronization tests with threading delays
+add_test(NAME semaphore_test COMMAND test_semaphore)
+set_tests_properties(semaphore_test PROPERTIES
+    LABELS "slow;integration;sync"
+    TIMEOUT 600
+    DISABLED FALSE)
+
+add_test(NAME barrier_test COMMAND test_barrier)
+set_tests_properties(barrier_test PROPERTIES
+    LABELS "slow;integration;sync"
+    TIMEOUT 600
+    DISABLED FALSE)
+
+# STRESS tests: >30s, exhaustive stress testing (disabled by default)
+add_test(NAME stress_test COMMAND test_stress)
+set_tests_properties(stress_test PROPERTIES
+    LABELS "stress;integration;lockfree"
+    TIMEOUT 1800
+    DISABLED TRUE)
+
+add_test(NAME table_stress_test COMMAND test_table_stress)
+set_tests_properties(table_stress_test PROPERTIES
+    LABELS "stress;integration"
+    TIMEOUT 1800
+    DISABLED TRUE)
 
 # CLI Tools
-add_executable(zeroipc-inspect tools/zeroipc-inspect.cpp)
-target_link_libraries(zeroipc-inspect Threads::Threads rt)
+add_executable(zeroipc tools/zeroipc.cpp)
+target_link_libraries(zeroipc Threads::Threads rt)
 
 # Install headers
-install(DIRECTORY include/zeroipc 
+install(DIRECTORY include/zeroipc
         DESTINATION include)
 
 # Install CLI tools
-install(TARGETS zeroipc-inspect
+install(TARGETS zeroipc
         RUNTIME DESTINATION bin)
+
+# Custom test targets for convenient execution
+add_custom_target(test_fast
+    COMMAND ${CMAKE_CTEST_COMMAND} -L fast --output-on-failure
+    COMMENT "Running fast tests only (~30 seconds)")
+
+add_custom_target(test_default
+    COMMAND ${CMAKE_CTEST_COMMAND} -L "fast|medium" --output-on-failure
+    COMMENT "Running default test suite (fast + medium, ~2 minutes)")
+
+add_custom_target(test_ci
+    COMMAND ${CMAKE_CTEST_COMMAND} -LE stress --output-on-failure
+    COMMENT "Running CI test suite (all except stress tests, ~10 minutes)")
+
+add_custom_target(test_all
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMENT "Running complete test suite including stress tests (~30 minutes)")

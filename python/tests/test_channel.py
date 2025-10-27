@@ -475,7 +475,7 @@ class TestChannelPersistence:
             ch1.send(20)
 
             # Open existing channel
-            ch2 = Channel(memory, "persist_ch", dtype=np.int32)
+            ch2 = Channel(memory, "persist_ch", dtype=np.int32, open_existing=True)
 
             # Should see same data
             assert ch2.receive() == 10

@@ -1,97 +1,178 @@
-site_name: POSIX Shared Memory Library
-site_url: https://queelius.github.io/posix_shm/
-repo_url: https://github.com/queelius/posix_shm
-repo_name: queelius/posix_shm
+site_name: ZeroIPC Documentation
+site_description: High-performance cross-language shared memory IPC library
+site_author: ZeroIPC Contributors
+site_url: https://zeroipc.io
+
+repo_name: zeroipc/zeroipc
+repo_url: https://github.com/yourusername/zeroipc
+edit_uri: edit/master/docs/
 
 theme:
   name: material
-  features:
-    - content.code.copy
-    - content.code.annotate
-    - navigation.tabs
-    - navigation.sections
-    - navigation.expand
-    - navigation.top
-    - search.suggest
-    - search.highlight
   palette:
-    - scheme: default
-      primary: blue
-      accent: light blue
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
-      primary: blue
-      accent: light blue
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
 
 plugins:
-  - search
-  - mkdocstrings:
-      handlers:
-        python:
-          options:
-            show_source: true
-            show_root_heading: true
-            show_category_heading: true
-            members_order: source
-            docstring_style: google
+  - search:
+      lang: en
+  - minify:
+      minify_html: true
 
 markdown_extensions:
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.superfences
-  - pymdownx.details
-  - pymdownx.tabbed:
-      alternate_style: true
+  - abbr
   - admonition
-  - codehilite
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
   - toc:
       permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: zeroipc
+      repo: zeroipc
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/zeroipc
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/zeroipc/
+
+extra_css:
+  - stylesheets/extra.css
 
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quickstart.md
-    - Examples: getting-started/examples.md
-  - Python API:
-    - SharedMemory: python-api/shared-memory.md
-    - Data Structures:
-      - Queue: python-api/queue.md
-      - Stack: python-api/stack.md
-      - HashMap: python-api/hashmap.md
-      - Bitset: python-api/bitset.md
-      - Array: python-api/array.md
-    - Utilities:
-      - Helpers: python-api/helpers.md
-      - NumPy Integration: python-api/numpy.md
-  - C++ API:
-    - Core:
-      - posix_shm: cpp-api/posix_shm.md
-      - shm_table: cpp-api/shm_table.md
-    - Data Structures:
-      - shm_queue: cpp-api/shm_queue.md
-      - shm_stack: cpp-api/shm_stack.md
-      - shm_hash_map: cpp-api/shm_hash_map.md
-      - shm_bitset: cpp-api/shm_bitset.md
-      - shm_array: cpp-api/shm_array.md
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+      - Basic Concepts: getting-started/concepts.md
+  - Tutorial:
+      - tutorial/index.md
+      - Your First Shared Memory: tutorial/first-shared-memory.md
+      - Working with Arrays: tutorial/arrays.md
+      - Using Queues and Stacks: tutorial/queues-stacks.md
+      - Reactive Streams: tutorial/streams.md
+      - Synchronization Primitives: tutorial/synchronization.md
+      - Advanced Patterns: tutorial/advanced-patterns.md
+  - CLI Tool:
+      - cli/index.md
+      - Basic Commands: cli/basic-commands.md
+      - Virtual Filesystem: cli/virtual-filesystem.md
+      - Structure Inspection: cli/structure-inspection.md
+      - Monitoring and Debugging: cli/monitoring.md
+  - API Reference:
+      - api/index.md
+      - C++ API:
+          - Memory & Table: api/cpp/memory.md
+          - Data Structures: api/cpp/data-structures.md
+          - Synchronization: api/cpp/synchronization.md
+          - Codata Structures: api/cpp/codata.md
+      - Python API:
+          - Memory & Table: api/python/memory.md
+          - Data Structures: api/python/data-structures.md
+          - Synchronization: api/python/synchronization.md
+          - Codata Structures: api/python/codata.md
+      - C API:
+          - Overview: api/c/overview.md
   - Architecture:
-    - Design: architecture/design.md
-    - Memory Layout: architecture/memory-layout.md
-    - Lock-Free Algorithms: architecture/lock-free.md
-  - Performance:
-    - Benchmarks: performance/benchmarks.md
-    - Optimization: performance/optimization.md
-  - Contributing: contributing.md
-  - Changelog: changelog.md
+      - architecture/index.md
+      - Binary Format: architecture/binary-format.md
+      - Design Principles: architecture/design-principles.md
+      - Lock-Free Implementation: architecture/lock-free.md
+      - Memory Layout: architecture/memory-layout.md
+      - Testing Strategy: architecture/testing.md
+  - Examples:
+      - examples/index.md
+      - Cross-Language Communication: examples/cross-language.md
+      - Producer-Consumer: examples/producer-consumer.md
+      - Sensor Data Sharing: examples/sensor-data.md
+      - Reactive Processing: examples/reactive-processing.md
+      - Real-Time Analytics: examples/analytics.md
+  - Best Practices:
+      - best-practices/index.md
+      - Performance Tips: best-practices/performance.md
+      - Common Pitfalls: best-practices/pitfalls.md
+      - Type Safety: best-practices/type-safety.md
+      - Error Handling: best-practices/error-handling.md
+      - Testing Applications: best-practices/testing.md
+  - Advanced Topics:
+      - advanced/index.md
+      - Codata Programming: advanced/codata.md
+      - Lock-Free Patterns: advanced/lock-free-patterns.md
+      - Memory Ordering: advanced/memory-ordering.md
+      - Custom Structures: advanced/custom-structures.md
+  - Contributing:
+      - contributing/index.md
+      - Development Setup: contributing/setup.md
+      - Adding Language Support: contributing/new-language.md
+      - Testing Guidelines: contributing/testing.md
 
-extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/queelius/posix_shm
-  version:
-    provider: mike
+copyright: Copyright &copy; 2024 ZeroIPC Contributors

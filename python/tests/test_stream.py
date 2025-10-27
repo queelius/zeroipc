@@ -114,15 +114,16 @@ class TestStreamBasic:
             stream = Stream(memory, "source", capacity=100, dtype=np.int32)
             doubled = Stream(memory, "doubled", capacity=100, dtype=np.int32)
 
-            # Map function to double values
-            mapped = stream.map(lambda x: x * 2, doubled)
-
             # Emit to source
             stream.emit(5)
             stream.emit(10)
 
+            # Map function to double values (processes available data)
+            mapped = stream.map(lambda x: x * 2, doubled)
+
             # Read from doubled
             values = doubled.read(2)
+            assert values is not None, "Expected doubled stream to have data"
             assert list(values) == [10, 20]
 
         finally:
@@ -137,15 +138,16 @@ class TestStreamBasic:
             stream = Stream(memory, "all", capacity=100, dtype=np.int32)
             evens = Stream(memory, "evens", capacity=100, dtype=np.int32)
 
-            # Filter even numbers
-            filtered = stream.filter(lambda x: x % 2 == 0, evens)
-
             # Emit values
             for i in range(10):
                 stream.emit(i)
 
+            # Filter even numbers (processes available data)
+            filtered = stream.filter(lambda x: x % 2 == 0, evens)
+
             # Read filtered values
             values = evens.read(5)
+            assert values is not None, "Expected filtered stream to have data"
             assert list(values) == [0, 2, 4, 6, 8]
 
         finally:
@@ -278,15 +280,16 @@ class TestStreamBasic:
             stream = Stream(memory, "numbers", capacity=100, dtype=np.int32)
             sums = Stream(memory, "sums", capacity=100, dtype=np.int32)
 
-            # Scan to compute running sum
-            scanned = stream.scan(lambda acc, x: acc + x, 0, sums)
-
             # Emit values
             for i in range(1, 6):
                 stream.emit(i)
 
+            # Scan to compute running sum (processes available data)
+            scanned = stream.scan(lambda acc, x: acc + x, 0, sums)
+
             # Read running sums
             values = sums.read(5)
+            assert values is not None, "Expected scan output to have data"
             assert list(values) == [1, 3, 6, 10, 15]
 
         finally:
@@ -314,7 +317,7 @@ class TestStreamConcurrency:
                 total = 0
                 while total < expected_count:
                     batch = stream.read(min(10, expected_count - total))
-                    if len(batch) > 0:
+                    if batch is not None and len(batch) > 0:
                         results_list.extend(batch)
                         total += len(batch)
                     time.sleep(0.001)
@@ -354,13 +357,13 @@ class TestStreamConcurrency:
             values = []
             while len(values) < 50:
                 batch = stream.read(10)
-                if len(batch) > 0:
+                if batch is not None and len(batch) > 0:
                     values.extend(batch)
                 time.sleep(0.001)
             results_queue.put(values[:50])
 
         try:
-            memory = Memory(shm_name, 1024 * 1024, create=True)
+            memory = Memory(shm_name, 1024 * 1024)
             stream = Stream(memory, "shared", capacity=10000, dtype=np.float32)
 
             results_queue = mp.Queue()
@@ -416,14 +419,17 @@ class TestStreamEdgeCases:
         try:
             memory = Memory(shm_name, 1024 * 1024)
             stream = Stream(memory, "empty", capacity=100, dtype=np.int32)
+            output = Stream(memory, "output", capacity=100, dtype=np.int32)
 
-            # Read from empty stream
+            # Read from empty stream returns None
             values = stream.read(10)
-            assert len(values) == 0
+            assert values is None
 
             # Take from empty stream
-            taken = stream.take(5)
-            assert len(taken) == 0
+            taken_stream = stream.take(5, output)
+            # Output stream should have no data
+            result = taken_stream.read(5)
+            assert result is None
 
         finally:
             if os.path.exists(f"/dev/shm{shm_name}"):

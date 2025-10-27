@@ -262,15 +262,17 @@ class Stream:
 
         Yields:
             Windows as numpy arrays
+
+        Note: This reads all currently available data and produces windows
         """
-        buffer = np.array([], dtype=self.dtype)
+        # Read all available data at once
+        data = self.read()
+        if data is None or len(data) < size:
+            return
 
-        for batch in self.read_batches(size // 2 or 1):  # Read in smaller chunks
-            buffer = np.concatenate([buffer, batch])
-
-            while len(buffer) >= size:
-                yield buffer[:size]
-                buffer = buffer[1:]  # Slide window by 1
+        # Generate sliding windows
+        for i in range(len(data) - size + 1):
+            yield data[i:i + size]
 
     def batch(self, size: int, output_stream: 'Stream') -> 'Stream':
         """
@@ -282,10 +284,16 @@ class Stream:
 
         Returns:
             Output stream for chaining
+
+        Note: This reads all currently available data and batches it
         """
-        for batch in self.read_batches(size):
-            if len(batch) == size:  # Only emit complete batches
-                output_stream.emit_batch(batch)
+        data = self.read()
+        if data is not None:
+            # Group into fixed-size batches
+            for i in range(0, len(data), size):
+                batch = data[i:i + size]
+                if len(batch) == size:  # Only emit complete batches
+                    output_stream.emit_batch(batch)
 
         return output_stream
 

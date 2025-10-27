@@ -492,10 +492,8 @@ class Channel:
                 if channel.is_closed():
                     continue
 
-                value = channel.try_receive()
-                if value is not None:
-                    # Put the value back for actual receive
-                    # Note: This is a simplified implementation - real select would be more complex
+                # Check if channel has data available without consuming it
+                if not channel._queue.empty():
                     return channel
 
             # Check timeout

@@ -86,6 +86,100 @@ struct StackHeader {
 // Followed by: capacity * element_size bytes of data
 ```
 
+### Semaphore Structure (Lock-free)
+```c
+struct SemaphoreHeader {
+    atomic_int32_t count;       // 0x00: Current semaphore count
+    atomic_int32_t waiting;     // 0x04: Number of waiting processes
+    int32_t max_count;          // 0x08: Maximum count (0 = unbounded)
+    int32_t _padding;           // 0x0C: Padding for alignment
+};
+// Total size: 16 bytes
+```
+
+**Semantics**:
+- `count`: Non-negative integer representing available permits/resources
+- `waiting`: Number of processes currently blocked on acquire()
+- `max_count`: Maximum value for count (0 means unbounded)
+- Operations:
+  - `acquire()`: Atomically decrements count if > 0, otherwise blocks
+  - `release()`: Atomically increments count, waking waiting processes
+  - `try_acquire()`: Non-blocking acquire, returns immediately
+
+**Usage**:
+- Binary semaphore: `max_count = 1` (mutex behavior)
+- Counting semaphore: `max_count = N` (resource pool of size N)
+- Unbounded semaphore: `max_count = 0` (signal/event pattern)
+
+### Barrier Structure (Lock-free)
+```c
+struct BarrierHeader {
+    atomic_int32_t arrived;         // 0x00: Number of processes that have arrived
+    atomic_int32_t generation;      // 0x04: Generation counter (for reusability)
+    int32_t num_participants;       // 0x08: Total number of participants
+    int32_t _padding;               // 0x0C: Padding for alignment
+};
+// Total size: 16 bytes
+```
+
+**Semantics**:
+- `arrived`: Number of processes currently waiting at the barrier
+- `generation`: Incremented each time all participants pass through (prevents early arrivals for next cycle from releasing current cycle)
+- `num_participants`: Fixed number of processes that must arrive before barrier releases
+- Operations:
+  - `wait()`: Block until all participants have called wait(), then all are released simultaneously
+  - `wait(timeout)`: Wait with timeout, returns true if barrier released, false if timeout
+
+**Usage**:
+- Synchronize N processes at a checkpoint
+- All participants must reach barrier before any can proceed
+- Barrier automatically resets after all participants pass through
+- Example: Parallel algorithm phases - all workers must complete phase 1 before any start phase 2
+
+**Algorithm**:
+1. Process calls `wait()`
+2. Atomically increment `arrived` counter
+3. If `arrived < num_participants`: spin-wait checking if generation changed
+4. If `arrived == num_participants`: increment generation, reset arrived to 0, all waiters proceed
+5. Barrier is now ready for next cycle with new generation number
+
+### Latch Structure (Lock-free)
+```c
+struct LatchHeader {
+    atomic_int32_t count;       // 0x00: Current count (counts down to zero)
+    int32_t initial_count;      // 0x04: Initial count value (immutable)
+    int32_t _padding[2];        // 0x08: Padding for alignment
+};
+// Total size: 16 bytes
+```
+
+**Semantics**:
+- `count`: Current countdown value, atomically decremented from initial_count to 0
+- `initial_count`: The starting value, stored for reference (never changes)
+- Operations:
+  - `count_down(n=1)`: Atomically decrements count by n (saturates at 0)
+  - `wait()`: Blocks until count reaches 0
+  - `try_wait()`: Non-blocking check if count is 0
+  - `wait(timeout)`: Wait with timeout, returns true if count reached 0
+
+**Usage**:
+- **One-time use**: Once count reaches 0, it stays at 0 (unlike Barrier which resets)
+- **Countdown coordination**: Wait for N operations to complete before proceeding
+- **Start gate**: Initialize with count=1, workers wait(), coordinator calls count_down() to release all
+- **Completion detection**: Initialize with count=N, each worker calls count_down() when done, coordinator waits()
+- Example: Launch N worker threads, each counts down when initialized, main thread waits for all to be ready
+
+**Algorithm**:
+1. Initialize with `count = initial_count`
+2. Workers call `count_down()` to atomically decrement count (CAS loop, saturate at 0)
+3. Waiters call `wait()` and spin-wait until count == 0
+4. Once count reaches 0, all current and future waiters immediately proceed
+5. Latch cannot be reset (one-time use)
+
+**Difference from Barrier**:
+- Latch: Counts down to 0 and stays there (one-time), any number of waiters
+- Barrier: Cycles through generations (reusable), exactly N participants required
+
 ## Alignment Requirements
 
 - All structures must be aligned to 8-byte boundaries

@@ -170,6 +170,11 @@ This enables true language independence:
 - ✅ **Ring** - High-performance ring buffer for streaming
 - ✅ **Table** - Metadata registry for dynamic discovery
 
+### Synchronization Primitives
+- ✅ **Semaphore** - Cross-process counting/binary semaphore with wait/signal
+- ✅ **Barrier** - Multi-process synchronization barrier with generation counter
+- ✅ **Latch** - One-shot countdown synchronization primitive
+
 ### Codata & Computational Structures
 - ✅ **Future** - Asynchronous computation results across processes
 - ✅ **Lazy** - Deferred computations with automatic memoization
@@ -219,7 +224,18 @@ make test       # Run tests
 cd cpp
 cmake -B build .
 cmake --build build
-ctest --test-dir build
+
+# Run tests - optimized test suite (200x faster than previous versions)
+cd build && ctest --output-on-failure                    # Default: fast + medium (~2 min)
+cmake --build build --target test_fast                   # Fast tests only (~30 sec)
+cmake --build build --target test_ci                     # CI mode: all except stress (~10 min)
+cmake --build build --target test_all                    # Full suite including stress (~30 min)
+
+# Run specific test categories
+ctest -L fast --output-on-failure                        # Fast tests (<100ms each)
+ctest -L medium --output-on-failure                      # Medium tests (<5s each)
+ctest -L lockfree --output-on-failure                    # All lock-free structure tests
+ctest -L sync --output-on-failure                        # All synchronization primitive tests
 ```
 
 ### Python
@@ -268,29 +284,63 @@ Not designed for:
 
 ## CLI Tools
 
-### zeroipc-inspect
-Comprehensive tool for inspecting and debugging shared memory:
+### zeroipc
+Comprehensive tool for inspecting and debugging shared memory with support for all data structures:
 
 ```bash
 # Build the tool
 cd cpp && cmake -B build . && cmake --build build
-./build/tools/zeroipc-inspect
+./build/tools/zeroipc
 
 # List all ZeroIPC shared memory segments
-./zeroipc-inspect list
+./zeroipc list
 
-# Show detailed information about a segment
-./zeroipc-inspect show /sensor_data
+# Show detailed information about a segment and all structures
+./zeroipc show /sensor_data
+
+# Inspect specific data structures (supports all 16 structure types)
+./zeroipc array /sensor_data temperatures       # Array inspection
+./zeroipc queue /sensor_data task_queue         # Queue state and contents
+./zeroipc stack /sensor_data undo_stack         # Stack inspection
+./zeroipc ring /sensor_data event_buffer        # Ring buffer state
+./zeroipc map /sensor_data cache                # Hash map contents
+./zeroipc set /sensor_data unique_ids           # Set contents
+./zeroipc pool /sensor_data object_pool         # Pool allocation state
+./zeroipc channel /sensor_data messages         # Channel state
+./zeroipc stream /sensor_data events            # Stream contents
+./zeroipc semaphore /sensor_data mutex          # Semaphore state
+./zeroipc barrier /sensor_data sync_point       # Barrier state
+./zeroipc latch /sensor_data countdown          # Latch state
+./zeroipc future /sensor_data result            # Future state
+./zeroipc lazy /sensor_data computation         # Lazy evaluation state
 
 # Monitor a stream in real-time
-./zeroipc-inspect monitor /sensors temperature_stream
+./zeroipc monitor /sensors temperature_stream
 
 # Dump raw memory contents
-./zeroipc-inspect dump /compute --offset 0 --size 1024
+./zeroipc dump /compute --offset 0 --size 1024
+
+# Interactive REPL mode for exploration
+./zeroipc repl /sensor_data
 ```
+
+See [docs/cli_tools.md](docs/cli_tools.md) for complete CLI documentation.
+
+## Test Suite Performance
+
+ZeroIPC features an optimized test suite with intelligent categorization for fast development workflows:
+
+- **200x Performance Improvement**: Reduced from 20+ minutes to under 2 minutes for default suite
+- **Smart Categorization**: Tests labeled as FAST, MEDIUM, SLOW, or STRESS
+- **Parameterized Timing**: Configurable timing constants via `test_config.h`
+- **Selective Execution**: Run only the tests you need with CTest labels
+- **CI-Optimized**: Default suite completes in seconds for rapid feedback
+
+See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive testing documentation.
 
 ## Documentation
 
+- [Testing Strategy](docs/TESTING_STRATEGY.md) - Test suite architecture and best practices
 - [Codata Guide](docs/codata_guide.md) - Understanding codata and computational structures
 - [API Reference](docs/api_reference.md) - Complete API documentation
 - [Architecture](docs/architecture.md) - System design and memory layout

@@ -13,7 +13,8 @@ CORE_SOURCES = $(SRC_DIR)/core.c
 
 # Legacy sources (existing API)
 LEGACY_SOURCES = $(SRC_DIR)/memory.c $(SRC_DIR)/table.c $(SRC_DIR)/array.c \
-                 $(SRC_DIR)/queue.c $(SRC_DIR)/stack.c $(SRC_DIR)/error.c
+                 $(SRC_DIR)/queue.c $(SRC_DIR)/stack.c $(SRC_DIR)/error.c \
+                 $(SRC_DIR)/barrier.c $(SRC_DIR)/latch.c
 
 # All sources
 SOURCES = $(CORE_SOURCES) $(LEGACY_SOURCES)

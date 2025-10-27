@@ -1,5 +1,0 @@
-<map id="include/shm_simd_utils.h" name="include/shm_simd_utils.h">
-<area shape="rect" id="Node000001" title="SIMD&#45;optimized utilities for simulation workloads." alt="" coords="25,5,211,31"/>
-<area shape="rect" id="Node000002" href="$simd__simulation_8cpp.html" title="Example of SIMD&#45;optimized particle simulation using shared memory." alt="" coords="5,79,231,104"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="121,44,121,79,115,79,115,44"/>
-</map>

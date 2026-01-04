@@ -37,6 +37,12 @@ try:
 
     # Synchronization primitives
     from .semaphore import Semaphore
+    from .mutex import Mutex
+    from .once import Once
+    from .event import Event, EventMode
+    from .monitor import Monitor
+    from .rwlock import RWLock
+    from .signal import Signal
     from .barrier import Barrier
     from .latch import Latch
 
@@ -55,7 +61,7 @@ try:
         "Stream", "create_number_stream", "create_random_stream",
         "Channel", "ChannelClosed", "Select", "make_channel", "make_unbuffered_channel", "make_buffered_channel",
         # Synchronization primitives
-        "Semaphore", "Barrier", "Latch",
+        "Semaphore", "Mutex", "Once", "Event", "EventMode", "Monitor", "RWLock", "Signal", "Barrier", "Latch",
         # Atomic operations
         "AtomicInt", "AtomicInt64", "atomic_thread_fence", "spin_wait",
         "MEMORY_ORDER_RELAXED", "MEMORY_ORDER_ACQUIRE", "MEMORY_ORDER_RELEASE", "MEMORY_ORDER_ACQ_REL", "MEMORY_ORDER_SEQ_CST"

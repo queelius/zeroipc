@@ -1,4 +1,4 @@
-# ZeroIPC Shared Memory Format Specification v1.0
+# ZeroIPC Shared Memory Format Specification v1.1
 
 ## Overview
 
@@ -180,6 +180,156 @@ struct LatchHeader {
 - Latch: Counts down to 0 and stays there (one-time), any number of waiters
 - Barrier: Cycles through generations (reusable), exactly N participants required
 
+### Mutex Structure (Composite)
+
+Mutex wraps a binary Semaphore with `max_count = 1`:
+
+```c
+// Stored at: name (as a Semaphore with max_count=1)
+// Total size: 16 bytes (same as Semaphore)
+```
+
+**Semantics**:
+- Binary semaphore with initial_count=1, max_count=1
+- `lock()`: Acquires semaphore (decrements count from 1 to 0)
+- `unlock()`: Releases semaphore (increments count from 0 to 1)
+- `try_lock()`: Non-blocking lock attempt
+
+**Usage**:
+- Mutual exclusion for critical sections
+- RAII-compatible with std::lock_guard
+
+### Once Structure (Lock-free)
+```c
+struct OnceFlag {
+    atomic_uint32_t state;      // 0x00: 0 = not called, 1 = done
+};
+// Total size: 4 bytes
+```
+
+**Semantics**:
+- `state`: Atomic flag indicating whether callable has been executed
+- Operations:
+  - `call(func)`: Execute func exactly once across all processes
+  - `already_called()` / `is_called`: Check if already executed
+  - `reset_unsafe()`: Reset for testing (NOT thread-safe!)
+
+**Usage**:
+- One-time initialization across processes
+- Lazy singleton initialization
+- Similar to std::call_once
+
+**Algorithm**:
+1. Fast path: If state == 1, return immediately
+2. CAS(state, 0 → 1): If successful, execute func
+3. If CAS fails, func was already executed by another process
+
+### Event Structure (Lock-free)
+```c
+struct EventState {
+    atomic_uint32_t signaled;   // 0x00: 0 = not signaled, 1 = signaled
+    uint32_t mode;              // 0x04: 0 = AutoReset, 1 = ManualReset
+    atomic_uint32_t waiting;    // 0x08: Number of waiting processes
+};
+// Stored at: name (12 bytes)
+// Additional: Semaphore at name_sem (for blocking)
+```
+
+**Semantics**:
+- `signaled`: Whether the event is currently signaled
+- `mode`: EventMode enum (AutoReset = 0, ManualReset = 1)
+- `waiting`: Number of processes blocked on wait()
+- Operations:
+  - `signal()`: Set signaled flag, wake waiters
+  - `wait()`: Block until signaled
+  - `reset()`: Clear signaled flag
+  - `pulse()`: Signal + immediate reset
+
+**Modes**:
+- **AutoReset**: signal() wakes one waiter, auto-clears signaled flag
+- **ManualReset**: signal() wakes all waiters, stays signaled until reset()
+
+### RWLock Structure (Lock-free)
+```c
+struct RWLockState {
+    atomic_int32_t readers;        // 0x00: Number of active readers
+    atomic_int32_t writer_active;  // 0x04: 1 if writer active, 0 otherwise
+};
+// Stored at: name (8 bytes)
+// Additional: Mutex at name_rmtx (reader coordination)
+// Additional: Mutex at name_wmtx (writer exclusion)
+```
+
+**Semantics**:
+- `readers`: Count of processes holding read lock
+- `writer_active`: Flag indicating exclusive writer access
+- Operations:
+  - `reader_lock()`: Acquire shared read access
+  - `reader_unlock()`: Release read access
+  - `writer_lock()`: Acquire exclusive write access
+  - `writer_unlock()`: Release write access
+
+**Usage**:
+- Read-heavy workloads where reads vastly outnumber writes
+- Multiple concurrent readers OR one exclusive writer
+- Writers have priority to prevent starvation
+
+### Monitor Structure (Composite)
+
+Monitor combines mutex + condition variable semantics:
+
+```c
+// Stored at: name (1 byte marker)
+// Additional: Mutex at name_mtx (for lock/unlock)
+// Additional: Semaphore at name_cond (for wait/notify)
+// Additional: atomic_uint32_t at name_count (waiting count, 4 bytes)
+```
+
+**Semantics**:
+- Mutex for lock/unlock
+- Semaphore for condition wait/notify
+- Waiting counter for notify_all
+- Operations:
+  - `lock()` / `unlock()`: Mutex operations
+  - `wait(predicate)`: Atomically unlock mutex, wait for signal, re-lock
+  - `notify_one()`: Wake one waiting process
+  - `notify_all()`: Wake all waiting processes
+
+**Usage**:
+- Producer-consumer patterns
+- Predicate-based waiting (spurious wakeup handling)
+- Bounded buffer synchronization
+
+### Signal Structure (Lock-free)
+```c
+template<typename T>
+struct SignalState {
+    atomic_uint64_t version;    // 0x00: Version number (increments on change)
+    T value;                    // 0x08: The stored value
+};
+// Total size: 8 + sizeof(T) bytes
+```
+
+**Semantics**:
+- `version`: Monotonically increasing version number
+- `value`: The reactive value being stored
+- Operations:
+  - `get()`: Read current value
+  - `set(value)`: Write new value, increment version
+  - `update(func)`: Atomically apply func to current value
+  - `version()`: Get current version number
+  - `has_changed(last_version)`: Check if version changed
+  - `wait_for_change(last_version)`: Block until version changes
+
+**Usage**:
+- Fine-grained reactivity (SolidJS/Preact style)
+- Change detection across processes
+- Publish-subscribe patterns with version tracking
+
+**Type Constraints**:
+- T must be trivially copyable
+- Common types: int, double, fixed-size structs
+
 ## Alignment Requirements
 
 - All structures must be aligned to 8-byte boundaries
@@ -208,4 +358,5 @@ Offset   Size    Content
 
 ## Version History
 
+- v1.1: Extended synchronization primitives (Mutex, Once, Event, RWLock, Monitor, Signal)
 - v1.0: Initial release with minimal metadata design, runtime configurable table

@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+typedef struct {
+    uint64_t capacity;
+    uint64_t elem_size;
+} array_header_t;
+
 /* Array structure */
 struct zeroipc_array {
     zeroipc_memory_t* memory;
@@ -31,11 +36,11 @@ zeroipc_array_t* zeroipc_array_create(zeroipc_memory_t* mem, const char* name,
     strncpy(array->name, name, sizeof(array->name) - 1);
     
     /* Calculate total size with overflow check */
-    if (capacity > SIZE_MAX / elem_size) {
+    if (capacity > (SIZE_MAX - sizeof(array_header_t)) / elem_size) {
         free(array);
         return NULL;  // Would overflow
     }
-    size_t total_size = elem_size * capacity;
+    size_t total_size = sizeof(array_header_t) + elem_size * capacity;
     
     /* Add to table and get offset */
     size_t offset;
@@ -45,11 +50,14 @@ zeroipc_array_t* zeroipc_array_create(zeroipc_memory_t* mem, const char* name,
         return NULL;
     }
     
-    /* Get data pointer */
-    array->data = (char*)zeroipc_memory_base(mem) + offset;
+    /* Get header and data pointer */
+    array_header_t* header = (array_header_t*)((char*)zeroipc_memory_base(mem) + offset);
+    array->data = (char*)header + sizeof(array_header_t);
     
-    /* Initialize to zero */
-    memset(array->data, 0, total_size);
+    /* Initialize header and payload */
+    header->capacity = capacity;
+    header->elem_size = elem_size;
+    memset(array->data, 0, elem_size * capacity);
     
     return array;
 }
@@ -76,14 +84,16 @@ zeroipc_array_t* zeroipc_array_open(zeroipc_memory_t* mem, const char* name) {
     array->memory = mem;
     strncpy(array->name, name, sizeof(array->name) - 1);
     
-    /* Get data pointer */
-    array->data = (char*)zeroipc_memory_base(mem) + offset;
-    
-    /* Note: We don't know elem_size and capacity from metadata alone
-       User must know these or we need to store them separately */
-    /* For now, we'll store total size and let user specify elem_size */
-    array->elem_size = 0;  /* Unknown */
-    array->capacity = 0;   /* Unknown */
+    /* Get header and data pointer */
+    array_header_t* header = (array_header_t*)((char*)zeroipc_memory_base(mem) + offset);
+    if (header->capacity == 0 || header->elem_size == 0 ||
+        sizeof(array_header_t) + header->capacity * header->elem_size > size) {
+        free(array);
+        return NULL;
+    }
+    array->data = (char*)header + sizeof(array_header_t);
+    array->capacity = (size_t)header->capacity;
+    array->elem_size = (size_t)header->elem_size;
     
     return array;
 }

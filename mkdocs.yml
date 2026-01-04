@@ -144,6 +144,7 @@ nav:
           - Overview: api/c/overview.md
   - Architecture:
       - architecture/index.md
+      - The Single-Machine Thesis: single_machine_thesis.md
       - Binary Format: architecture/binary-format.md
       - Design Principles: architecture/design-principles.md
       - Lock-Free Implementation: architecture/lock-free.md
@@ -165,6 +166,7 @@ nav:
       - Testing Applications: best-practices/testing.md
   - Advanced Topics:
       - advanced/index.md
+      - Synchronization Primitives Guide: sync_primitives_guide.md
       - Codata Programming: advanced/codata.md
       - Lock-Free Patterns: advanced/lock-free-patterns.md
       - Memory Ordering: advanced/memory-ordering.md

@@ -20,6 +20,10 @@ compile_commands.json
 docs/html/
 docs/latex/
 doxygen_warnings.txt
+site/
+
+# C binaries
+c/bin/
 
 # Test artifacts
 Testing/

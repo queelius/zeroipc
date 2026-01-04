@@ -7,9 +7,10 @@
 
 /* Stack header in shared memory */
 typedef struct {
-    _Atomic int32_t top;  /* -1 when empty */
-    uint32_t capacity;
-    uint32_t elem_size;
+    _Atomic uint32_t top;   /* number of elements currently stored */
+    uint32_t capacity;      /* number of slots */
+    uint32_t elem_size;     /* bytes per element */
+    atomic_flag lock;       /* spin lock for concurrent access */
 } stack_header_t;
 
 /* Stack structure */
@@ -19,6 +20,16 @@ struct zeroipc_stack {
     void* data;
     char name[32];
 };
+
+static void stack_lock(stack_header_t* header) {
+    while (atomic_flag_test_and_set_explicit(&header->lock, memory_order_acquire)) {
+        ; /* spin */
+    }
+}
+
+static void stack_unlock(stack_header_t* header) {
+    atomic_flag_clear_explicit(&header->lock, memory_order_release);
+}
 
 /* Create stack */
 zeroipc_stack_t* zeroipc_stack_create(zeroipc_memory_t* mem, const char* name,
@@ -56,9 +67,10 @@ zeroipc_stack_t* zeroipc_stack_create(zeroipc_memory_t* mem, const char* name,
     stack->data = (char*)stack->header + sizeof(stack_header_t);
     
     /* Initialize header */
-    atomic_store(&stack->header->top, -1);  /* Empty */
+    atomic_store(&stack->header->top, 0);  /* Empty size */
     stack->header->capacity = capacity;
     stack->header->elem_size = elem_size;
+    atomic_flag_clear(&stack->header->lock);
     
     return stack;
 }
@@ -88,6 +100,10 @@ zeroipc_stack_t* zeroipc_stack_open(zeroipc_memory_t* mem, const char* name) {
     /* Get header and data pointers */
     stack->header = (stack_header_t*)((char*)zeroipc_memory_base(mem) + offset);
     stack->data = (char*)stack->header + sizeof(stack_header_t);
+    if (stack->header->capacity == 0 || stack->header->elem_size == 0) {
+        free(stack);
+        return NULL;
+    }
     
     return stack;
 }
@@ -99,68 +115,44 @@ void zeroipc_stack_close(zeroipc_stack_t* stack) {
     }
 }
 
-/* Push to stack (lock-free) */
+/* Push to stack (spin-locked for correctness) */
 int zeroipc_stack_push(zeroipc_stack_t* stack, const void* value) {
     if (!stack || !value) {
         return ZEROIPC_ERROR_SIZE;
     }
-    
-    int32_t current_top, new_top;
-    
-    /* Reserve a slot atomically */
-    do {
-        current_top = atomic_load_explicit(&stack->header->top, memory_order_relaxed);
-        
-        /* Check if full */
-        if (current_top >= (int32_t)(stack->header->capacity - 1)) {
-            return ZEROIPC_ERROR_SIZE;  /* Stack full */
-        }
-        
-        new_top = current_top + 1;
-    } while (!atomic_compare_exchange_weak_explicit(
-                &stack->header->top, &current_top, new_top,
-                memory_order_acq_rel, memory_order_relaxed));
-    
-    /* We own the slot at new_top, write the value */
-    char* dest = (char*)stack->data + (new_top * stack->header->elem_size);
+
+    stack_lock(stack->header);
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_relaxed);
+    if (top >= stack->header->capacity) {
+        stack_unlock(stack->header);
+        return ZEROIPC_ERROR_SIZE;  /* Stack full */
+    }
+
+    char* dest = (char*)stack->data + (top * stack->header->elem_size);
     memcpy(dest, value, stack->header->elem_size);
-    
-    /* Memory fence to ensure data is written before other threads can read it */
-    atomic_thread_fence(memory_order_release);
-    
+    atomic_store_explicit(&stack->header->top, top + 1, memory_order_release);
+    stack_unlock(stack->header);
     return ZEROIPC_OK;
 }
 
-/* Pop from stack (lock-free) */
+/* Pop from stack (spin-locked for correctness) */
 int zeroipc_stack_pop(zeroipc_stack_t* stack, void* value) {
     if (!stack || !value) {
         return ZEROIPC_ERROR_SIZE;
     }
-    
-    int32_t current_top, new_top;
-    
-    /* Reserve a slot to read atomically */
-    do {
-        current_top = atomic_load_explicit(&stack->header->top, memory_order_relaxed);
-        
-        /* Check if empty */
-        if (current_top < 0) {
-            return ZEROIPC_ERROR_NOT_FOUND;  /* Stack empty */
-        }
-        
-        new_top = current_top - 1;
-    } while (!atomic_compare_exchange_weak_explicit(
-                &stack->header->top, &current_top, new_top,
-                memory_order_acq_rel, memory_order_relaxed));
-    
-    /* We own the slot at current_top, read the value */
-    char* src = (char*)stack->data + (current_top * stack->header->elem_size);
-    
-    /* Memory fence to ensure we read the data that was fully written */
-    atomic_thread_fence(memory_order_acquire);
-    
+
+    stack_lock(stack->header);
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_relaxed);
+    if (top == 0) {
+        stack_unlock(stack->header);
+        return ZEROIPC_ERROR_NOT_FOUND;  /* Stack empty */
+    }
+
+    uint32_t index = top - 1;
+    char* src = (char*)stack->data + (index * stack->header->elem_size);
     memcpy(value, src, stack->header->elem_size);
-    
+    atomic_store_explicit(&stack->header->top, top - 1, memory_order_release);
+    stack_unlock(stack->header);
     return ZEROIPC_OK;
 }
 
@@ -170,15 +162,14 @@ int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
         return ZEROIPC_ERROR_SIZE;
     }
     
-    int32_t current_top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
-    
-    if (current_top < 0) {
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
+    if (top == 0) {
         return ZEROIPC_ERROR_NOT_FOUND;
     }
-    
-    char* src = (char*)stack->data + (current_top * stack->header->elem_size);
+
+    uint32_t index = top - 1;
+    char* src = (char*)stack->data + (index * stack->header->elem_size);
     memcpy(value, src, stack->header->elem_size);
-    
     return ZEROIPC_OK;
 }
 
@@ -186,23 +177,26 @@ int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
 int zeroipc_stack_empty(zeroipc_stack_t* stack) {
     if (!stack) return 1;
     
-    return atomic_load_explicit(&stack->header->top, memory_order_acquire) < 0;
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
+    return top == 0;
 }
 
 /* Check if full */
 int zeroipc_stack_full(zeroipc_stack_t* stack) {
     if (!stack) return 1;
     
-    return atomic_load_explicit(&stack->header->top, memory_order_acquire) >= 
-           (int32_t)(stack->header->capacity - 1);
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
+    return top >= stack->header->capacity;
 }
 
 /* Get size */
 size_t zeroipc_stack_size(zeroipc_stack_t* stack) {
     if (!stack) return 0;
     
-    int32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
-    return top < 0 ? 0 : (size_t)(top + 1);
+    uint32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
+    uint32_t capacity = stack->header->capacity;
+    if (top > capacity) top = capacity;
+    return (size_t)top;
 }
 
 /* Get capacity */

@@ -60,6 +60,10 @@ ctest -L integration --output-on-failure        # Integration tests only
 ./build/tests/test_semaphore
 ./build/tests/test_barrier
 
+# Run a single test by name
+cd build && ctest -R "MonitorTest.BasicLockUnlock" --output-on-failure
+cd build && ctest -R "QueueTest" --output-on-failure  # All queue tests
+
 # Run tests with verbose output
 cd build && ctest -V
 
@@ -167,12 +171,61 @@ zeroipc::memory<table256> shm("/test", size);  // For tests with >64 structures
 - `semaphore`: Cross-process counting/binary semaphore with wait/signal
 - `barrier`: Multi-process synchronization barrier with generation counter
 - `latch`: One-shot countdown synchronization primitive
+- `mutex`: Binary semaphore wrapper for mutual exclusion
+- `once`: One-time initialization primitive (call_once semantics)
+- `event`: AutoReset/ManualReset event for thread signaling
+- `monitor`: Condition variable + mutex for predicate-based waiting
+- `rwlock`: Read-Write lock (multiple concurrent readers OR exclusive writer)
+- `signal<T>`: Reactive signal with version tracking for change detection
 
 **Codata & Computational Structures:**
 - `future<T>`: Asynchronous computation results across processes
 - `lazy<T>`: Deferred computations with automatic memoization
 - `stream<T>`: Reactive data flows with FRP operators (map, filter, fold)
 - `channel<T>`: CSP-style synchronous/buffered message passing
+
+### Synchronization Primitive Patterns
+
+```cpp
+// Mutex - simple mutual exclusion
+zeroipc::Mutex mtx(mem, "data_lock");
+{
+    std::lock_guard<zeroipc::Mutex> lock(mtx);
+    // Critical section
+}
+
+// RWLock - multiple readers OR exclusive writer
+zeroipc::RWLock rwlock(mem, "cache_lock");
+{
+    SharedLock read(rwlock);   // Multiple readers OK
+    // Read data
+}
+{
+    UniqueLock write(rwlock);  // Exclusive writer
+    // Modify data
+}
+
+// Monitor - condition variable with predicate wait
+zeroipc::Monitor mon(mem, "bounded_buffer");
+mon.lock();
+mon.wait([&]{ return buffer_count > 0; });  // Wait until condition true
+// Consume from buffer
+mon.notify_one();  // Wake one waiter
+mon.unlock();
+
+// Event - AutoReset (wake one) or ManualReset (wake all)
+zeroipc::Event event(mem, "work_ready", EventMode::AUTO_RESET);
+event.signal();  // Wake one waiter
+event.wait();    // Block until signaled
+
+// Signal<T> - reactive value with version tracking
+zeroipc::Signal<double> temp(mem, "temperature", 20.0);
+temp.set(25.5);
+if (temp.has_changed(last_version)) {
+    double val = temp.get();
+    last_version = temp.version();
+}
+```
 
 ### Structure Creation Pattern
 
@@ -351,6 +404,14 @@ cd cpp/build
    ```
 
 ## Recent Changes
+
+### v2.1 - Extended Synchronization Primitives (December 2024)
+- **6 New Sync Primitives**: Mutex, Once, Event, Monitor, RWLock, Signal<T>
+  - Full implementations in both C++ (`cpp/include/zeroipc/`) and Python (`python/zeroipc/`)
+  - Comprehensive test suites: 119 Python tests, 7/7 C++ Monitor tests passing
+  - Binary-compatible layouts between C++ and Python implementations
+  - Cross-process validation tests using Python multiprocessing
+  - Error handling tests for edge cases (timeouts, double-unlock, missing resources)
 
 ### v2.0 - Test Suite Optimization & CLI Enhancement (October 2024)
 - **Test Performance**: 200x speedup (20+ min → <2 min default suite)

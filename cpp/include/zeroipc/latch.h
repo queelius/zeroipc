@@ -208,6 +208,19 @@ public:
         return name_;
     }
 
+    /**
+     * Reset the latch to its initial count.
+     *
+     * WARNING: This is NOT thread-safe if other threads are waiting or
+     * counting down. Only use when you have exclusive access or when
+     * all other threads have completed their wait().
+     *
+     * This allows the latch to be reused for multiple synchronization phases.
+     */
+    void reset() {
+        header_->count.store(header_->initial_count, std::memory_order_release);
+    }
+
 private:
     Memory& memory_;
     std::string name_;

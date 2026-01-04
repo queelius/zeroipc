@@ -149,19 +149,19 @@ void test_cross_process() {
         /* Open shared memory */
         zeroipc_memory_t* child_mem = zeroipc_memory_open("/test_cross");
         assert(child_mem != NULL);
-        
-        /* Find array in table */
-        size_t offset, size;
-        assert(zeroipc_table_find(child_mem, "shared_array", &offset, &size) == ZEROIPC_OK);
-        
-        /* Access data directly */
-        float* data = (float*)((char*)zeroipc_memory_base(child_mem) + offset);
+
+        /* Open array via API */
+        zeroipc_array_t* child_arr = zeroipc_array_open(child_mem, "shared_array");
+        assert(child_arr != NULL);
+        float* data = (float*)zeroipc_array_data(child_arr);
+        assert(data != NULL);
+        assert(zeroipc_array_capacity(child_arr) == 10);
+        assert(zeroipc_array_elem_size(child_arr) == sizeof(float));
         assert(data[0] == 3.14f);
-        
-        /* Write back */
         data[1] = 2.71f;
         
         zeroipc_memory_close(child_mem);
+        zeroipc_array_close(child_arr);
         exit(0);
     } else {
         /* Parent process */

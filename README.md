@@ -7,7 +7,7 @@ ZeroIPC transforms shared memory from passive storage into an active computation
 ### Key Features
 
 - 🚀 **Zero-Copy Performance** - Direct memory access without serialization
-- 🌐 **Language Independence** - C++ and Python implementations, not bindings
+- 🌐 **Language Independence** - C++, Python, Go, and C implementations, not bindings
 - 🔒 **Lock-Free Concurrency** - Atomic operations and CAS-based algorithms
 - 📦 **Minimal Metadata** - Only store name/offset/size for true flexibility
 - 🦆 **Duck Typing** - Runtime type specification (Python) or compile-time templates (C++)
@@ -45,6 +45,19 @@ mem = Memory("/sensor_data")
 # Read with duck typing - user specifies type
 temps = Array(mem, "temperature", dtype=np.float32)
 print(temps[0])  # 23.5
+```
+
+**Go Consumer:**
+```go
+import "github.com/spinoza/zeroipc/zeroipc"
+
+// Open same shared memory
+mem, _ := zeroipc.OpenMemory("/sensor_data", 10*1024*1024)
+defer mem.Close()
+
+// Read with generics - type specified at compile time
+temps, _ := zeroipc.OpenArray[float32](mem, "temperature")
+fmt.Println(temps.Get(0))  // 23.5
 ```
 
 ### Reactive Streams Example
@@ -172,8 +185,14 @@ This enables true language independence:
 
 ### Synchronization Primitives
 - ✅ **Semaphore** - Cross-process counting/binary semaphore with wait/signal
+- ✅ **Mutex** - Binary semaphore wrapper for mutual exclusion
 - ✅ **Barrier** - Multi-process synchronization barrier with generation counter
 - ✅ **Latch** - One-shot countdown synchronization primitive
+- ✅ **Once** - One-time initialization primitive (call_once semantics)
+- ✅ **Event** - AutoReset/ManualReset event for thread signaling
+- ✅ **Monitor** - Condition variable + mutex for predicate-based waiting
+- ✅ **RWLock** - Read-Write lock (multiple readers OR exclusive writer)
+- ✅ **Signal** - Reactive signal with version tracking for change detection
 
 ### Codata & Computational Structures
 - ✅ **Future** - Asynchronous computation results across processes
@@ -192,17 +211,17 @@ See [Codata Guide](docs/codata_guide.md) for detailed explanation.
 
 ## Language Implementations
 
-### [C Implementation](c/)
-- Pure C99 for maximum portability
-- Zero dependencies beyond POSIX
-- Static library (libzeroipc.a)
-- Minimal overhead
-
 ### [C++ Implementation](cpp/)
 - Template-based for zero overhead
 - Header-only library
 - Modern C++23 features
 - RAII resource management
+
+### [Go Implementation](go/)
+- Go 1.21+ with generics
+- Lock-free data structures using sync/atomic
+- Binary-compatible with C++ implementation
+- CLI tool for inspection and management
 
 ### [Python Implementation](python/)
 - Pure Python, no compilation required
@@ -210,14 +229,13 @@ See [Codata Guide](docs/codata_guide.md) for detailed explanation.
 - Duck typing for flexibility
 - mmap for direct memory access
 
-## Building and Testing
+### [C Implementation](c/)
+- Pure C99 for maximum portability
+- Zero dependencies beyond POSIX
+- Static library (libzeroipc.a)
+- Minimal overhead
 
-### C
-```bash
-cd c
-make            # Build library
-make test       # Run tests
-```
+## Building and Testing
 
 ### C++
 ```bash
@@ -238,6 +256,20 @@ ctest -L lockfree --output-on-failure                    # All lock-free structu
 ctest -L sync --output-on-failure                        # All synchronization primitive tests
 ```
 
+### Go
+```bash
+cd go
+
+# Run tests
+go test ./zeroipc/...
+
+# Build CLI tool
+go build -o zeroipc ./cmd/zeroipc
+
+# Run interop tests (requires C++ toolchain)
+go run ./cmd/interop
+```
+
 ### Python
 ```bash
 cd python
@@ -245,11 +277,21 @@ pip install -e .
 python -m pytest tests/
 ```
 
+### C
+```bash
+cd c
+make            # Build library
+make test       # Run tests
+```
+
 ### Cross-Language Tests
 ```bash
 cd interop
 ./test_interop.sh          # C++ writes, Python reads
 ./test_reverse_interop.sh  # Python writes, C++ reads
+
+cd go
+go run ./cmd/interop       # Go ↔ C++ interop tests
 ```
 
 ## Design Principles
@@ -284,13 +326,12 @@ Not designed for:
 
 ## CLI Tools
 
-### zeroipc
-Comprehensive tool for inspecting and debugging shared memory with support for all data structures:
+### zeroipc (Go)
+Comprehensive CLI tool for inspecting and managing shared memory:
 
 ```bash
 # Build the tool
-cd cpp && cmake -B build . && cmake --build build
-./build/tools/zeroipc
+cd go && go build -o zeroipc ./cmd/zeroipc
 
 # List all ZeroIPC shared memory segments
 ./zeroipc list
@@ -340,6 +381,7 @@ See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive testi
 
 ## Documentation
 
+- [The Single-Machine Thesis](docs/single_machine_thesis.md) - Why shared memory IPC is fundamentally different
 - [Testing Strategy](docs/TESTING_STRATEGY.md) - Test suite architecture and best practices
 - [Codata Guide](docs/codata_guide.md) - Understanding codata and computational structures
 - [API Reference](docs/api_reference.md) - Complete API documentation
@@ -350,6 +392,7 @@ See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive testi
 - [Design Philosophy](docs/design_philosophy.md) - Core principles and trade-offs
 - [Binary Specification](SPECIFICATION.md) - Wire format all implementations follow
 - [C++ Documentation](cpp/README.md) - C++ specific details
+- [Go Documentation](go/README.md) - Go specific details
 - [Python Documentation](python/README.md) - Python specific details
 
 ## Contributing

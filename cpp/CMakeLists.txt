@@ -124,6 +124,24 @@ target_link_libraries(test_barrier gtest_main Threads::Threads rt)
 add_executable(test_latch tests/test_latch.cpp)
 target_link_libraries(test_latch gtest_main Threads::Threads rt)
 
+add_executable(test_once tests/test_once.cpp)
+target_link_libraries(test_once gtest_main Threads::Threads rt)
+
+add_executable(test_event tests/test_event.cpp)
+target_link_libraries(test_event gtest_main Threads::Threads rt)
+
+add_executable(test_mutex tests/test_mutex.cpp)
+target_link_libraries(test_mutex gtest_main Threads::Threads rt)
+
+add_executable(test_monitor tests/test_monitor.cpp)
+target_link_libraries(test_monitor gtest_main Threads::Threads rt)
+
+add_executable(test_rwlock tests/test_rwlock.cpp)
+target_link_libraries(test_rwlock gtest_main Threads::Threads rt)
+
+add_executable(test_signal tests/test_signal.cpp)
+target_link_libraries(test_signal gtest_main Threads::Threads rt)
+
 # Add tests with proper categorization
 # FAST tests: <100ms, core functionality
 add_test(NAME table_test COMMAND test_table)
@@ -201,6 +219,36 @@ add_test(NAME latch_test COMMAND test_latch)
 set_tests_properties(latch_test PROPERTIES
     LABELS "medium;unit;sync"
     TIMEOUT 10)
+
+add_test(NAME once_test COMMAND test_once)
+set_tests_properties(once_test PROPERTIES
+    LABELS "fast;unit;sync"
+    TIMEOUT 5)
+
+add_test(NAME event_test COMMAND test_event)
+set_tests_properties(event_test PROPERTIES
+    LABELS "fast;unit;sync"
+    TIMEOUT 5)
+
+add_test(NAME mutex_test COMMAND test_mutex)
+set_tests_properties(mutex_test PROPERTIES
+    LABELS "fast;unit;sync"
+    TIMEOUT 5)
+
+add_test(NAME monitor_test COMMAND test_monitor)
+set_tests_properties(monitor_test PROPERTIES
+    LABELS "medium;unit;sync"
+    TIMEOUT 10)
+
+add_test(NAME rwlock_test COMMAND test_rwlock)
+set_tests_properties(rwlock_test PROPERTIES
+    LABELS "medium;unit;sync"
+    TIMEOUT 10)
+
+add_test(NAME signal_test COMMAND test_signal)
+set_tests_properties(signal_test PROPERTIES
+    LABELS "fast;unit"
+    TIMEOUT 5)
 
 # SLOW tests: >5s, full synchronization tests with threading delays
 add_test(NAME semaphore_test COMMAND test_semaphore)

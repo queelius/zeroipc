@@ -2,6 +2,12 @@
 #include <string.h>
 #include <stddef.h>
 
+static size_t align_up(size_t value, size_t alignment) {
+    if (alignment == 0) return value;
+    size_t remainder = value % alignment;
+    return remainder == 0 ? value : value + (alignment - remainder);
+}
+
 #define MAX_NAME_SIZE 32
 
 /* Table header structure */
@@ -57,7 +63,9 @@ int zeroipc_table_add(zeroipc_memory_t* mem, const char* name, size_t size, size
     }
     
     /* Check if enough space */
-    if (header->next_offset + size > zeroipc_memory_size(mem)) {
+    const size_t alignment = sizeof(uint64_t);
+    size_t aligned_offset = align_up(header->next_offset, alignment);
+    if (aligned_offset > zeroipc_memory_size(mem) || size > zeroipc_memory_size(mem) - aligned_offset) {
         return ZEROIPC_ERROR_SIZE;
     }
     
@@ -65,14 +73,14 @@ int zeroipc_table_add(zeroipc_memory_t* mem, const char* name, size_t size, size
     table_entry_t* entry = &entries[header->entry_count];
     strncpy(entry->name, name, MAX_NAME_SIZE - 1);
     entry->name[MAX_NAME_SIZE - 1] = '\0';
-    entry->offset = header->next_offset;
+    entry->offset = aligned_offset;
     entry->size = size;
     
     /* Update header */
     if (offset) {
-        *offset = header->next_offset;
+        *offset = aligned_offset;
     }
-    header->next_offset += size;
+    header->next_offset = aligned_offset + size;
     header->entry_count++;
     
     return ZEROIPC_OK;

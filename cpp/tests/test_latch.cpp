@@ -386,6 +386,32 @@ TEST_F(LatchTest, OneTimeUse) {
     EXPECT_TRUE(latch.try_wait());
 }
 
+TEST_F(LatchTest, ReusableWithReset) {
+    Memory mem(shm_name, 1024*1024);
+    Latch latch(mem, "reusable", 3);
+
+    // First use
+    latch.count_down();
+    EXPECT_EQ(latch.count(), 2);
+    latch.count_down(2);
+    EXPECT_EQ(latch.count(), 0);
+    latch.wait();
+
+    // Reset for reuse
+    latch.reset();
+    EXPECT_EQ(latch.count(), 3);
+    EXPECT_FALSE(latch.try_wait());
+
+    // Second use
+    latch.count_down(3);
+    EXPECT_EQ(latch.count(), 0);
+    latch.wait();
+
+    // Reset again
+    latch.reset();
+    EXPECT_EQ(latch.count(), 3);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

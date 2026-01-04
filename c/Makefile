@@ -27,6 +27,7 @@ LIB_CORE = libzeroipc_core.a
 # Test binaries
 TEST_BIN = $(BIN_DIR)/test_zeroipc
 TEST_CORE_BIN = $(BIN_DIR)/test_core
+TEST_QUEUE_BIN = $(BIN_DIR)/test_queue_stack
 
 # Example binaries
 EXAMPLE_BIN = $(BIN_DIR)/example
@@ -53,6 +54,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 test: dirs $(LIB)
 	$(CC) $(CFLAGS) $(TEST_DIR)/test_basic.c $(LIB) $(LDFLAGS) -o $(TEST_BIN)
 	./$(TEST_BIN)
+	$(CC) $(CFLAGS) $(TEST_DIR)/test_queue_stack.c $(LIB) $(LDFLAGS) -o $(TEST_QUEUE_BIN)
+	./$(TEST_QUEUE_BIN)
 
 test-core: dirs $(LIB_CORE)
 	$(CC) $(CFLAGS) $(TEST_DIR)/test_core.c $(LIB_CORE) $(LDFLAGS) -o $(TEST_CORE_BIN)

@@ -5,6 +5,11 @@ cmake-build-*/
 out/
 _build/
 
+# CMake-generated Makefiles (should not be tracked)
+/Makefile
+/cpp/Makefile
+/cpp/benchmarks/Makefile
+
 # IDE files
 .vscode/
 .idea/
@@ -24,6 +29,8 @@ site/
 
 # C binaries
 c/bin/
+c/test_table_debug
+c/test_table_stress
 
 # Test artifacts
 Testing/
@@ -32,6 +39,7 @@ test_results/
 *.gcno
 *.gcov
 coverage.info
+coverage_filtered.info
 coverage/
 
 # Compiled files
@@ -43,6 +51,9 @@ coverage/
 *.dll
 *.exe
 *.out
+
+# CLI tool binary (built from cpp/tools/zeroipc.cpp)
+/cpp/zeroipc
 
 # Conan files
 conan.lock

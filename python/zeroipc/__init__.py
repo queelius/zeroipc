@@ -6,7 +6,7 @@ It provides shared memory data structures that can be accessed from
 multiple processes and languages.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.2.0"
 
 # Core structures (always available)
 from .table import Table

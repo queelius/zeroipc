@@ -1,432 +1,144 @@
-# ZeroIPC - Active Computational Substrate for Shared Memory
+# ZeroIPC - High-Performance Shared Memory IPC
 
-## Overview
+Zero-copy data sharing between processes in C++, Python, Go, and C. No serialization, no bindings — parallel native implementations of the same binary format.
 
-ZeroIPC transforms shared memory from passive storage into an active computational substrate, enabling both imperative and functional programming paradigms across process boundaries. It provides zero-copy data sharing with sophisticated concurrency primitives, reactive streams, and codata structures - bringing modern programming abstractions to inter-process communication.
+## What's New (v2.2.0)
 
-### Key Features
-
-- 🚀 **Zero-Copy Performance** - Direct memory access without serialization
-- 🌐 **Language Independence** - C++, Python, Go, and C implementations, not bindings
-- 🔒 **Lock-Free Concurrency** - Atomic operations and CAS-based algorithms
-- 📦 **Minimal Metadata** - Only store name/offset/size for true flexibility
-- 🦆 **Duck Typing** - Runtime type specification (Python) or compile-time templates (C++)
-- 🎯 **Simple Discovery** - Named structures for easy cross-process lookup
-- ⚡ **Reactive Programming** - Functional reactive streams with operators
-- 🔮 **Codata Support** - Futures, lazy evaluation, and infinite streams
-- 🚪 **CSP Concurrency** - Channels for synchronous message passing
-- 🛠️ **CLI Tools** - Comprehensive inspection and debugging utilities
+- Fixed critical concurrency bugs in lock-free Queue and Stack (head/tail confusion, fence placement)
+- Go implementation with generics, CLI tool, and cross-language interop
+- 9 synchronization primitives: Mutex, RWLock, Monitor, Event, Semaphore, Barrier, Latch, Once, Signal
 
 ## Quick Start
 
-### Basic Data Sharing
+**C++ writes, Python reads — zero-copy:**
 
-**C++ Producer:**
 ```cpp
 #include <zeroipc/memory.h>
 #include <zeroipc/array.h>
 
-// Create shared memory
 zeroipc::Memory mem("/sensor_data", 10*1024*1024);  // 10MB
-
-// Create typed array
 zeroipc::Array<float> temps(mem, "temperature", 1000);
 temps[0] = 23.5f;
 ```
 
-**Python Consumer:**
 ```python
 from zeroipc import Memory, Array
 import numpy as np
 
-# Open same shared memory
 mem = Memory("/sensor_data")
-
-# Read with duck typing - user specifies type
 temps = Array(mem, "temperature", dtype=np.float32)
 print(temps[0])  # 23.5
 ```
 
-**Go Consumer:**
 ```go
-import "github.com/spinoza/zeroipc/zeroipc"
-
-// Open same shared memory
 mem, _ := zeroipc.OpenMemory("/sensor_data", 10*1024*1024)
 defer mem.Close()
-
-// Read with generics - type specified at compile time
 temps, _ := zeroipc.OpenArray[float32](mem, "temperature")
 fmt.Println(temps.Get(0))  // 23.5
 ```
 
-### Reactive Streams Example
-
-**Process A - Sensor Data Producer:**
-```cpp
-#include <zeroipc/memory.h>
-#include <zeroipc/stream.h>
-
-zeroipc::Memory mem("/sensors", 10*1024*1024);
-zeroipc::Stream<double> temperature(mem, "temp_stream", 1000);
-
-while (running) {
-    double temp = read_sensor();
-    temperature.emit(temp);
-    std::this_thread::sleep_for(100ms);
-}
-```
-
-**Process B - Stream Processing:**
-```cpp
-zeroipc::Memory mem("/sensors");
-zeroipc::Stream<double> temperature(mem, "temp_stream");
-
-// Create derived streams with functional transformations
-auto fahrenheit = temperature.map(mem, "temp_f", 
-    [](double c) { return c * 9/5 + 32; });
-
-auto warnings = fahrenheit.filter(mem, "warnings",
-    [](double f) { return f > 100.0; });
-
-// Subscribe to processed stream
-warnings.subscribe([](double high_temp) {
-    send_alert("High temperature: " + std::to_string(high_temp));
-});
-```
-
-### Futures for Async Results
-
-**Process A - Computation:**
-```cpp
-#include <zeroipc/future.h>
-
-zeroipc::Memory mem("/compute", 10*1024*1024);
-zeroipc::Future<double> result(mem, "expensive_calc");
-
-// Perform expensive computation
-double value = run_simulation();
-result.set_value(value);
-```
-
-**Process B - Waiting for Result:**
-```cpp
-zeroipc::Memory mem("/compute");
-zeroipc::Future<double> result(mem, "expensive_calc", true);
-
-// Wait with timeout
-if (auto value = result.get_for(std::chrono::seconds(5))) {
-    process_result(*value);
-} else {
-    handle_timeout();
-}
-```
-
-### CSP-Style Channels
-
-**Process A - Producer:**
-```cpp
-#include <zeroipc/channel.h>
-
-zeroipc::Memory mem("/messages", 10*1024*1024);
-zeroipc::Channel<Message> ch(mem, "commands", 100);  // buffered
-
-Message msg{.type = CMD_START, .data = 42};
-ch.send(msg);  // Blocks if buffer full
-```
-
-**Process B - Consumer:**
-```cpp
-zeroipc::Memory mem("/messages");
-zeroipc::Channel<Message> ch(mem, "commands");
-
-while (auto msg = ch.receive()) {
-    process_command(*msg);
-}
-```
-
-## Architecture
-
-### Binary Format Specification
-
-All implementations follow the same binary format defined in [SPECIFICATION.md](SPECIFICATION.md):
-
-```
-[Table Header][Table Entries][Data Structure 1][Data Structure 2]...
-```
-
-- **Table Header**: Magic number, version, entry count, next offset
-- **Table Entry**: Name (32 bytes), offset (4 bytes), size (4 bytes)
-- **Data Structures**: Raw binary data, layout determined by structure type
-
-### Minimal Metadata Philosophy
-
-Unlike traditional IPC systems, ZeroIPC stores NO type information:
-- **Name**: For discovery
-- **Offset**: Where data starts
-- **Size**: How much memory is used
-
-This enables true language independence:
-- **Both languages can create**: Python and C++ can both allocate new structures
-- **Both languages can read**: Either can discover and access existing structures
-- **Type safety per language**: C++ uses templates, Python uses NumPy dtypes
+See [docs/examples/](docs/examples/) for streams, futures, channels, and more.
 
 ## Data Structures
 
-### Traditional Data Structures
-- ✅ **Array** - Fixed-size contiguous storage with atomic operations
-- ✅ **Queue** - Lock-free MPMC circular buffer using CAS
-- ✅ **Stack** - Lock-free LIFO with ABA-safe operations
-- ✅ **Map** - Lock-free hash map with linear probing
-- ✅ **Set** - Lock-free hash set for unique elements
-- ✅ **Pool** - Object pool with free list management
-- ✅ **Ring** - High-performance ring buffer for streaming
-- ✅ **Table** - Metadata registry for dynamic discovery
+**Core** — Array, Queue (lock-free MPMC), Stack (lock-free), Ring, Map (lock-free), Set, Pool, Table
 
-### Synchronization Primitives
-- ✅ **Semaphore** - Cross-process counting/binary semaphore with wait/signal
-- ✅ **Mutex** - Binary semaphore wrapper for mutual exclusion
-- ✅ **Barrier** - Multi-process synchronization barrier with generation counter
-- ✅ **Latch** - One-shot countdown synchronization primitive
-- ✅ **Once** - One-time initialization primitive (call_once semantics)
-- ✅ **Event** - AutoReset/ManualReset event for thread signaling
-- ✅ **Monitor** - Condition variable + mutex for predicate-based waiting
-- ✅ **RWLock** - Read-Write lock (multiple readers OR exclusive writer)
-- ✅ **Signal** - Reactive signal with version tracking for change detection
+**Sync** — Semaphore, Mutex, RWLock, Monitor, Barrier, Latch, Once, Event, Signal
 
-### Codata & Computational Structures
-- ✅ **Future** - Asynchronous computation results across processes
-- ✅ **Lazy** - Deferred computations with automatic memoization
-- ✅ **Stream** - Reactive data flows with FRP operators (map, filter, fold)
-- ✅ **Channel** - CSP-style synchronous/buffered message passing
+**Codata** — Future, Lazy, Stream (with map/filter/fold), Channel (CSP-style)
 
-### Why Codata?
-Traditional data structures store values in space. Codata structures represent computations over time. This enables:
-- **Cross-process async/await** - Future results shared between processes
-- **Lazy evaluation** - Expensive computations cached and shared
-- **Reactive pipelines** - Event-driven processing with backpressure
-- **CSP concurrency** - Go-style channels for structured communication
-
-See [Codata Guide](docs/codata_guide.md) for detailed explanation.
-
-## Language Implementations
-
-### [C++ Implementation](cpp/)
-- Template-based for zero overhead
-- Header-only library
-- Modern C++23 features
-- RAII resource management
-
-### [Go Implementation](go/)
-- Go 1.21+ with generics
-- Lock-free data structures using sync/atomic
-- Binary-compatible with C++ implementation
-- CLI tool for inspection and management
-
-### [Python Implementation](python/)
-- Pure Python, no compilation required
-- NumPy integration for performance
-- Duck typing for flexibility
-- mmap for direct memory access
-
-### [C Implementation](c/)
-- Pure C99 for maximum portability
-- Zero dependencies beyond POSIX
-- Static library (libzeroipc.a)
-- Minimal overhead
-
-## Building and Testing
-
-### C++
-```bash
-cd cpp
-cmake -B build .
-cmake --build build
-
-# Run tests - optimized test suite (200x faster than previous versions)
-cd build && ctest --output-on-failure                    # Default: fast + medium (~2 min)
-cmake --build build --target test_fast                   # Fast tests only (~30 sec)
-cmake --build build --target test_ci                     # CI mode: all except stress (~10 min)
-cmake --build build --target test_all                    # Full suite including stress (~30 min)
-
-# Run specific test categories
-ctest -L fast --output-on-failure                        # Fast tests (<100ms each)
-ctest -L medium --output-on-failure                      # Medium tests (<5s each)
-ctest -L lockfree --output-on-failure                    # All lock-free structure tests
-ctest -L sync --output-on-failure                        # All synchronization primitive tests
-```
-
-### Go
-```bash
-cd go
-
-# Run tests
-go test ./zeroipc/...
-
-# Build CLI tool
-go build -o zeroipc ./cmd/zeroipc
-
-# Run interop tests (requires C++ toolchain)
-go run ./cmd/interop
-```
-
-### Python
-```bash
-cd python
-pip install -e .
-python -m pytest tests/
-```
-
-### C
-```bash
-cd c
-make            # Build library
-make test       # Run tests
-```
-
-### Cross-Language Tests
-```bash
-cd interop
-./test_interop.sh          # C++ writes, Python reads
-./test_reverse_interop.sh  # Python writes, C++ reads
-
-cd go
-go run ./cmd/interop       # Go ↔ C++ interop tests
-```
+See [docs/codata_guide.md](docs/codata_guide.md) for futures, streams, and lazy evaluation.
+See [docs/sync_primitives_guide.md](docs/sync_primitives_guide.md) for synchronization primitives.
 
 ## Design Principles
 
-1. **Language Equality** - No language is "primary", all are first-class
-2. **Minimal Overhead** - Table stores only what's absolutely necessary
-3. **User Responsibility** - Users ensure type consistency across languages
-4. **Zero Dependencies** - Each implementation stands alone
-5. **Binary Compatibility** - All languages read/write the same format
+All implementations follow the same [binary specification](SPECIFICATION.md). The metadata table stores only **name, offset, and size** — no type information. This enables true language independence: C++ uses templates, Python uses NumPy dtypes, Go uses generics. Users ensure type consistency across languages.
 
-## Performance
+```
+[Table Header][Table Entries][Structure 1][Structure 2]...[Structure N]
+```
 
-- **Array Access**: Identical to native arrays (zero overhead)
-- **Queue Operations**: Lock-free with atomic CAS
-- **Memory Allocation**: O(1) bump allocation
-- **Discovery**: O(n) where n ≤ max_entries
+Key design choices:
+- **Language equality** — no language is "primary"; all are first-class implementations
+- **Zero dependencies** — each implementation stands alone
+- **Lock-free concurrency** — atomic CAS operations, no kernel calls in hot paths
+- **User-controlled layout** — no GC, no defragmentation, no hidden allocations
+
+## Language Implementations
+
+| Language | Dir | Highlights |
+|----------|-----|------------|
+| [C++](cpp/) | `cpp/` | Header-only, C++23 templates, RAII |
+| [Go](go/) | `go/` | Go 1.21+ generics, CLI tool |
+| [Python](python/) | `python/` | Pure Python, NumPy integration, mmap |
+| [C](c/) | `c/` | C99, zero dependencies, static lib |
+
+## Building and Testing
+
+```bash
+# C++
+cmake -B build cpp && cmake --build build
+cd build && ctest --output-on-failure    # fast + medium tests (~2 min)
+
+# Go
+cd go && go test ./zeroipc/...
+
+# Python
+cd python && pip install -e . && python -m pytest tests/
+
+# C
+cd c && make && make test
+
+# Cross-language
+cd interop && ./test_interop.sh
+cd go && go run ./cmd/interop
+```
+
+See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for test categories (FAST/MEDIUM/SLOW/STRESS) and CI configuration.
+
+## CLI Tool
+
+```bash
+cd go && go build -o zeroipc ./cmd/zeroipc
+
+./zeroipc list                              # List shared memory segments
+./zeroipc show /sensor_data                 # Inspect segment and structures
+./zeroipc array /sensor_data temperatures   # Inspect specific structure
+./zeroipc monitor /sensors temp_stream      # Real-time stream monitoring
+./zeroipc repl /sensor_data                 # Interactive exploration
+```
+
+Supports all 16 structure types. See [docs/cli_tools.md](docs/cli_tools.md) for full documentation.
 
 ## Use Cases
 
-ZeroIPC excels at:
-- ✅ High-frequency sensor data sharing
-- ✅ Multi-process simulations
-- ✅ Real-time analytics pipelines
-- ✅ Cross-language scientific computing
-- ✅ Zero-copy producer-consumer patterns
+ZeroIPC is for **single-machine, multi-process** scenarios:
+- High-frequency sensor data sharing
+- Multi-process simulations and scientific computing
+- Real-time analytics pipelines
+- Cross-language data processing
 
-Not designed for:
-- ❌ General-purpose memory allocation
-- ❌ Network-distributed systems
-- ❌ Persistent storage
-- ❌ Garbage collection
-
-## CLI Tools
-
-### zeroipc (Go)
-Comprehensive CLI tool for inspecting and managing shared memory:
-
-```bash
-# Build the tool
-cd go && go build -o zeroipc ./cmd/zeroipc
-
-# List all ZeroIPC shared memory segments
-./zeroipc list
-
-# Show detailed information about a segment and all structures
-./zeroipc show /sensor_data
-
-# Inspect specific data structures (supports all 16 structure types)
-./zeroipc array /sensor_data temperatures       # Array inspection
-./zeroipc queue /sensor_data task_queue         # Queue state and contents
-./zeroipc stack /sensor_data undo_stack         # Stack inspection
-./zeroipc ring /sensor_data event_buffer        # Ring buffer state
-./zeroipc map /sensor_data cache                # Hash map contents
-./zeroipc set /sensor_data unique_ids           # Set contents
-./zeroipc pool /sensor_data object_pool         # Pool allocation state
-./zeroipc channel /sensor_data messages         # Channel state
-./zeroipc stream /sensor_data events            # Stream contents
-./zeroipc semaphore /sensor_data mutex          # Semaphore state
-./zeroipc barrier /sensor_data sync_point       # Barrier state
-./zeroipc latch /sensor_data countdown          # Latch state
-./zeroipc future /sensor_data result            # Future state
-./zeroipc lazy /sensor_data computation         # Lazy evaluation state
-
-# Monitor a stream in real-time
-./zeroipc monitor /sensors temperature_stream
-
-# Dump raw memory contents
-./zeroipc dump /compute --offset 0 --size 1024
-
-# Interactive REPL mode for exploration
-./zeroipc repl /sensor_data
-```
-
-See [docs/cli_tools.md](docs/cli_tools.md) for complete CLI documentation.
-
-## Test Suite Performance
-
-ZeroIPC features an optimized test suite with intelligent categorization for fast development workflows:
-
-- **200x Performance Improvement**: Reduced from 20+ minutes to under 2 minutes for default suite
-- **Smart Categorization**: Tests labeled as FAST, MEDIUM, SLOW, or STRESS
-- **Parameterized Timing**: Configurable timing constants via `test_config.h`
-- **Selective Execution**: Run only the tests you need with CTest labels
-- **CI-Optimized**: Default suite completes in seconds for rapid feedback
-
-See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive testing documentation.
+Not designed for: network distribution, persistent storage, or general-purpose memory allocation.
 
 ## Documentation
 
-- [The Single-Machine Thesis](docs/single_machine_thesis.md) - Why shared memory IPC is fundamentally different
-- [Testing Strategy](docs/TESTING_STRATEGY.md) - Test suite architecture and best practices
-- [Codata Guide](docs/codata_guide.md) - Understanding codata and computational structures
-- [API Reference](docs/api_reference.md) - Complete API documentation
-- [Architecture](docs/architecture.md) - System design and memory layout
-- [Design Patterns](docs/patterns.md) - Cross-process communication patterns
-- [CLI Tools](docs/cli_tools.md) - Command-line utilities documentation
-- [Examples](docs/examples/) - Complete working examples
-- [Design Philosophy](docs/design_philosophy.md) - Core principles and trade-offs
-- [Binary Specification](SPECIFICATION.md) - Wire format all implementations follow
-- [C++ Documentation](cpp/README.md) - C++ specific details
-- [Go Documentation](go/README.md) - Go specific details
-- [Python Documentation](python/README.md) - Python specific details
+- [Binary Specification](SPECIFICATION.md) — wire format all implementations follow
+- [Architecture](docs/architecture.md) — system design and memory layout
+- [API Reference](docs/api_reference.md) — complete API docs
+- [Codata Guide](docs/codata_guide.md) — futures, streams, lazy evaluation
+- [Sync Primitives Guide](docs/sync_primitives_guide.md) — mutex, monitor, rwlock, etc.
+- [Design Philosophy](docs/design_philosophy.md) — core principles and trade-offs
+- [The Single-Machine Thesis](docs/single_machine_thesis.md) — why shared memory IPC matters
+- [Design Patterns](docs/patterns.md) — cross-process communication patterns
+- [CLI Tools](docs/cli_tools.md) — command-line utilities
+- [Testing Strategy](docs/TESTING_STRATEGY.md) — test suite architecture
+- [Examples](docs/examples/) — working code examples
 
 ## Contributing
 
-Contributions welcome! When adding new language implementations:
-1. Follow the binary specification exactly
-2. Create a new directory for your language
-3. Implement Memory, Table, and Array as minimum
-4. Add cross-language tests in `interop/`
-
-## Advanced Features
-
-### Functional Programming in Shared Memory
-ZeroIPC brings functional programming paradigms to IPC:
-- **Lazy Evaluation**: Defer expensive computations until needed
-- **Memoization**: Automatic caching of computation results
-- **Stream Combinators**: map, filter, fold, take, skip, window
-- **Monadic Composition**: Chain asynchronous operations with Futures
-
-### Cross-Process Patterns
-- **Producer-Consumer**: Lock-free queues with backpressure
-- **Pub-Sub**: Multiple consumers on reactive streams
-- **Request-Response**: Futures for RPC-like patterns
-- **Pipeline**: Stream transformations across processes
-- **Fork-Join**: Parallel computation with result aggregation
-
-## Future Explorations
-
-The boundary between data and code continues to blur:
-- **Persistent Data Structures**: Immutable structures with structural sharing
-- **Software Transactional Memory**: ACID transactions in shared memory
-- **Dataflow Programming**: Computational graphs in shared memory
-- **Actors**: Message-passing actors with mailboxes
-- **Continuations**: Suspended computations for coroutines
+1. Follow the [binary specification](SPECIFICATION.md) exactly
+2. Implement Memory, Table, and Array as minimum
+3. Add cross-language tests in `interop/`
 
 ## License
 

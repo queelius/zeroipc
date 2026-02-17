@@ -87,6 +87,12 @@ coords = Array(mem, "locations", dtype=coord_dtype)
 - NumPy
 - POSIX shared memory support (Linux/macOS)
 
+## v2.2.0 Highlights
+
+- Full synchronization primitives: Mutex, RWLock, Monitor, Event, Semaphore, Barrier, Latch, Once, Signal
+- Codata structures: Future, Lazy, Stream, Channel
+- Cross-process validation tests using multiprocessing
+
 ## Design Notes
 
 The Python implementation emphasizes:

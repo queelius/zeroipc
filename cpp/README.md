@@ -76,6 +76,12 @@ Array(Memory& memory, std::string_view name, size_t capacity = 0)
 - POSIX shared memory support
 - CMake 3.20+
 
+## v2.2.0 Highlights
+
+- Fixed critical lock-free bugs: Queue head/tail confusion, Stack ABA vulnerability, proper fence placement
+- All 9 synchronization primitives (Mutex, RWLock, Monitor, Event, Semaphore, Barrier, Latch, Once, Signal)
+- 4 codata structures (Future, Lazy, Stream, Channel)
+
 ## Design Notes
 
 The C++ implementation prioritizes:

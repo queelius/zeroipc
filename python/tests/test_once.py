@@ -224,7 +224,7 @@ class TestOnceEdgeCases:
     """Edge case tests for Once."""
 
     def test_exception_during_call(self):
-        """Test that exception during call allows retry."""
+        """Test that exception during call marks as done (std::call_once semantics)."""
         shm_name = f"/test_once_exception_{os.getpid()}"
 
         try:
@@ -241,17 +241,18 @@ class TestOnceEdgeCases:
             with pytest.raises(ValueError):
                 once.call(failing_func)
 
-            # Once flag should be reset (not marked as called)
-            assert not once.is_called
+            # Once flag should be marked as done even after exception
+            # (matches std::call_once semantics - the once is consumed)
+            assert once.is_called
             assert counter[0] == 1
 
-            # Can retry after exception
+            # Subsequent calls should NOT execute (already done)
             def succeeding_func():
                 counter[0] += 10
 
             once.call(succeeding_func)
             assert once.is_called
-            assert counter[0] == 11  # 1 from failed attempt + 10 from success
+            assert counter[0] == 1  # Still 1, second func was not called
 
         finally:
             Memory.unlink(shm_name)

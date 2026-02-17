@@ -11,7 +11,7 @@ from typing import Optional, TypeVar, Union, List
 import numpy as np
 
 from .memory import Memory
-from .atomic import AtomicInt
+from .atomic import AtomicInt, AtomicInt64
 
 T = TypeVar('T')
 
@@ -22,9 +22,31 @@ class Pool:
 
     This implementation uses a free list to manage allocation and deallocation
     of fixed-size objects. All operations are lock-free using atomic operations.
+
+    Uses tagged pointers (64-bit: [generation:32][index:32]) on the free list
+    head to prevent the ABA problem in lock-free CAS loops.
     """
 
     NULL_INDEX = 0xFFFFFFFF
+
+    # Header size: uint64_t free_head(8) + uint32_t allocated(4) + uint32_t padding(4)
+    #            + uint32_t capacity(4) + uint32_t elem_size(4) = 24 bytes
+    HEADER_SIZE = 24
+
+    @staticmethod
+    def _pack_tagged(index: int, generation: int) -> int:
+        """Pack index and generation into a 64-bit tagged pointer."""
+        return (generation << 32) | (index & 0xFFFFFFFF)
+
+    @staticmethod
+    def _unpack_index(tagged: int) -> int:
+        """Extract index from a 64-bit tagged pointer."""
+        return tagged & 0xFFFFFFFF
+
+    @staticmethod
+    def _unpack_generation(tagged: int) -> int:
+        """Extract generation from a 64-bit tagged pointer."""
+        return (tagged >> 32) & 0xFFFFFFFF
 
     def __init__(self, memory: Memory, name: str,
                  capacity: Optional[int] = None,
@@ -102,8 +124,8 @@ class Pool:
 
     def _create_new(self):
         """Create a new pool in shared memory."""
-        # Header: free_head(4) + allocated(4) + capacity(4) + elem_size(4)
-        header_size = 16
+        # Header: free_head(8) + allocated(4) + padding(4) + capacity(4) + elem_size(4) = 24
+        header_size = self.HEADER_SIZE
         total_size = header_size + self.node_size * self.capacity
 
         # Allocate space
@@ -115,10 +137,12 @@ class Pool:
         # Get memory view
         self.buffer = self.memory.at(self.offset)
 
-        # Initialize header
-        struct.pack_into('<IIII', self.buffer, 0,
-                        0,  # free_head starts at index 0
-                        0,  # allocated count
+        # Initialize header with tagged pointer (generation=0, index=0)
+        tagged_head = self._pack_tagged(0, 0)
+        struct.pack_into('<QIIII', self.buffer, 0,
+                        tagged_head,  # free_head as tagged pointer (uint64)
+                        0,            # allocated count
+                        0,            # padding
                         self.capacity,
                         self.elem_size)
 
@@ -138,8 +162,8 @@ class Pool:
         self.offset = entry.offset
         self.buffer = self.memory.at(self.offset)
 
-        # Read header
-        free_head, allocated, capacity, elem_size = struct.unpack_from('<IIII', self.buffer, 0)
+        # Read header: uint64 free_head + uint32 allocated + uint32 padding + uint32 capacity + uint32 elem_size
+        tagged_head, allocated, padding, capacity, elem_size = struct.unpack_from('<QIIII', self.buffer, 0)
 
         # Initialize fields from header
         self.capacity = capacity
@@ -155,7 +179,7 @@ class Pool:
 
     def _get_node_offset(self, index: int) -> int:
         """Get byte offset of node at given index."""
-        return 16 + index * self.node_size
+        return self.HEADER_SIZE + index * self.node_size
 
     def _read_node_next(self, index: int) -> int:
         """Read next index from node."""
@@ -190,14 +214,18 @@ class Pool:
         """
         Allocate an object from the pool.
 
+        Uses tagged pointer CAS to prevent ABA problem.
+
         Returns:
             Index of allocated object, or None if pool is full
         """
-        # Try to get a free node
-        free_head_atomic = AtomicInt(self.buffer, 0)
+        # Try to get a free node using tagged pointer (uint64)
+        free_head_atomic = AtomicInt64(self.buffer, 0)
 
         while True:
-            free_index = free_head_atomic.load()
+            old_head = free_head_atomic.load()
+            free_index = self._unpack_index(old_head)
+            generation = self._unpack_generation(old_head)
 
             if free_index == self.NULL_INDEX:
                 return None  # Pool is full
@@ -205,16 +233,21 @@ class Pool:
             # Read next from the free node
             next_index = self._read_node_next(free_index)
 
-            # Try to update the free head
-            if free_head_atomic.compare_exchange_weak(free_index, next_index):
+            # Pack new head with bumped generation to prevent ABA
+            new_head = self._pack_tagged(next_index, generation + 1)
+
+            # Try to update the free head (tagged CAS prevents ABA)
+            if free_head_atomic.compare_exchange_weak(old_head, new_head):
                 # Successfully allocated, increment allocated count
-                allocated_atomic = AtomicInt(self.buffer, 4)
+                allocated_atomic = AtomicInt(self.buffer, 8)  # offset 8 after uint64 free_head
                 allocated_atomic.fetch_add(1)
                 return free_index
 
     def deallocate(self, index: int) -> bool:
         """
         Deallocate an object back to the pool.
+
+        Uses tagged pointer CAS to prevent ABA problem.
 
         Args:
             index: Index of object to deallocate
@@ -225,19 +258,24 @@ class Pool:
         if index is None or index < 0 or index >= self.capacity:
             return False
 
-        # Add the node back to the free list
-        free_head_atomic = AtomicInt(self.buffer, 0)
+        # Add the node back to the free list using tagged pointer (uint64)
+        free_head_atomic = AtomicInt64(self.buffer, 0)
 
         while True:
-            current_head = free_head_atomic.load()
+            old_head = free_head_atomic.load()
+            old_index = self._unpack_index(old_head)
+            generation = self._unpack_generation(old_head)
 
-            # Set this node's next to point to current head
-            self._write_node_next(index, current_head)
+            # Set this node's next to point to current head index
+            self._write_node_next(index, old_index)
 
-            # Try to make this node the new head
-            if free_head_atomic.compare_exchange_weak(current_head, index):
+            # Pack new head with bumped generation to prevent ABA
+            new_head = self._pack_tagged(index, generation + 1)
+
+            # Try to make this node the new head (tagged CAS prevents ABA)
+            if free_head_atomic.compare_exchange_weak(old_head, new_head):
                 # Successfully deallocated, decrement allocated count
-                allocated_atomic = AtomicInt(self.buffer, 4)
+                allocated_atomic = AtomicInt(self.buffer, 8)  # offset 8 after uint64 free_head
                 current_allocated = allocated_atomic.load()
                 while current_allocated > 0:
                     if allocated_atomic.compare_exchange_weak(current_allocated, current_allocated - 1):
@@ -278,7 +316,7 @@ class Pool:
 
     def allocated_count(self) -> int:
         """Get number of currently allocated objects."""
-        return struct.unpack_from('<I', self.buffer, 4)[0]
+        return struct.unpack_from('<I', self.buffer, 8)[0]
 
     def available_count(self) -> int:
         """Get number of available (free) objects."""
@@ -337,15 +375,17 @@ class Pool:
         Warning: This operation is not atomic and should only be used
         when no other processes are accessing the pool.
         """
-        # Reset header
-        struct.pack_into('<IIII', self.buffer, 0,
-                        0,  # free_head starts at index 0
-                        0,  # allocated count
+        # Reset header with tagged pointer (generation=0, index=0)
+        tagged_head = self._pack_tagged(0, 0)
+        struct.pack_into('<QIIII', self.buffer, 0,
+                        tagged_head,  # free_head as tagged pointer (uint64)
+                        0,            # allocated count
+                        0,            # padding
                         self.capacity,
                         self.elem_size)
 
         # Rebuild free list - all nodes are free
-        header_size = 16
+        header_size = self.HEADER_SIZE
         for i in range(self.capacity - 1):
             node_offset = header_size + i * self.node_size
             next_index = i + 1

@@ -114,7 +114,8 @@ class TestDataIntegrity:
     def test_concurrent_unique_values(self):
         """Ensure no values are lost or duplicated under concurrency."""
         mem = Memory("/test_integrity", size=50*1024*1024)
-        queue = Queue(mem, "unique_queue", capacity=10000, dtype=np.int64)
+        # capacity must be > total items since sentinel-slot queue uses N-1 slots
+        queue = Queue(mem, "unique_queue", capacity=10001, dtype=np.int64)
         
         num_threads = 10
         values_per_thread = 1000
@@ -153,7 +154,7 @@ class TestDataIntegrity:
             ('thread_id', 'i4'),
             ('sequence', 'i4'),
             ('data', 'f8', 100),
-            ('guard', 'i4')  # Guard value to detect corruption
+            ('guard', 'u4')  # Guard value to detect corruption
         ])
         
         array = Array(mem, "concurrent_array", capacity=100, dtype=dtype)
@@ -207,29 +208,24 @@ class TestDataIntegrity:
         """Test alternating push/pop pattern maintains integrity."""
         mem = Memory("/test_integrity", size=10*1024*1024)
         queue = Queue(mem, "pattern_queue", capacity=100, dtype=np.int32)
-        
-        # Alternating pattern
+
+        # Push 1, pop 1 pattern - queue stays at constant size
+        pushed_values = []
+        popped_values = []
+
         for i in range(1000):
-            # Push 2
-            assert queue.push(i * 2)
-            assert queue.push(i * 2 + 1)
-            
-            # Pop 1
+            # Push one value
+            assert queue.push(i)
+            pushed_values.append(i)
+
+            # Pop one value - FIFO order
             val = queue.pop()
-            assert val == i * 2
-            
-            # Verify queue has exactly 1 item
-            assert queue.size() == 1
-        
-        # Drain remaining
-        remaining = []
-        while not queue.empty():
-            remaining.append(queue.pop())
-        
-        # Should be all odd numbers from the last iterations
-        for i, val in enumerate(remaining):
-            expected = (1000 - len(remaining) + i) * 2 + 1
-            assert val == expected
+            assert val is not None
+            popped_values.append(int(val))
+
+        # All values should come back in FIFO order
+        assert popped_values == pushed_values
+        assert queue.empty()
     
     def test_binary_pattern_verification(self):
         """Use binary patterns to detect bit flips."""

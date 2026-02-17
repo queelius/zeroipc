@@ -275,14 +275,14 @@ TEST_F(StressTest, LargeDataStructures) {
     // Fill it up
     std::cout << "Filling huge queue with " << huge_capacity << " items..." << std::endl;
     
-    for (size_t i = 0; i < huge_capacity - 1; i++) {
+    for (size_t i = 0; i < huge_capacity; i++) {
         EXPECT_TRUE(queue.push(i * 3.14159));
-        
+
         if (i % 100000 == 0) {
             std::cout << "  " << i << " items pushed..." << std::endl;
         }
     }
-    
+
     EXPECT_TRUE(queue.full());
     std::cout << "Queue filled successfully!" << std::endl;
     

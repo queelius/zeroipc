@@ -17,7 +17,7 @@ public:
                   "Value type must be trivially copyable for shared memory");
     
     struct Entry {
-        std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted
+        std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted, 3=inserting
         K key;
         V value;
     };
@@ -33,6 +33,7 @@ public:
     static constexpr uint32_t EMPTY = 0;
     static constexpr uint32_t OCCUPIED = 1;
     static constexpr uint32_t DELETED = 2;
+    static constexpr uint32_t INSERTING = 3;
     
     // Create new map
     Map(Memory& memory, std::string_view name, size_t capacity)
@@ -92,43 +93,49 @@ public:
     [[nodiscard]] bool insert(const K& key, const V& value) {
         size_t hash = hash_key(key);
         size_t capacity = header_->capacity;
-        
+
         // Linear probing
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             Entry& entry = entries_[idx];
-            
+
+            // Try to claim an empty slot: EMPTY -> INSERTING
             uint32_t expected = EMPTY;
-            if (entry.state.compare_exchange_strong(expected, OCCUPIED,
+            if (entry.state.compare_exchange_strong(expected, INSERTING,
                                                    std::memory_order_acquire,
                                                    std::memory_order_relaxed)) {
-                // We acquired an empty slot
+                // We exclusively own this slot; write key and value
                 entry.key = key;
                 entry.value = value;
+                // Publish the entry: INSERTING -> OCCUPIED (release so readers see data)
+                entry.state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
-            
+
             // Check if it's our key (update case)
+            // Skip INSERTING slots (another thread is writing, treat as not-our-key)
             if (expected == OCCUPIED) {
                 if (keys_equal(entry.key, key)) {
                     entry.value = value;  // Update value
                     return true;
                 }
             }
-            
-            // Try deleted slots too
+
+            // Try deleted slots too: DELETED -> INSERTING
             expected = DELETED;
-            if (entry.state.compare_exchange_strong(expected, OCCUPIED,
+            if (entry.state.compare_exchange_strong(expected, INSERTING,
                                                    std::memory_order_acquire,
                                                    std::memory_order_relaxed)) {
                 entry.key = key;
                 entry.value = value;
+                // Publish the entry: INSERTING -> OCCUPIED
+                entry.state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
         }
-        
+
         return false;  // Map is full
     }
     
@@ -136,24 +143,25 @@ public:
     [[nodiscard]] std::optional<V> find(const K& key) const {
         size_t hash = hash_key(key);
         size_t capacity = header_->capacity;
-        
+
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             const Entry& entry = entries_[idx];
-            
+
             uint32_t state = entry.state.load(std::memory_order_acquire);
-            
+
             if (state == EMPTY) {
                 return std::nullopt;  // Key not found
             }
-            
+
             if (state == OCCUPIED && keys_equal(entry.key, key)) {
                 return entry.value;
             }
-            
-            // Continue searching through DELETED entries
+
+            // Continue searching through DELETED and INSERTING entries
+            // INSERTING slots are being written by another thread; skip them
         }
-        
+
         return std::nullopt;
     }
     
@@ -161,25 +169,37 @@ public:
     [[nodiscard]] bool erase(const K& key) {
         size_t hash = hash_key(key);
         size_t capacity = header_->capacity;
-        
+
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             Entry& entry = entries_[idx];
-            
+
             uint32_t state = entry.state.load(std::memory_order_acquire);
-            
+
             if (state == EMPTY) {
                 return false;  // Key not found
             }
-            
+
             if (state == OCCUPIED && keys_equal(entry.key, key)) {
-                // Mark as deleted
-                entry.state.store(DELETED, std::memory_order_release);
-                header_->size.fetch_sub(1, std::memory_order_relaxed);
-                return true;
+                // CAS from OCCUPIED to DELETED; only the winner decrements size
+                uint32_t expected = OCCUPIED;
+                if (entry.state.compare_exchange_strong(expected, DELETED,
+                                                       std::memory_order_release,
+                                                       std::memory_order_relaxed)) {
+                    header_->size.fetch_sub(1, std::memory_order_relaxed);
+                    return true;
+                }
+                // CAS failed: another thread already erased or is modifying this slot
+                // If it was changed to DELETED by another thread, the key is gone
+                if (expected == DELETED) {
+                    return false;
+                }
+                // Otherwise (e.g., INSERTING), continue probing
             }
+
+            // Continue searching through DELETED and INSERTING entries
         }
-        
+
         return false;
     }
     

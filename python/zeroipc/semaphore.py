@@ -212,18 +212,18 @@ class Semaphore:
         Release one permit back to the semaphore.
 
         Increments the count, potentially waking a waiting process.
+        Uses CAS loop to atomically check max_count and increment.
 
         Raises:
             OverflowError: If max_count would be exceeded
         """
-        # Check if we would exceed max_count
-        if self.max_count > 0:
+        # Atomically check and increment to prevent TOCTOU race
+        while True:
             current = self._load_count()
-            if current >= self.max_count:
+            if self.max_count > 0 and current >= self.max_count:
                 raise OverflowError("Semaphore count would exceed maximum")
-
-        # Increment count atomically
-        self._increment_count()
+            if self._compare_exchange_count(current, current + 1):
+                break
         # Waiting processes will see the incremented count and wake up
 
     @property

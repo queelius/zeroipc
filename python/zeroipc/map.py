@@ -30,6 +30,7 @@ class Map(Generic[K, V]):
     EMPTY = 0
     OCCUPIED = 1
     DELETED = 2
+    INSERTING = 3
 
     def __init__(self, memory: Memory, name: str,
                  capacity: Optional[int] = None,
@@ -252,6 +253,32 @@ class Map(Generic[K, V]):
             value_array = np.array([value], dtype=self.value_dtype)
             self.buffer[value_offset:value_offset + self.value_size] = value_array.tobytes()
 
+    def _write_entry_key_value(self, index: int, key: K, value: V):
+        """Write key and value at given index without touching state."""
+        offset = self._get_entry_offset(index)
+
+        # Write key
+        if self.key_dtype.kind in 'iuf':
+            fmt = self._get_struct_format(self.key_dtype)
+            struct.pack_into(f'<{fmt}', self.buffer, offset + 4, key)
+        else:
+            key_array = np.array([key], dtype=self.key_dtype)
+            self.buffer[offset + 4:offset + 4 + self.key_size] = key_array.tobytes()
+
+        # Write value
+        value_offset = offset + 4 + self.key_size
+        if self.value_dtype.kind in 'iuf':
+            fmt = self._get_struct_format(self.value_dtype)
+            struct.pack_into(f'<{fmt}', self.buffer, value_offset, value)
+        else:
+            value_array = np.array([value], dtype=self.value_dtype)
+            self.buffer[value_offset:value_offset + self.value_size] = value_array.tobytes()
+
+    def _store_entry_state(self, index: int, state: int):
+        """Atomically store entry state at given index."""
+        offset = self._get_entry_offset(index)
+        struct.pack_into('<I', self.buffer, offset, state)
+
     def _cas_entry_state(self, index: int, expected: int, desired: int) -> bool:
         """
         Compare-and-swap entry state.
@@ -285,6 +312,9 @@ class Map(Generic[K, V]):
         """
         Insert or update a key-value pair.
 
+        Uses a 3-state protocol (EMPTY -> INSERTING -> OCCUPIED) to prevent
+        concurrent readers from seeing uninitialized key/value data.
+
         Args:
             key: Key to insert
             value: Value to associate with key
@@ -298,16 +328,19 @@ class Map(Generic[K, V]):
         for i in range(self.capacity):
             idx = (hash_val + i) % self.capacity
 
-            # Try to claim an empty slot
-            if self._cas_entry_state(idx, self.EMPTY, self.OCCUPIED):
-                # We acquired an empty slot
-                self._write_entry(idx, self.OCCUPIED, key, value)
+            # Try to claim an empty slot: EMPTY -> INSERTING
+            if self._cas_entry_state(idx, self.EMPTY, self.INSERTING):
+                # We exclusively own this slot; write key and value
+                self._write_entry_key_value(idx, key, value)
+                # Publish the entry: INSERTING -> OCCUPIED
+                self._store_entry_state(idx, self.OCCUPIED)
                 # Increment size
                 size_atomic = AtomicInt(self.buffer, 0)
                 size_atomic.fetch_add(1)
                 return True
 
             # Check if it's our key (update case)
+            # Skip INSERTING slots (another thread is writing)
             current_state = self._read_entry_state(idx)
             if current_state == self.OCCUPIED:
                 existing_key = self._read_entry_key(idx)
@@ -321,9 +354,11 @@ class Map(Generic[K, V]):
                         self.buffer[value_offset:value_offset + self.value_size] = value_array.tobytes()
                     return True
 
-            # Try deleted slots too
-            if self._cas_entry_state(idx, self.DELETED, self.OCCUPIED):
-                self._write_entry(idx, self.OCCUPIED, key, value)
+            # Try deleted slots too: DELETED -> INSERTING
+            if self._cas_entry_state(idx, self.DELETED, self.INSERTING):
+                self._write_entry_key_value(idx, key, value)
+                # Publish the entry: INSERTING -> OCCUPIED
+                self._store_entry_state(idx, self.OCCUPIED)
                 size_atomic = AtomicInt(self.buffer, 0)
                 size_atomic.fetch_add(1)
                 return True
@@ -367,7 +402,8 @@ class Map(Generic[K, V]):
                 if self._keys_equal(existing_key, key):
                     return self._read_entry_value(idx)
 
-            # Continue searching for deleted slots
+            # Continue searching through DELETED and INSERTING entries
+            # INSERTING slots are being written by another thread; skip them
 
         return None  # Key not found
 
@@ -386,6 +422,9 @@ class Map(Generic[K, V]):
     def erase(self, key: K) -> bool:
         """
         Remove a key-value pair.
+
+        Uses CAS from OCCUPIED to DELETED so that only one thread
+        can successfully erase a given entry (prevents double-decrement).
 
         Args:
             key: Key to remove
@@ -406,7 +445,7 @@ class Map(Generic[K, V]):
             if state == self.OCCUPIED:
                 existing_key = self._read_entry_key(idx)
                 if self._keys_equal(existing_key, key):
-                    # Mark as deleted
+                    # CAS from OCCUPIED to DELETED; only the winner decrements size
                     if self._cas_entry_state(idx, self.OCCUPIED, self.DELETED):
                         # Decrement size
                         size_atomic = AtomicInt(self.buffer, 0)
@@ -415,6 +454,14 @@ class Map(Generic[K, V]):
                             if size_atomic.compare_exchange_weak(current_size, current_size - 1):
                                 break
                         return True
+                    # CAS failed: another thread already erased this slot
+                    # Re-read to see if it's now DELETED
+                    new_state = self._read_entry_state(idx)
+                    if new_state == self.DELETED:
+                        return False
+                    # Otherwise continue probing (e.g., INSERTING)
+
+            # Continue searching through DELETED and INSERTING entries
 
         return False  # Key not found
 

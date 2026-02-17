@@ -199,15 +199,20 @@ public:
      * @throws std::overflow_error if max_count would be exceeded
      */
     void release() {
-        int32_t current = header_->count.load(std::memory_order_relaxed);
         int32_t max = header_->max_count;
 
-        // Check if we would exceed max_count
-        if (max > 0 && current >= max) {
-            throw std::overflow_error("Semaphore count would exceed maximum");
+        // Atomically check and increment to prevent TOCTOU race
+        while (true) {
+            int32_t current = header_->count.load(std::memory_order_relaxed);
+            if (max > 0 && current >= max) {
+                throw std::overflow_error("Semaphore count would exceed maximum");
+            }
+            if (header_->count.compare_exchange_weak(current, current + 1,
+                                                      std::memory_order_release,
+                                                      std::memory_order_relaxed)) {
+                break;
+            }
         }
-
-        header_->count.fetch_add(1, std::memory_order_release);
         // Waiting processes will see the incremented count and wake up
     }
 

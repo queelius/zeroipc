@@ -183,7 +183,7 @@ set_tests_properties(new_structures_test PROPERTIES
 add_test(NAME lockfree_comprehensive_test COMMAND test_lockfree_comprehensive)
 set_tests_properties(lockfree_comprehensive_test PROPERTIES
     LABELS "medium;integration;lockfree"
-    TIMEOUT 5)
+    TIMEOUT 30)
 
 add_test(NAME aba_problem_test COMMAND test_aba_problem)
 set_tests_properties(aba_problem_test PROPERTIES

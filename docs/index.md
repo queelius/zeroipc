@@ -143,7 +143,7 @@ Ready to dive in? Here's your roadmap:
 
 ZeroIPC is actively developed and production-ready:
 
-- **Current Version**: 2.0
+- **Current Version**: 2.2.0
 - **Stability**: Stable API, comprehensive test suite
 - **Performance**: 200x test suite optimization (20 min → 2 min)
 - **Coverage**: All core structures implemented across C, C++, and Python

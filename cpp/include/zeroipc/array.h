@@ -159,7 +159,7 @@ private:
     Header* header_;
     T* data_;
     size_t capacity_;
-    uint32_t offset_;
+    size_t offset_;
     std::string name_;
 };
 

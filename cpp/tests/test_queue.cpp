@@ -56,16 +56,18 @@ TEST_F(QueueTest, CreateAndBasicOps) {
 TEST_F(QueueTest, FullQueue) {
     Memory mem("/test_queue", 1024*1024);
     Queue<int> queue(mem, "small_queue", 3);
-    
+
+    // Vyukov-style queue uses all capacity slots (no wasted slot)
     EXPECT_TRUE(queue.push(1));
     EXPECT_TRUE(queue.push(2));
-    EXPECT_FALSE(queue.push(3)); // Should fail - circular buffer full
-    
+    EXPECT_TRUE(queue.push(3));   // All 3 slots usable
+    EXPECT_FALSE(queue.push(4));  // Now full
+
     EXPECT_TRUE(queue.full());
-    
+
     queue.pop();
     EXPECT_FALSE(queue.full());
-    EXPECT_TRUE(queue.push(3));
+    EXPECT_TRUE(queue.push(4));
 }
 
 TEST_F(QueueTest, CircularWrap) {

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string_view>
 #include <stdexcept>
+#include <thread>
 #include "memory.h"
 
 namespace zeroipc {
@@ -12,7 +13,7 @@ namespace zeroipc {
  * @brief Once flag for one-time initialization across processes
  *
  * Binary layout:
- * - 4 bytes: atomic state (0 = not called, 1 = done)
+ * - 4 bytes: atomic state (0 = PENDING, 1 = EXECUTING, 2 = DONE)
  */
 struct OnceFlag {
     std::atomic<uint32_t> state{0};
@@ -28,6 +29,11 @@ static_assert(std::is_trivially_copyable_v<OnceFlag>,
  *
  * Ensures a function is executed exactly once across all processes,
  * similar to std::call_once. Thread-safe and process-safe.
+ *
+ * Uses 3-state protocol to ensure callers wait for completion:
+ * - PENDING (0): No one has started execution yet
+ * - EXECUTING (1): A thread/process is currently running the function
+ * - DONE (2): The function has completed execution
  *
  * Binary layout: 4 bytes (OnceFlag)
  *
@@ -45,6 +51,11 @@ static_assert(std::is_trivially_copyable_v<OnceFlag>,
  */
 class Once {
 public:
+    // State constants
+    static constexpr uint32_t STATE_PENDING   = 0;
+    static constexpr uint32_t STATE_EXECUTING = 1;
+    static constexpr uint32_t STATE_DONE      = 2;
+
     /**
      * @brief Create or open a Once flag
      * @param mem Memory region
@@ -67,7 +78,7 @@ public:
                 static_cast<char*>(mem.data()) + offset
             );
 
-            // Initialize to not-called state
+            // Initialize to PENDING state
             new (flag_) OnceFlag();
         }
     }
@@ -81,19 +92,19 @@ public:
      * @param func Callable to execute once
      *
      * Note: If func throws an exception, the once flag is still marked
-     * as called (matching std::call_once behavior).
+     * as done (matching std::call_once behavior).
      */
     template<typename F>
     void call(F&& func) {
-        // Fast path: already called
-        if (flag_->state.load(std::memory_order_acquire) == 1) {
+        // Fast path: already done
+        if (flag_->state.load(std::memory_order_acquire) == STATE_DONE) {
             return;
         }
 
-        // Try to be the caller
-        uint32_t expected = 0;
+        // Try to transition from PENDING to EXECUTING
+        uint32_t expected = STATE_PENDING;
         if (flag_->state.compare_exchange_strong(
-                expected, 1,
+                expected, STATE_EXECUTING,
                 std::memory_order_acq_rel,
                 std::memory_order_acquire)) {
 
@@ -101,22 +112,27 @@ public:
             try {
                 func();
             } catch (...) {
-                // Even if func throws, mark as called (std::call_once semantics)
-                std::atomic_thread_fence(std::memory_order_release);
+                // Even if func throws, mark as done (std::call_once semantics)
+                flag_->state.store(STATE_DONE, std::memory_order_release);
                 throw;
             }
 
-            std::atomic_thread_fence(std::memory_order_release);
+            // Transition from EXECUTING to DONE
+            flag_->state.store(STATE_DONE, std::memory_order_release);
+        } else {
+            // We lost the race - spin-wait until the executor finishes
+            while (flag_->state.load(std::memory_order_acquire) == STATE_EXECUTING) {
+                std::this_thread::yield();
+            }
         }
-        // If we lost the race, the flag is already set to 1, so we just return
     }
 
     /**
      * @brief Check if the once flag has been called
-     * @return true if call() has been executed, false otherwise
+     * @return true if call() has completed execution, false otherwise
      */
     [[nodiscard]] bool already_called() const {
-        return flag_->state.load(std::memory_order_acquire) == 1;
+        return flag_->state.load(std::memory_order_acquire) == STATE_DONE;
     }
 
     /**
@@ -126,7 +142,7 @@ public:
      * threads/processes are accessing this once flag.
      */
     void reset_unsafe() {
-        flag_->state.store(0, std::memory_order_release);
+        flag_->state.store(STATE_PENDING, std::memory_order_release);
     }
 
 private:

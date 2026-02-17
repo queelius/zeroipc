@@ -14,7 +14,7 @@ public:
                   "T must be trivially copyable for shared memory");
     
     struct Entry {
-        std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted
+        std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted, 3=inserting
         T value;
     };
     
@@ -28,6 +28,7 @@ public:
     static constexpr uint32_t EMPTY = 0;
     static constexpr uint32_t OCCUPIED = 1;
     static constexpr uint32_t DELETED = 2;
+    static constexpr uint32_t INSERTING = 3;
     
     // Create new set
     Set(Memory& memory, std::string_view name, size_t capacity)
@@ -86,39 +87,44 @@ public:
     [[nodiscard]] bool insert(const T& value) {
         size_t hash = hash_value(value);
         size_t capacity = header_->capacity;
-        
+
         // Linear probing
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             Entry& entry = entries_[idx];
-            
-            // Check if already exists
+
+            // Check if already exists (only check OCCUPIED, skip INSERTING)
             uint32_t state = entry.state.load(std::memory_order_acquire);
             if (state == OCCUPIED && values_equal(entry.value, value)) {
                 return false;  // Already exists
             }
-            
-            // Try to insert into empty slot
+
+            // Try to claim an empty slot: EMPTY -> INSERTING
             uint32_t expected = EMPTY;
-            if (entry.state.compare_exchange_strong(expected, OCCUPIED,
+            if (entry.state.compare_exchange_strong(expected, INSERTING,
                                                    std::memory_order_acquire,
                                                    std::memory_order_relaxed)) {
+                // We exclusively own this slot; write the value
                 entry.value = value;
+                // Publish the entry: INSERTING -> OCCUPIED (release so readers see data)
+                entry.state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
-            
-            // Try deleted slots
+
+            // Try deleted slots: DELETED -> INSERTING
             expected = DELETED;
-            if (entry.state.compare_exchange_strong(expected, OCCUPIED,
+            if (entry.state.compare_exchange_strong(expected, INSERTING,
                                                    std::memory_order_acquire,
                                                    std::memory_order_relaxed)) {
                 entry.value = value;
+                // Publish the entry: INSERTING -> OCCUPIED
+                entry.state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
         }
-        
+
         return false;  // Set is full
     }
     
@@ -126,24 +132,25 @@ public:
     [[nodiscard]] bool contains(const T& value) const {
         size_t hash = hash_value(value);
         size_t capacity = header_->capacity;
-        
+
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             const Entry& entry = entries_[idx];
-            
+
             uint32_t state = entry.state.load(std::memory_order_acquire);
-            
+
             if (state == EMPTY) {
                 return false;  // Not found
             }
-            
+
             if (state == OCCUPIED && values_equal(entry.value, value)) {
                 return true;
             }
-            
-            // Continue searching through DELETED entries
+
+            // Continue searching through DELETED and INSERTING entries
+            // INSERTING slots are being written by another thread; skip them
         }
-        
+
         return false;
     }
     
@@ -151,25 +158,36 @@ public:
     [[nodiscard]] bool erase(const T& value) {
         size_t hash = hash_value(value);
         size_t capacity = header_->capacity;
-        
+
         for (size_t i = 0; i < capacity; ++i) {
             size_t idx = (hash + i) % capacity;
             Entry& entry = entries_[idx];
-            
+
             uint32_t state = entry.state.load(std::memory_order_acquire);
-            
+
             if (state == EMPTY) {
                 return false;  // Not found
             }
-            
+
             if (state == OCCUPIED && values_equal(entry.value, value)) {
-                // Mark as deleted
-                entry.state.store(DELETED, std::memory_order_release);
-                header_->size.fetch_sub(1, std::memory_order_relaxed);
-                return true;
+                // CAS from OCCUPIED to DELETED; only the winner decrements size
+                uint32_t expected = OCCUPIED;
+                if (entry.state.compare_exchange_strong(expected, DELETED,
+                                                       std::memory_order_release,
+                                                       std::memory_order_relaxed)) {
+                    header_->size.fetch_sub(1, std::memory_order_relaxed);
+                    return true;
+                }
+                // CAS failed: another thread already erased or is modifying this slot
+                if (expected == DELETED) {
+                    return false;
+                }
+                // Otherwise (e.g., INSERTING), continue probing
             }
+
+            // Continue searching through DELETED and INSERTING entries
         }
-        
+
         return false;
     }
     

@@ -120,11 +120,9 @@ public:
         header_->recv_seq.store(0, std::memory_order_relaxed);
         
         if (capacity > 0) {
-            // Buffered channel uses queue
-            // Queue implementation uses one slot for full/empty distinction,
-            // so allocate capacity+1 to hold 'capacity' items
-            buffer_ = std::make_unique<Queue<T>>(memory, 
-                std::string(name) + "_buffer", capacity + 1);
+            // Buffered channel uses queue (Vyukov queue uses all N slots)
+            buffer_ = std::make_unique<Queue<T>>(memory,
+                std::string(name) + "_buffer", capacity);
         } else {
             // Unbuffered uses rendezvous slot
             size_t slot_size = sizeof(RendezvousSlot);

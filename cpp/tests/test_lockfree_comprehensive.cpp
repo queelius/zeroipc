@@ -44,15 +44,15 @@ TEST_F(LockFreeTest, QueueBasicCorrectness) {
     EXPECT_EQ(*val, 42);
     EXPECT_TRUE(q.empty());
     
-    // Test fill to capacity
-    for (int i = 0; i < 99; i++) {  // 99 because circular buffer uses one slot
+    // Test fill to capacity (Vyukov queue uses all N slots)
+    for (int i = 0; i < 100; i++) {
         EXPECT_TRUE(q.push(i));
     }
     EXPECT_TRUE(q.full());
     EXPECT_FALSE(q.push(999));  // Should fail when full
-    
+
     // Test drain
-    for (int i = 0; i < 99; i++) {
+    for (int i = 0; i < 100; i++) {
         auto v = q.pop();
         ASSERT_TRUE(v.has_value());
         EXPECT_EQ(*v, i);
@@ -393,18 +393,22 @@ TEST_F(LockFreeTest, EdgeCases) {
         EXPECT_EQ(val->checksum, 0xDEADBEEF);
     }
     
-    // Test minimum size queue
+    // Test minimum size queue (Vyukov queue uses all N slots)
     {
         Memory shm("/test_lockfree_min", 1 * 1024 * 1024);
         Queue<int> q(shm, "min_queue", 2);  // Minimum viable queue
-        
+
         EXPECT_TRUE(q.push(1));
-        EXPECT_FALSE(q.push(2));  // Should be full with just 1 item (circular buffer)
+        EXPECT_TRUE(q.push(2));   // Both slots usable
+        EXPECT_FALSE(q.push(3));  // Should be full with 2 items
         auto val = q.pop();
         ASSERT_TRUE(val.has_value());
         EXPECT_EQ(*val, 1);
+        val = q.pop();
+        ASSERT_TRUE(val.has_value());
+        EXPECT_EQ(*val, 2);
         EXPECT_TRUE(q.empty());
-        
+
         Memory::unlink("/test_lockfree_min");
     }
     

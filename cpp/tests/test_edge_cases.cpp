@@ -24,15 +24,15 @@ protected:
 
 TEST_F(EdgeCaseTest, QueueSingleElement) {
     Memory mem("/test_edge", 1024*1024);
-    Queue<int> queue(mem, "single", 2); // Minimum useful size (circular buffer needs n+1)
-    
+    Queue<int> queue(mem, "single", 1); // Minimum useful size (Vyukov queue uses all slots)
+
     // Single element operations
     EXPECT_TRUE(queue.empty());
     EXPECT_TRUE(queue.push(42));
     EXPECT_FALSE(queue.empty());
-    EXPECT_TRUE(queue.full());  // With capacity 2, queue is full after 1 element
+    EXPECT_TRUE(queue.full());  // With capacity 1, queue is full after 1 element
     EXPECT_EQ(queue.size(), 1);
-    
+
     auto val = queue.pop();
     ASSERT_TRUE(val.has_value());
     EXPECT_EQ(*val, 42);
@@ -41,16 +41,17 @@ TEST_F(EdgeCaseTest, QueueSingleElement) {
 
 TEST_F(EdgeCaseTest, QueueFullBehavior) {
     Memory mem("/test_edge", 1024*1024);
-    Queue<int> queue(mem, "full", 3); // Can hold 2 elements
-    
+    Queue<int> queue(mem, "full", 3); // Vyukov queue: holds 3 elements
+
     EXPECT_TRUE(queue.push(1));
     EXPECT_TRUE(queue.push(2));
-    EXPECT_FALSE(queue.push(3)); // Should fail when full
-    
+    EXPECT_TRUE(queue.push(3));      // All 3 slots usable
+    EXPECT_FALSE(queue.push(4));     // Should fail when full
+
     // After pop, should be able to push again
     queue.pop();
-    EXPECT_TRUE(queue.push(3));
-    EXPECT_FALSE(queue.push(4)); // Full again
+    EXPECT_TRUE(queue.push(4));
+    EXPECT_FALSE(queue.push(5));     // Full again
 }
 
 TEST_F(EdgeCaseTest, QueueEmptyPop) {
@@ -73,17 +74,17 @@ TEST_F(EdgeCaseTest, QueueEmptyPop) {
 TEST_F(EdgeCaseTest, QueueWrapAroundStress) {
     Memory mem("/test_edge", 1024*1024);
     Queue<int> queue(mem, "wrap", 5); // Small queue to force wrapping
-    
+
     // Repeatedly fill and empty to test wrap-around
     for (int round = 0; round < 100; round++) {
-        // Fill to capacity
-        for (int i = 0; i < 4; i++) {
+        // Fill to capacity (Vyukov queue uses all 5 slots)
+        for (int i = 0; i < 5; i++) {
             EXPECT_TRUE(queue.push(round * 100 + i));
         }
         EXPECT_TRUE(queue.full());
-        
+
         // Empty completely
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             auto val = queue.pop();
             ASSERT_TRUE(val.has_value());
             EXPECT_EQ(*val, round * 100 + i);

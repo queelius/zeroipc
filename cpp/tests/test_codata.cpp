@@ -630,15 +630,16 @@ TEST_F(CodataTest, ChannelConcurrentSendRecv) {
         });
     }
 
-    // Multiple receivers
+    // Multiple receivers (must retry since buffered recv is non-blocking)
     std::vector<std::thread> receivers;
     for (int i = 0; i < 3; ++i) {
         receivers.emplace_back([&ch, &received_sum]() {
             for (int j = 0; j < 10; ++j) {
-                auto val = ch.recv();
-                if (val) {
-                    received_sum.fetch_add(*val, std::memory_order_relaxed);
+                std::optional<int> val;
+                while (!(val = ch.recv())) {
+                    std::this_thread::yield();
                 }
+                received_sum.fetch_add(*val, std::memory_order_relaxed);
             }
         });
     }

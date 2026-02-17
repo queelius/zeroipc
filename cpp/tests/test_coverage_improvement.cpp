@@ -100,28 +100,27 @@ TEST_F(CoverageTest, QueueComprehensive) {
     EXPECT_EQ(q.capacity(), 10);
     EXPECT_FALSE(q.pop().has_value());
     
-    // Note: Circular queue reserves one slot to distinguish full from empty
-    // So a queue with capacity 10 can hold at most 9 elements
-    
-    // Fill queue to actual capacity (9 elements for capacity 10)
-    for (int i = 0; i < 9; i++) {
+    // Vyukov-style queue uses all N slots (no wasted sentinel slot)
+
+    // Fill queue to full capacity (10 elements for capacity 10)
+    for (int i = 0; i < 10; i++) {
         EXPECT_TRUE(q.push(i));
     }
-    
+
     EXPECT_FALSE(q.empty());
     EXPECT_TRUE(q.full());
-    EXPECT_EQ(q.size(), 9);
-    
+    EXPECT_EQ(q.size(), 10);
+
     // Try to push when full
-    EXPECT_FALSE(q.push(9));
-    
-    // Pop all 9 elements and verify order
-    for (int i = 0; i < 9; i++) {
+    EXPECT_FALSE(q.push(10));
+
+    // Pop all 10 elements and verify order
+    for (int i = 0; i < 10; i++) {
         auto val = q.pop();
         EXPECT_TRUE(val.has_value());
         EXPECT_EQ(*val, i);
     }
-    
+
     // Queue should be empty again
     EXPECT_TRUE(q.empty());
     EXPECT_FALSE(q.pop().has_value());

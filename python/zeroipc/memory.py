@@ -94,28 +94,26 @@ class Memory:
             name = self.name
         Memory.unlink_static(name)
     
-    def allocate(self, name: str, size: int) -> int:
+    def allocate(self, name: str, size: int, alignment: int = 8) -> int:
         """
-        Allocate space for a new structure.
-        
+        Allocate space for a new structure with proper alignment.
+
         Args:
             name: Structure name
             size: Size in bytes
-            
+            alignment: Alignment requirement (default 8)
+
         Returns:
             Offset where structure was allocated
         """
-        # Get current next_offset from table
-        next_offset = self.table.next_offset()
-        
+        # Use table's allocate for proper alignment
+        aligned_offset = self.table.allocate(size, alignment)
+
         # Add entry to table
-        if not self.table.add(name, next_offset, size):
+        if not self.table.add(name, aligned_offset, size):
             raise RuntimeError(f"Failed to add '{name}' to table (table full?)")
-        
-        # Update next_offset in table
-        self.table.set_next_offset(next_offset + size)
-        
-        return next_offset
+
+        return aligned_offset
     
     def find(self, name: str, offset: Optional[int] = None, size: Optional[int] = None):
         """

@@ -323,6 +323,177 @@ TEST_F(NewStructuresTest, PoolConcurrentAllocate) {
     EXPECT_EQ(pool.allocated(), 0);
 }
 
+// Race condition regression tests
+
+// Test: concurrent insert + find should never read uninitialized key/value
+// This verifies the EMPTY -> INSERTING -> OCCUPIED 3-state protocol.
+TEST_F(NewStructuresTest, MapConcurrentInsertFindRace) {
+    Memory mem(shm_name_, 10 * 1024 * 1024);
+    Map<int, int> map(mem, "race_map", 2000);
+
+    const int num_writers = 4;
+    const int num_readers = 4;
+    const int items_per_writer = 200;
+    std::atomic<bool> done{false};
+    std::atomic<int> bad_reads{0};
+
+    // Writers: insert key=k, value=k*100
+    std::vector<std::thread> writers;
+    for (int w = 0; w < num_writers; ++w) {
+        writers.emplace_back([&map, w, items_per_writer]() {
+            for (int i = 0; i < items_per_writer; ++i) {
+                int key = w * items_per_writer + i;
+                map.insert(key, key * 100);
+            }
+        });
+    }
+
+    // Readers: find keys and verify value == key * 100 (never garbage)
+    std::vector<std::thread> readers;
+    for (int r = 0; r < num_readers; ++r) {
+        readers.emplace_back([&map, &done, &bad_reads, num_writers, items_per_writer]() {
+            int total = num_writers * items_per_writer;
+            while (!done.load(std::memory_order_relaxed)) {
+                for (int k = 0; k < total; ++k) {
+                    auto val = map.find(k);
+                    if (val.has_value() && *val != k * 100) {
+                        bad_reads.fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
+        });
+    }
+
+    for (auto& w : writers) w.join();
+    done.store(true, std::memory_order_relaxed);
+    for (auto& r : readers) r.join();
+
+    EXPECT_EQ(bad_reads.load(), 0) << "Reader saw uninitialized or corrupt value!";
+    EXPECT_EQ(map.size(), num_writers * items_per_writer);
+}
+
+// Test: concurrent erase of the same key must decrement size exactly once
+// This verifies the CAS-based erase (no double-decrement).
+TEST_F(NewStructuresTest, MapConcurrentEraseNoDoubleDecrement) {
+    Memory mem(shm_name_, 10 * 1024 * 1024);
+    Map<int, int> map(mem, "erase_map", 2000);
+
+    const int num_items = 500;
+    const int num_erasers = 8;
+
+    // Pre-populate
+    for (int i = 0; i < num_items; ++i) {
+        ASSERT_TRUE(map.insert(i, i * 10));
+    }
+    ASSERT_EQ(map.size(), num_items);
+
+    // Race: all threads try to erase the same set of keys
+    std::vector<std::thread> erasers;
+    std::vector<int> success_counts(num_erasers, 0);
+
+    for (int e = 0; e < num_erasers; ++e) {
+        erasers.emplace_back([&map, num_items, &success_counts, e]() {
+            for (int i = 0; i < num_items; ++i) {
+                if (map.erase(i)) {
+                    success_counts[e]++;
+                }
+            }
+        });
+    }
+
+    for (auto& e : erasers) e.join();
+
+    // Total successful erases must equal the number of items
+    int total_erased = 0;
+    for (int c : success_counts) total_erased += c;
+    EXPECT_EQ(total_erased, num_items)
+        << "Each key must be erased exactly once across all threads";
+
+    // Size must be exactly 0, no underflow
+    EXPECT_EQ(map.size(), 0);
+}
+
+// Test: concurrent insert + find for Set (same 3-state protocol)
+TEST_F(NewStructuresTest, SetConcurrentInsertContainsRace) {
+    Memory mem(shm_name_, 10 * 1024 * 1024);
+    Set<int> set(mem, "race_set", 2000);
+
+    const int num_writers = 4;
+    const int num_readers = 4;
+    const int items_per_writer = 200;
+    std::atomic<bool> done{false};
+
+    // Writers: insert sequential values per thread
+    std::vector<std::thread> writers;
+    for (int w = 0; w < num_writers; ++w) {
+        writers.emplace_back([&set, w, items_per_writer]() {
+            for (int i = 0; i < items_per_writer; ++i) {
+                int value = w * items_per_writer + i;
+                set.insert(value);
+            }
+        });
+    }
+
+    // Readers: check contains (should never crash or hang)
+    std::vector<std::thread> readers;
+    for (int r = 0; r < num_readers; ++r) {
+        readers.emplace_back([&set, &done, num_writers, items_per_writer]() {
+            int total = num_writers * items_per_writer;
+            while (!done.load(std::memory_order_relaxed)) {
+                for (int k = 0; k < total; ++k) {
+                    set.contains(k);  // Must not read garbage
+                }
+            }
+        });
+    }
+
+    for (auto& w : writers) w.join();
+    done.store(true, std::memory_order_relaxed);
+    for (auto& r : readers) r.join();
+
+    EXPECT_EQ(set.size(), num_writers * items_per_writer);
+}
+
+// Test: concurrent erase of the same elements in Set
+TEST_F(NewStructuresTest, SetConcurrentEraseNoDoubleDecrement) {
+    Memory mem(shm_name_, 10 * 1024 * 1024);
+    Set<int> set(mem, "erase_set", 2000);
+
+    const int num_items = 500;
+    const int num_erasers = 8;
+
+    // Pre-populate
+    for (int i = 0; i < num_items; ++i) {
+        ASSERT_TRUE(set.insert(i));
+    }
+    ASSERT_EQ(set.size(), num_items);
+
+    // Race: all threads try to erase the same set of values
+    std::vector<std::thread> erasers;
+    std::vector<int> success_counts(num_erasers, 0);
+
+    for (int e = 0; e < num_erasers; ++e) {
+        erasers.emplace_back([&set, num_items, &success_counts, e]() {
+            for (int i = 0; i < num_items; ++i) {
+                if (set.erase(i)) {
+                    success_counts[e]++;
+                }
+            }
+        });
+    }
+
+    for (auto& e : erasers) e.join();
+
+    // Total successful erases must equal the number of items
+    int total_erased = 0;
+    for (int c : success_counts) total_erased += c;
+    EXPECT_EQ(total_erased, num_items)
+        << "Each element must be erased exactly once across all threads";
+
+    // Size must be exactly 0, no underflow
+    EXPECT_EQ(set.size(), 0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

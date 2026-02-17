@@ -71,14 +71,15 @@ TEST_F(MemoryBoundaryTest, MaximumQueueCapacity) {
     Memory mem("/test_boundary", mem_size);
     
     // Calculate maximum queue capacity
-    // Queue overhead = header + (capacity+1) * sizeof(T)
+    // Queue overhead = header + capacity * sizeof(T) + capacity * sizeof(atomic<uint32_t>)
     struct TestStruct {
         char data[1024]; // 1KB per element
     };
-    
+
     size_t overhead = 1024; // Conservative estimate for header + table
-    size_t max_capacity = (mem_size - overhead) / sizeof(TestStruct) - 1;
-    
+    size_t bytes_per_slot = sizeof(TestStruct) + sizeof(std::atomic<uint32_t>);
+    size_t max_capacity = (mem_size - overhead) / bytes_per_slot;
+
     // Create queue with near-maximum capacity
     size_t test_capacity = max_capacity - 100; // Leave some margin
     Queue<TestStruct> queue(mem, "maxq", test_capacity);
@@ -86,14 +87,14 @@ TEST_F(MemoryBoundaryTest, MaximumQueueCapacity) {
     TestStruct ts;
     std::fill(std::begin(ts.data), std::end(ts.data), 'X');
     
-    // Fill to capacity
+    // Fill to capacity (Vyukov queue uses all capacity slots)
     size_t pushed = 0;
     while (queue.push(ts)) {
         pushed++;
-        if (pushed >= test_capacity - 1) break;
+        if (pushed >= test_capacity) break;
     }
-    
-    EXPECT_GE(pushed, test_capacity - 2); // Should fit almost all
+
+    EXPECT_GE(pushed, test_capacity - 1); // Should fit almost all
     std::cout << "Pushed " << pushed << " of " << test_capacity << " items" << std::endl;
 }
 
@@ -314,8 +315,8 @@ TEST_F(MemoryBoundaryTest, ConcurrentNearCapacity) {
     Memory mem("/test_boundary", 10 * 1024 * 1024);
     Queue<int> queue(mem, "concurrent", 100); // Small queue
     
-    // Fill queue to near capacity
-    for (int i = 0; i < 98; i++) {
+    // Fill queue to near capacity (Vyukov queue uses all N slots)
+    for (int i = 0; i < 99; i++) {
         ASSERT_TRUE(queue.push(i));
     }
     

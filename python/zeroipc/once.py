@@ -16,7 +16,12 @@ class Once:
     similar to C++ std::call_once or pthread_once. Thread-safe and
     process-safe.
 
-    Binary layout: 4 bytes (atomic state: 0 = not called, 1 = done)
+    Uses 3-state protocol to ensure callers wait for completion:
+    - PENDING (0): No one has started execution yet
+    - EXECUTING (1): A thread/process is currently running the function
+    - DONE (2): The function has completed execution
+
+    Binary layout: 4 bytes (atomic state: 0 = PENDING, 1 = EXECUTING, 2 = DONE)
 
     Example:
         >>> mem = Memory("/config", 1024)
@@ -28,14 +33,15 @@ class Once:
         >>>     # Expensive initialization here
         >>>
         >>> init.call(initialize_resources)  # First process: executes
-        >>> init.call(initialize_resources)  # Same/other process: skips
+        >>> init.call(initialize_resources)  # Same/other process: waits then skips
     """
 
     HEADER_FORMAT = 'I'  # Single uint32 for state
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
-    STATE_NOT_CALLED = 0
-    STATE_DONE = 1
+    STATE_PENDING   = 0
+    STATE_EXECUTING = 1
+    STATE_DONE      = 2
 
     def __init__(self, memory: Memory, name: str, create_if_missing: bool = True):
         """
@@ -62,8 +68,8 @@ class Once:
             # Create new once flag
             self.offset = memory.allocate(name, self.HEADER_SIZE)
 
-            # Initialize to not-called state
-            state_data = struct.pack(self.HEADER_FORMAT, self.STATE_NOT_CALLED)
+            # Initialize to PENDING state
+            state_data = struct.pack(self.HEADER_FORMAT, self.STATE_PENDING)
             memory.data[self.offset:self.offset + self.HEADER_SIZE] = state_data
 
         else:
@@ -114,22 +120,25 @@ class Once:
         if self._load_state() == self.STATE_DONE:
             return
 
-        # Try to atomically claim the initialization
-        if self._compare_exchange(self.STATE_NOT_CALLED, self.STATE_DONE):
+        # Try to atomically transition from PENDING to EXECUTING
+        if self._compare_exchange(self.STATE_PENDING, self.STATE_EXECUTING):
             # We won the race - execute the function
             try:
                 func()
             except Exception:
-                # If initialization fails, reset to not-called so it can be retried
-                self._store_state(self.STATE_NOT_CALLED)
+                # Even if func throws, mark as done (std::call_once semantics)
+                self._store_state(self.STATE_DONE)
                 raise
+
+            # Transition from EXECUTING to DONE
+            self._store_state(self.STATE_DONE)
         else:
-            # Someone else is initializing or already initialized
-            # Spin-wait until done
+            # Someone else is executing or already done
+            # Spin-wait while state is EXECUTING
             backoff = 0.0001  # 0.1ms
             max_backoff = 0.001  # 1ms
 
-            while self._load_state() != self.STATE_DONE:
+            while self._load_state() == self.STATE_EXECUTING:
                 time.sleep(backoff)
                 if backoff < max_backoff:
                     backoff *= 2
@@ -141,12 +150,12 @@ class Once:
 
     def reset(self):
         """
-        Reset the once flag to not-called state.
+        Reset the once flag to PENDING state.
 
         WARNING: This is not thread-safe and should only be used for testing
         or when you're certain no other processes are accessing the flag.
         """
-        self._store_state(self.STATE_NOT_CALLED)
+        self._store_state(self.STATE_PENDING)
 
     def __repr__(self):
         status = "called" if self.is_called else "not called"

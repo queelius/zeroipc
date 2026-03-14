@@ -106,9 +106,7 @@ public:
     void signal() {
         state_->signaled.store(1, std::memory_order_release);
 
-        if (state_->mode == static_cast<uint32_t>(EventMode::ManualReset)) {
-            // ManualReset: threads check signaled flag directly
-        } else {
+        if (!is_manual_reset()) {
             // AutoReset: also release semaphore to wake one waiter
             sem_->release();
         }
@@ -122,15 +120,13 @@ public:
      * event stays signaled until reset() is called.
      */
     void wait() {
-        if (state_->mode == static_cast<uint32_t>(EventMode::ManualReset)) {
-            // ManualReset: register as waiter, spin until signaled, unregister
+        if (is_manual_reset()) {
             state_->waiting.fetch_add(1, std::memory_order_relaxed);
             detail::spin_wait([this] {
                 return state_->signaled.load(std::memory_order_acquire) != 0;
             });
             state_->waiting.fetch_sub(1, std::memory_order_release);
         } else {
-            // AutoReset: acquire the semaphore, then clear signaled flag
             sem_->acquire();
             state_->signaled.store(0, std::memory_order_release);
         }
@@ -143,8 +139,7 @@ public:
      */
     template<typename Rep, typename Period>
     [[nodiscard]] bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
-        if (state_->mode == static_cast<uint32_t>(EventMode::ManualReset)) {
-            // ManualReset: register as waiter, spin with timeout, unregister
+        if (is_manual_reset()) {
             state_->waiting.fetch_add(1, std::memory_order_relaxed);
             bool signaled = detail::spin_wait_for([this] {
                 return state_->signaled.load(std::memory_order_acquire) != 0;
@@ -152,7 +147,6 @@ public:
             state_->waiting.fetch_sub(1, std::memory_order_release);
             return signaled;
         } else {
-            // AutoReset: use semaphore's timed acquire, then clear flag
             if (sem_->acquire_for(timeout)) {
                 state_->signaled.store(0, std::memory_order_release);
                 return true;
@@ -197,6 +191,10 @@ public:
 private:
     EventState* state_;
     std::unique_ptr<Semaphore> sem_;
+
+    bool is_manual_reset() const {
+        return state_->mode == static_cast<uint32_t>(EventMode::ManualReset);
+    }
 };
 
 } // namespace zeroipc

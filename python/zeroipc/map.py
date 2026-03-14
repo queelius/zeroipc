@@ -472,9 +472,7 @@ class Map(Generic[K, V]):
         """Check if key exists in map."""
         return self.find(key) is not None
 
-    def __contains__(self, key: K) -> bool:
-        """Check if key exists in map."""
-        return self.find(key) is not None
+    __contains__ = contains
 
     def __getitem__(self, key: K) -> V:
         """Get value by key (dict-like interface)."""

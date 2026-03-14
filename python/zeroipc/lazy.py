@@ -184,14 +184,7 @@ class Lazy:
         """
         self.computation = computation
 
-    def init(self, computation: Callable[[], T]):
-        """
-        Initialize the computation function (alias for set_computation).
-
-        Args:
-            computation: Function that computes the value
-        """
-        self.set_computation(computation)
+    init = set_computation
 
     def force(self) -> T:
         """

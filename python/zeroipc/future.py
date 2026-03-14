@@ -7,6 +7,7 @@ to compute a value while others wait for the result.
 """
 
 import struct
+import threading
 import time
 from typing import Optional, TypeVar, Union, Callable, Any
 from enum import IntEnum
@@ -334,9 +335,9 @@ class Future:
                 time.sleep(0.001)  # 1ms
 
         finally:
-            # Decrement waiter count
-            current_waiters = waiters_atomic.load()
-            while current_waiters > 0:
+            # Decrement waiter count (we incremented it, so guaranteed >= 1)
+            while True:
+                current_waiters = waiters_atomic.load()
                 if waiters_atomic.compare_exchange_weak(current_waiters, current_waiters - 1):
                     break
 
@@ -355,14 +356,12 @@ class Future:
         state = struct.unpack_from('<I', self.buffer, 0)[0]
         return state == FutureState.ERROR
 
-    def get_status(self) -> FutureState:
-        """Get current state of the future (alias for get_state)."""
-        return self.get_state()
-
     def get_state(self) -> FutureState:
         """Get current state of the future."""
         state = struct.unpack_from('<I', self.buffer, 0)[0]
         return FutureState(state)
+
+    get_status = get_state
 
     def try_get(self) -> Optional[T]:
         """
@@ -394,9 +393,6 @@ class Future:
         in the current thread. A full implementation would use
         event loops or background threads.
         """
-        import threading
-        import time
-
         def callback_worker():
             try:
                 result = self.get()  # Will block until ready

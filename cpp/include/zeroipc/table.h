@@ -22,7 +22,7 @@ public:
         uint32_t magic;
         uint32_t version;
         uint32_t entry_count;
-        uint32_t reserved;      // Padding/reserved for future use
+        uint32_t max_entries;   // Maximum number of table entries
         uint64_t memory_size;   // Total size of the shared memory segment (supports >4GB)
         uint64_t next_offset;   // Next allocation offset (supports >4GB)
     };
@@ -157,7 +157,7 @@ private:
         header->magic = TABLE_MAGIC;
         header->version = TABLE_VERSION;
         header->entry_count = 0;
-        header->reserved = 0;
+        header->max_entries = static_cast<uint32_t>(max_entries_);
         header->memory_size = memory_size_;
         header->next_offset = calculate_size(max_entries_);  // Already aligned due to struct sizes
         

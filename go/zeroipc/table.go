@@ -36,7 +36,7 @@ type Header struct {
 	Magic      uint32
 	Version    uint32
 	EntryCount uint32
-	Reserved   uint32
+	MaxEntries uint32
 	MemorySize uint64
 	NextOffset uint64
 }
@@ -92,7 +92,7 @@ func (t *Table) initialize() {
 	h.Magic = TableMagic
 	h.Version = TableVersion
 	h.EntryCount = 0
-	h.Reserved = 0
+	h.MaxEntries = uint32(t.maxEntries)
 	h.MemorySize = uint64(t.memorySize)
 	h.NextOffset = uint64(CalculateTableSize(t.maxEntries))
 
@@ -131,7 +131,7 @@ func (t *Table) Header() *Header {
 		Magic:      binary.LittleEndian.Uint32(t.data[0:4]),
 		Version:    binary.LittleEndian.Uint32(t.data[4:8]),
 		EntryCount: binary.LittleEndian.Uint32(t.data[8:12]),
-		Reserved:   binary.LittleEndian.Uint32(t.data[12:16]),
+		MaxEntries: binary.LittleEndian.Uint32(t.data[12:16]),
 		MemorySize: binary.LittleEndian.Uint64(t.data[16:24]),
 		NextOffset: binary.LittleEndian.Uint64(t.data[24:32]),
 	}
@@ -141,7 +141,7 @@ func (t *Table) writeHeader(h *Header) {
 	binary.LittleEndian.PutUint32(t.data[0:4], h.Magic)
 	binary.LittleEndian.PutUint32(t.data[4:8], h.Version)
 	binary.LittleEndian.PutUint32(t.data[8:12], h.EntryCount)
-	binary.LittleEndian.PutUint32(t.data[12:16], h.Reserved)
+	binary.LittleEndian.PutUint32(t.data[12:16], h.MaxEntries)
 	binary.LittleEndian.PutUint64(t.data[16:24], h.MemorySize)
 	binary.LittleEndian.PutUint64(t.data[24:32], h.NextOffset)
 }

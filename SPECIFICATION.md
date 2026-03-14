@@ -360,12 +360,13 @@ struct SignalState {
 Offset   Size    Content
 0x0000   32      Table Header (magic=0x5A49504D, version=1, entries=2, max=64, mem_size=0x10000, next=0x1000)
 0x0020   48      Entry 0: name="sensor_data", offset=0x1000, size=0x2008
-0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0418
+0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0330
 ...
 0x1000   8       Array Header: capacity=1000
 0x1008   4000    Array Data: 1000 * 4 bytes (float32)
-0x3008   24      Queue Header: head=0, tail=0, capacity=100
-0x3020   400     Queue Data: 100 * 4 bytes (int32)
+0x3008   16      Queue Header: head=0, tail=0, capacity=100, elem_size=4
+0x3018   400     Queue Data: 100 * 4 bytes (int32)
+0x31A8   400     Queue Sequences: 100 * 4 bytes (per-slot sequence numbers)
 ```
 
 ## Version History

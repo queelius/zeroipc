@@ -1,4 +1,11 @@
-"""Lock-free stack implementation for shared memory."""
+"""Stack implementation for shared memory.
+
+Uses 4-state CAS protocol binary layout matching C++/Go/C format.
+
+Note: Python's struct operations are not truly atomic across processes.
+Cross-process usage should follow SPSC discipline. For cross-process MPMC,
+use the C++ or Go implementations.
+"""
 
 import struct
 import time

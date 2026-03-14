@@ -25,7 +25,7 @@ class Table:
     all allocated structures by name, offset, and size.
     """
     
-    HEADER_FORMAT = '<IIIIQQ'  # magic, version, entry_count, reserved, memory_size, next_offset
+    HEADER_FORMAT = '<IIIIQQ'  # magic, version, entry_count, max_entries, memory_size, next_offset
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
     ENTRY_FORMAT = '<32sQQ'  # name[32], offset, size (64-bit)
     ENTRY_SIZE = struct.calcsize(ENTRY_FORMAT)
@@ -57,7 +57,7 @@ class Table:
         next_offset = self.calculate_size(self.max_entries)
         struct.pack_into(
             self.HEADER_FORMAT, self.buffer, 0,
-            TABLE_MAGIC, TABLE_VERSION, 0, 0, self.memory_size, next_offset
+            TABLE_MAGIC, TABLE_VERSION, 0, self.max_entries, self.memory_size, next_offset
         )
         
         # Zero out entry area

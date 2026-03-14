@@ -1,12 +1,18 @@
-"""Lock-free queue implementation for shared memory.
+"""Queue implementation for shared memory.
 
-Uses Vyukov bounded MPMC queue algorithm with per-slot sequence numbers,
-matching the C++/Go/C binary layout for cross-language interoperability.
+Uses Vyukov bounded MPMC queue binary layout with per-slot sequence numbers,
+matching the C++/Go/C format for cross-language interoperability.
 
 Binary layout:
   [head:u32][tail:u32][capacity:u32][elem_size:u32]  (16 bytes header)
   [data[0]][data[1]]...[data[cap-1]]                 (elem_size * capacity bytes)
   [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]        (4 * capacity bytes)
+
+Note: Python's struct.pack_into/unpack_from are not truly atomic across
+processes. This implementation is MPMC-safe within a single Python interpreter
+(protected by threading.Lock), but cross-process usage should follow SPSC
+(single-producer, single-consumer) discipline. For cross-process MPMC, use
+the C++ or Go implementations as producers/consumers.
 """
 
 import struct

@@ -114,11 +114,18 @@ public:
 
             // Check if it's our key (update case)
             // Skip INSERTING slots (another thread is writing, treat as not-our-key)
-            if (expected == OCCUPIED) {
-                if (keys_equal(entry.key, key)) {
-                    entry.value = value;  // Update value
+            if (expected == OCCUPIED && keys_equal(entry.key, key)) {
+                // CAS OCCUPIED -> INSERTING for exclusive update access
+                expected = OCCUPIED;
+                if (entry.state.compare_exchange_strong(expected, INSERTING,
+                                                        std::memory_order_acquire,
+                                                        std::memory_order_relaxed)) {
+                    entry.value = value;
+                    entry.state.store(OCCUPIED, std::memory_order_release);
                     return true;
                 }
+                // CAS failed — slot was erased or another updater won; retry from this slot
+                continue;
             }
 
             // Try deleted slots too: DELETED -> INSERTING

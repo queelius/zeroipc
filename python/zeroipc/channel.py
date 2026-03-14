@@ -159,31 +159,29 @@ class Channel:
         """Get number of receivers waiting."""
         return struct.unpack_from('<I', self.sync_buffer, 4)[0]
 
+    @staticmethod
+    def _atomic_decrement(atomic: AtomicInt):
+        """Decrement an atomic counter (caller must have incremented it)."""
+        while True:
+            current = atomic.load()
+            if atomic.compare_exchange_weak(current, current - 1):
+                break
+
     def _inc_sender_waiting(self):
         """Increment sender waiting count."""
-        sender_atomic = AtomicInt(self.sync_buffer, 0)
-        sender_atomic.fetch_add(1)
+        AtomicInt(self.sync_buffer, 0).fetch_add(1)
 
     def _dec_sender_waiting(self):
         """Decrement sender waiting count."""
-        sender_atomic = AtomicInt(self.sync_buffer, 0)
-        current = sender_atomic.load()
-        while current > 0:
-            if sender_atomic.compare_exchange_weak(current, current - 1):
-                break
+        self._atomic_decrement(AtomicInt(self.sync_buffer, 0))
 
     def _inc_receiver_waiting(self):
         """Increment receiver waiting count."""
-        receiver_atomic = AtomicInt(self.sync_buffer, 4)
-        receiver_atomic.fetch_add(1)
+        AtomicInt(self.sync_buffer, 4).fetch_add(1)
 
     def _dec_receiver_waiting(self):
         """Decrement receiver waiting count."""
-        receiver_atomic = AtomicInt(self.sync_buffer, 4)
-        current = receiver_atomic.load()
-        while current > 0:
-            if receiver_atomic.compare_exchange_weak(current, current - 1):
-                break
+        self._atomic_decrement(AtomicInt(self.sync_buffer, 4))
 
     def send(self, value: T, timeout: Optional[float] = None) -> bool:
         """
@@ -403,7 +401,7 @@ class Channel:
 
     def is_open(self) -> bool:
         """Check if channel is open."""
-        return not self._is_closed()
+        return not self.is_closed()
 
     def size(self) -> int:
         """Get current number of messages in channel."""

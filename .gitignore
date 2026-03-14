@@ -132,4 +132,5 @@ benchmark_results/
 *.orig
 
 # Git
-*.patch
+*.patch*.aux
+*.pdf

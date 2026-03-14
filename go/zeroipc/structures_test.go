@@ -2,7 +2,9 @@ package zeroipc
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestQueueBasic(t *testing.T) {
@@ -49,21 +51,26 @@ func TestQueueBasic(t *testing.T) {
 		t.Error("Queue should be empty after pop")
 	}
 
-	// Test full
-	for i := 0; i < 9; i++ { // capacity-1 to leave room
+	// Fill queue to capacity
+	for i := 0; i < 10; i++ {
 		if !q.Push(int32(i)) {
 			t.Errorf("Push %d should succeed", i)
 		}
 	}
 
-	if q.Full() {
-		t.Log("Queue is full as expected")
+	if !q.Full() {
+		t.Error("Queue should be full after pushing capacity items")
+	}
+
+	// Should not be able to push when full
+	if q.Push(99) {
+		t.Error("Push to full queue should fail")
 	}
 }
 
 func TestQueueConcurrent(t *testing.T) {
 	name := "/test_go_queue_concurrent"
-	size := 1024 * 1024
+	size := 4 * 1024 * 1024
 
 	UnlinkName(name)
 
@@ -74,23 +81,30 @@ func TestQueueConcurrent(t *testing.T) {
 	defer mem.Close()
 	defer mem.Unlink()
 
-	q, err := NewQueue[int64](mem, "concurrent_queue", 1000)
+	q, err := NewQueue[int64](mem, "concurrent_queue", 1024)
 	if err != nil {
 		t.Fatalf("NewQueue failed: %v", err)
 	}
 
-	var wg sync.WaitGroup
-	numProducers := 4
-	numConsumers := 4
-	itemsPerProducer := 100
+	// 8 producers + 8 consumers, validate every item received exactly once
+	numProducers := 8
+	numConsumers := 8
+	itemsPerProducer := 500
+	totalItems := numProducers * itemsPerProducer
+
+	var producerWg sync.WaitGroup
+	var consumerWg sync.WaitGroup
+
+	// Track which items were consumed
+	consumed := make([]int32, totalItems)
 
 	// Producers
 	for p := 0; p < numProducers; p++ {
-		wg.Add(1)
+		producerWg.Add(1)
 		go func(producerID int) {
-			defer wg.Done()
+			defer producerWg.Done()
 			for i := 0; i < itemsPerProducer; i++ {
-				val := int64(producerID*1000 + i)
+				val := int64(producerID*itemsPerProducer + i)
 				for !q.Push(val) {
 					// Retry if full
 				}
@@ -98,33 +112,38 @@ func TestQueueConcurrent(t *testing.T) {
 		}(p)
 	}
 
-	// Consumers
-	consumed := make(chan int64, numProducers*itemsPerProducer)
+	// Consumers — each records items into the consumed slice
+	var consumedCount int64
 	for c := 0; c < numConsumers; c++ {
-		wg.Add(1)
+		consumerWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer consumerWg.Done()
 			for {
 				if val, ok := q.Pop(); ok {
-					consumed <- val
-				}
-				if len(consumed) >= numProducers*itemsPerProducer {
+					if val < 0 || val >= int64(totalItems) {
+						t.Errorf("Out of range value: %d", val)
+						return
+					}
+					atomic.AddInt32(&consumed[val], 1)
+					if atomic.AddInt64(&consumedCount, 1) >= int64(totalItems) {
+						return
+					}
+				} else if atomic.LoadInt64(&consumedCount) >= int64(totalItems) {
 					return
 				}
 			}
 		}()
 	}
 
-	wg.Wait()
-	close(consumed)
+	producerWg.Wait()
+	consumerWg.Wait()
 
-	count := 0
-	for range consumed {
-		count++
-	}
-
-	if count != numProducers*itemsPerProducer {
-		t.Errorf("Consumed %d items, expected %d", count, numProducers*itemsPerProducer)
+	// Verify every item consumed exactly once
+	for i := 0; i < totalItems; i++ {
+		c := atomic.LoadInt32(&consumed[i])
+		if c != 1 {
+			t.Errorf("Item %d consumed %d times (expected 1)", i, c)
+		}
 	}
 }
 
@@ -176,6 +195,81 @@ func TestStackBasic(t *testing.T) {
 	}
 }
 
+func TestStackConcurrentMPMC(t *testing.T) {
+	name := "/test_go_stack_mpmc"
+	size := 4 * 1024 * 1024
+
+	UnlinkName(name)
+
+	mem, err := NewMemory(name, size, 64)
+	if err != nil {
+		t.Fatalf("NewMemory failed: %v", err)
+	}
+	defer mem.Close()
+	defer mem.Unlink()
+
+	s, err := NewStack[int64](mem, "mpmc_stack", 2048)
+	if err != nil {
+		t.Fatalf("NewStack failed: %v", err)
+	}
+
+	// 4 pushers + 4 poppers, validate data integrity
+	numPushers := 4
+	numPoppers := 4
+	itemsPerPusher := 500
+	totalItems := numPushers * itemsPerPusher
+
+	var pushWg sync.WaitGroup
+	var popWg sync.WaitGroup
+	consumed := make([]int32, totalItems)
+
+	for p := 0; p < numPushers; p++ {
+		pushWg.Add(1)
+		go func(id int) {
+			defer pushWg.Done()
+			for i := 0; i < itemsPerPusher; i++ {
+				val := int64(id*itemsPerPusher + i)
+				for !s.Push(val) {
+					// Retry if full
+				}
+			}
+		}(p)
+	}
+
+	var poppedCount int64
+	for c := 0; c < numPoppers; c++ {
+		popWg.Add(1)
+		go func() {
+			defer popWg.Done()
+			for {
+				if val, ok := s.Pop(); ok {
+					if val < 0 || val >= int64(totalItems) {
+						t.Errorf("Out of range value: %d", val)
+						return
+					}
+					atomic.AddInt32(&consumed[val], 1)
+					if atomic.AddInt64(&poppedCount, 1) >= int64(totalItems) {
+						return
+					}
+				} else if atomic.LoadInt64(&poppedCount) >= int64(totalItems) {
+					return
+				}
+			}
+		}()
+	}
+
+	pushWg.Wait()
+	popWg.Wait()
+
+	// Verify every item consumed exactly once
+	for i := 0; i < totalItems; i++ {
+		c := atomic.LoadInt32(&consumed[i])
+		if c != 1 {
+			t.Errorf("Item %d consumed %d times (expected 1)", i, c)
+		}
+	}
+}
+
 func TestSemaphoreBasic(t *testing.T) {
 	name := "/test_go_semaphore"
 	size := 1024 * 1024
@@ -224,6 +318,56 @@ func TestSemaphoreBasic(t *testing.T) {
 
 	if sem.Count() != 2 {
 		t.Errorf("Count = %d, expected 2", sem.Count())
+	}
+}
+
+func TestSemaphoreConcurrentRelease(t *testing.T) {
+	name := "/test_go_sem_release"
+	size := 1024 * 1024
+
+	UnlinkName(name)
+
+	mem, err := NewMemory(name, size, 64)
+	if err != nil {
+		t.Fatalf("NewMemory failed: %v", err)
+	}
+	defer mem.Close()
+	defer mem.Unlink()
+
+	maxCount := int32(10)
+	sem, err := NewSemaphore(mem, "test_sem_rel", 0, maxCount)
+	if err != nil {
+		t.Fatalf("NewSemaphore failed: %v", err)
+	}
+
+	// 20 goroutines all try to Release() — count should never exceed maxCount
+	var wg sync.WaitGroup
+	var successCount int64
+	var failCount int64
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sem.Release(); err != nil {
+				atomic.AddInt64(&failCount, 1)
+			} else {
+				atomic.AddInt64(&successCount, 1)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	count := sem.Count()
+	if count > maxCount {
+		t.Errorf("Count %d exceeds maxCount %d — TOCTOU race detected!", count, maxCount)
+	}
+	if successCount != int64(maxCount) {
+		t.Errorf("Expected exactly %d successful releases, got %d", maxCount, successCount)
+	}
+	if failCount != int64(20-maxCount) {
+		t.Errorf("Expected exactly %d failed releases, got %d", 20-int(maxCount), failCount)
 	}
 }
 
@@ -398,5 +542,56 @@ func TestOnceBasic(t *testing.T) {
 
 	if callCount != 1 {
 		t.Errorf("Function called %d times, expected 1", callCount)
+	}
+}
+
+func TestOnceConcurrent(t *testing.T) {
+	name := "/test_go_once_conc"
+	size := 1024 * 1024
+
+	UnlinkName(name)
+
+	mem, err := NewMemory(name, size, 64)
+	if err != nil {
+		t.Fatalf("NewMemory failed: %v", err)
+	}
+	defer mem.Close()
+	defer mem.Unlink()
+
+	once, err := NewOnce(mem, "test_once_conc")
+	if err != nil {
+		t.Fatalf("NewOnce failed: %v", err)
+	}
+
+	// 8 goroutines call Do() concurrently. The fn sleeps 5ms.
+	// All goroutines must return only after fn completes.
+	var callCount int64
+	var fnDone int64
+	var wg sync.WaitGroup
+
+	numGoroutines := 8
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			once.Do(func() {
+				atomic.AddInt64(&callCount, 1)
+				time.Sleep(5 * time.Millisecond)
+				atomic.StoreInt64(&fnDone, 1)
+			})
+			// After Do() returns, fn must have completed
+			if atomic.LoadInt64(&fnDone) != 1 {
+				t.Error("Do() returned before fn completed — 3-state protocol broken")
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if count := atomic.LoadInt64(&callCount); count != 1 {
+		t.Errorf("Function executed %d times, expected 1", count)
+	}
+	if !once.IsCalled() {
+		t.Error("Once should be called after concurrent Do()")
 	}
 }

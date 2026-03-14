@@ -193,16 +193,18 @@ func (s *Semaphore) AcquireTimeout(timeout time.Duration) bool {
 
 // Release releases one permit back to the semaphore.
 // Returns an error if max_count would be exceeded.
+// Uses a CAS loop to atomically check and increment, preventing TOCTOU races.
 func (s *Semaphore) Release() error {
-	if s.maxCount > 0 {
+	for {
 		current := atomic.LoadInt32(s.countPtr())
-		if current >= s.maxCount {
+		if s.maxCount > 0 && current >= s.maxCount {
 			return errors.New("semaphore count would exceed maximum")
 		}
+		if atomic.CompareAndSwapInt32(s.countPtr(), current, current+1) {
+			return nil
+		}
+		// CAS failed, retry
 	}
-
-	atomic.AddInt32(s.countPtr(), 1)
-	return nil
 }
 
 // Count returns the current semaphore count.

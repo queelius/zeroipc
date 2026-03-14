@@ -3,6 +3,7 @@ package zeroipc
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"unsafe"
 )
@@ -11,13 +12,25 @@ import (
 // Layout: state(4) = 4 bytes
 const OnceHeaderSize = 4
 
+// Once state constants matching C++ 3-state protocol.
+const (
+	oncePending   uint32 = 0 // No one has started execution yet
+	onceExecuting uint32 = 1 // A thread/process is currently running the function
+	onceDone      uint32 = 2 // The function has completed execution
+)
+
 // Once is a one-time initialization primitive for shared memory.
 //
 // Ensures a function is executed exactly once across all processes,
 // similar to sync.Once. Thread-safe and process-safe.
 //
+// Uses 3-state protocol to ensure callers wait for completion:
+//   - PENDING (0): No one has started execution yet
+//   - EXECUTING (1): A thread/process is currently running the function
+//   - DONE (2): The function has completed execution
+//
 // Binary layout:
-//   - state: uint32 (atomic, offset 0) - 0 = not called, 1 = done
+//   - state: uint32 (atomic, offset 0) - 0=pending, 1=executing, 2=done
 type Once struct {
 	memory *Memory
 	name   string
@@ -76,22 +89,28 @@ func (o *Once) statePtr() *uint32 {
 
 // Do executes the function exactly once across all processes.
 //
-// If this is the first call, executes fn. Otherwise, returns immediately
-// without executing fn.
+// If this is the first call, executes fn. All other callers block until
+// fn completes, then return without executing fn.
 //
-// Note: If fn panics, the Once flag is still marked as called.
+// Note: If fn panics, the Once flag is still marked as done
+// (matching std::call_once / C++ semantics).
 func (o *Once) Do(fn func()) {
-	// Fast path: already called
-	if atomic.LoadUint32(o.statePtr()) == 1 {
+	// Fast path: already done
+	if atomic.LoadUint32(o.statePtr()) == onceDone {
 		return
 	}
 
-	// Try to be the caller
-	if atomic.CompareAndSwapUint32(o.statePtr(), 0, 1) {
-		// We won the race - execute the function
+	// Try to transition from PENDING to EXECUTING
+	if atomic.CompareAndSwapUint32(o.statePtr(), oncePending, onceExecuting) {
+		// We won the race — execute the function
+		defer atomic.StoreUint32(o.statePtr(), onceDone)
 		fn()
+	} else {
+		// We lost the race — spin-wait until the executor finishes
+		for atomic.LoadUint32(o.statePtr()) == onceExecuting {
+			runtime.Gosched()
+		}
 	}
-	// If CAS failed, someone else already called it
 }
 
 // Call is an alias for Do (matches C++ API).
@@ -101,7 +120,7 @@ func (o *Once) Call(fn func()) {
 
 // IsCalled returns true if the function has been executed.
 func (o *Once) IsCalled() bool {
-	return atomic.LoadUint32(o.statePtr()) == 1
+	return atomic.LoadUint32(o.statePtr()) == onceDone
 }
 
 // AlreadyCalled is an alias for IsCalled (matches C++ API).

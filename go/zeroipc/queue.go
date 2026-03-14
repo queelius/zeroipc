@@ -12,14 +12,16 @@ import (
 // Layout: head(4) + tail(4) + capacity(4) + elem_size(4) = 16 bytes
 const QueueHeaderSize = 16
 
-// Queue is a lock-free MPMC (multi-producer multi-consumer) circular buffer.
+// Queue is a lock-free MPMC (multi-producer multi-consumer) circular buffer
+// using the Vyukov bounded queue algorithm with per-slot sequence numbers.
 //
-// Binary layout:
+// Binary layout (matching C++):
 //   - head: uint32 (atomic, offset 0)
 //   - tail: uint32 (atomic, offset 4)
 //   - capacity: uint32 (offset 8)
 //   - elem_size: uint32 (offset 12)
 //   - data: capacity * elem_size bytes (offset 16)
+//   - sequence: capacity * 4 bytes (after data) - per-slot sequence numbers
 type Queue[T Numeric] struct {
 	memory   *Memory
 	name     string
@@ -46,8 +48,8 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 		return nil, fmt.Errorf("queue '%s' already exists", name)
 	}
 
-	// Allocate space
-	totalSize := QueueHeaderSize + capacity*elemSize
+	// Layout: [Header][data: T * capacity][sequence: uint32 * capacity]
+	totalSize := QueueHeaderSize + capacity*elemSize + capacity*4
 	offset, err := memory.Allocate(name, totalSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate: %w", err)
@@ -56,16 +58,23 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 	data := memory.Data()
 
 	// Write header
-	binary.LittleEndian.PutUint32(data[offset:], 0)                  // head
-	binary.LittleEndian.PutUint32(data[offset+4:], 0)                // tail
-	binary.LittleEndian.PutUint32(data[offset+8:], uint32(capacity)) // capacity
-	binary.LittleEndian.PutUint32(data[offset+12:], uint32(elemSize)) // elem_size
+	binary.LittleEndian.PutUint32(data[offset:], 0)                    // head
+	binary.LittleEndian.PutUint32(data[offset+4:], 0)                  // tail
+	binary.LittleEndian.PutUint32(data[offset+8:], uint32(capacity))   // capacity
+	binary.LittleEndian.PutUint32(data[offset+12:], uint32(elemSize))  // elem_size
 
 	// Zero-initialize data area
 	dataStart := offset + QueueHeaderSize
 	dataEnd := dataStart + capacity*elemSize
 	for i := dataStart; i < dataEnd; i++ {
 		data[i] = 0
+	}
+
+	// Initialize per-slot sequence numbers: sequence[i] = i
+	seqStart := dataEnd
+	for i := 0; i < capacity; i++ {
+		seqOffset := seqStart + i*4
+		binary.LittleEndian.PutUint32(data[seqOffset:], uint32(i))
 	}
 
 	return &Queue[T]{
@@ -117,60 +126,73 @@ func (q *Queue[T]) tailPtr() *uint32 {
 	return (*uint32)(unsafe.Pointer(&q.memory.Data()[q.offset+4]))
 }
 
-// Push adds an element to the queue (lock-free).
+// seqPtr returns a pointer to the sequence number for slot i.
+// Sequence array lives after the data array.
+func (q *Queue[T]) seqPtr(slot uint32) *uint32 {
+	seqOffset := q.offset + QueueHeaderSize + int(q.capacity)*int(q.elemSize) + int(slot)*4
+	return (*uint32)(unsafe.Pointer(&q.memory.Data()[seqOffset]))
+}
+
+// Push adds an element to the queue (lock-free Vyukov MPMC).
 // Returns false if the queue is full.
 func (q *Queue[T]) Push(value T) bool {
-	headPtr := q.headPtr()
+	cap := q.capacity
 	tailPtr := q.tailPtr()
 
 	for {
-		currentTail := atomic.LoadUint32(tailPtr)
-		nextTail := (currentTail + 1) % q.capacity
+		tail := atomic.LoadUint32(tailPtr)
+		slot := tail % cap
+		seq := atomic.LoadUint32(q.seqPtr(slot))
+		diff := int32(seq) - int32(tail)
 
-		// Check if full
-		currentHead := atomic.LoadUint32(headPtr)
-		if nextTail == currentHead {
+		if diff == 0 {
+			// Slot is ready for writing; try to claim it
+			if atomic.CompareAndSwapUint32(tailPtr, tail, tail+1) {
+				// We own this slot — write the data
+				dataOffset := q.offset + QueueHeaderSize + int(slot)*int(q.elemSize)
+				*(*T)(unsafe.Pointer(&q.memory.Data()[dataOffset])) = value
+				// Publish: set sequence to tail+1 so consumers can see it
+				atomic.StoreUint32(q.seqPtr(slot), tail+1)
+				return true
+			}
+			// CAS failed, another producer got it; retry
+		} else if diff < 0 {
+			// Queue is full
 			return false
 		}
-
-		// Try to claim this slot
-		if atomic.CompareAndSwapUint32(tailPtr, currentTail, nextTail) {
-			// Write the value to the claimed slot
-			dataOffset := q.offset + QueueHeaderSize + int(currentTail)*int(q.elemSize)
-			*(*T)(unsafe.Pointer(&q.memory.Data()[dataOffset])) = value
-			return true
-		}
-		// CAS failed, retry
+		// diff > 0: stale tail or another producer in progress; retry
 	}
 }
 
-// Pop removes and returns an element from the queue (lock-free).
+// Pop removes and returns an element from the queue (lock-free Vyukov MPMC).
 // Returns the value and true if successful, or zero value and false if empty.
 func (q *Queue[T]) Pop() (T, bool) {
 	var zero T
+	cap := q.capacity
 	headPtr := q.headPtr()
-	tailPtr := q.tailPtr()
 
 	for {
-		currentHead := atomic.LoadUint32(headPtr)
+		head := atomic.LoadUint32(headPtr)
+		slot := head % cap
+		seq := atomic.LoadUint32(q.seqPtr(slot))
+		diff := int32(seq) - int32(head+1)
 
-		// Check if empty
-		currentTail := atomic.LoadUint32(tailPtr)
-		if currentHead == currentTail {
+		if diff == 0 {
+			// Slot contains data; try to claim it
+			if atomic.CompareAndSwapUint32(headPtr, head, head+1) {
+				// We own this slot — read the data
+				dataOffset := q.offset + QueueHeaderSize + int(slot)*int(q.elemSize)
+				value := *(*T)(unsafe.Pointer(&q.memory.Data()[dataOffset]))
+				// Release: set sequence to head+capacity so producers can reuse
+				atomic.StoreUint32(q.seqPtr(slot), head+cap)
+				return value, true
+			}
+			// CAS failed, another consumer got it; retry
+		} else if diff < 0 {
+			// Queue is empty
 			return zero, false
 		}
-
-		nextHead := (currentHead + 1) % q.capacity
-
-		// Read the value before claiming the slot
-		dataOffset := q.offset + QueueHeaderSize + int(currentHead)*int(q.elemSize)
-		value := *(*T)(unsafe.Pointer(&q.memory.Data()[dataOffset]))
-
-		// Try to claim this slot
-		if atomic.CompareAndSwapUint32(headPtr, currentHead, nextHead) {
-			return value, true
-		}
-		// CAS failed, retry
+		// diff > 0: stale head or another consumer in progress; retry
 	}
 }
 
@@ -193,9 +215,9 @@ func (q *Queue[T]) Empty() bool {
 // Full returns true if the queue appears full.
 // Note: In a concurrent context, this is only an approximation.
 func (q *Queue[T]) Full() bool {
+	head := atomic.LoadUint32(q.headPtr())
 	tail := atomic.LoadUint32(q.tailPtr())
-	nextTail := (tail + 1) % q.capacity
-	return nextTail == atomic.LoadUint32(q.headPtr())
+	return (tail - head) >= q.capacity
 }
 
 // Size returns the approximate number of elements in the queue.
@@ -203,10 +225,8 @@ func (q *Queue[T]) Full() bool {
 func (q *Queue[T]) Size() int {
 	head := atomic.LoadUint32(q.headPtr())
 	tail := atomic.LoadUint32(q.tailPtr())
-	if tail >= head {
-		return int(tail - head)
-	}
-	return int(q.capacity - head + tail)
+	// uint32 subtraction handles wraparound correctly
+	return int(tail - head)
 }
 
 // Capacity returns the maximum number of elements the queue can hold.

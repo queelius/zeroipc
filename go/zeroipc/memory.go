@@ -118,11 +118,9 @@ func (m *Memory) create() error {
 		return fmt.Errorf("mmap: %w", err)
 	}
 	m.data = data
-
-	// Zero out memory
-	for i := range data {
-		data[i] = 0
-	}
+	// Note: ftruncate + mmap on Linux zero-fills new pages; explicit zeroing
+	// omitted for performance. If portability to non-Linux is needed, add
+	// copy(data, make([]byte, len(data))) here.
 
 	return nil
 }

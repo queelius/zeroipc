@@ -1,0 +1,272 @@
+/**
+ * ZeroIPC Raw FFI — stateless functions for Python ctypes integration.
+ *
+ * Each function takes (base, offset) and reinterprets the memory at
+ * (base + offset) as a queue/stack header. All atomic operations use
+ * C11 stdatomic.h, giving Python true cross-process MPMC safety.
+ *
+ * Struct layouts match SPECIFICATION.md and the C++/Go/Python binary format.
+ */
+
+#include "zeroipc_ffi.h"
+#include <stdatomic.h>
+#include <string.h>
+#include <stdbool.h>
+
+/* Return codes */
+#define FFI_OK       0
+#define FFI_EMPTY   -1
+#define FFI_FULL    -1
+#define FFI_MISMATCH -2
+
+/* ============================================================================
+ * Queue layout (Vyukov bounded MPMC)
+ * Header: [head:u32][tail:u32][capacity:u32][elem_size:u32] = 16 bytes
+ * Data:   capacity * elem_size bytes
+ * Seqs:   capacity * 4 bytes (per-slot sequence numbers)
+ * ============================================================================ */
+
+typedef struct {
+    _Atomic uint32_t head;
+    _Atomic uint32_t tail;
+    uint32_t capacity;
+    uint32_t elem_size;
+} ffi_queue_header_t;
+
+_Static_assert(sizeof(ffi_queue_header_t) == 16, "Queue header must be 16 bytes");
+
+static inline ffi_queue_header_t* q_header(void* base, size_t offset) {
+    return (ffi_queue_header_t*)((char*)base + offset);
+}
+
+static inline void* q_data(ffi_queue_header_t* h) {
+    return (char*)h + sizeof(ffi_queue_header_t);
+}
+
+static inline _Atomic uint32_t* q_seqs(ffi_queue_header_t* h) {
+    return (_Atomic uint32_t*)((char*)q_data(h) + h->capacity * h->elem_size);
+}
+
+int zeroipc_raw_queue_push(void* base, size_t offset,
+                           const void* value, uint32_t elem_size) {
+    ffi_queue_header_t* h = q_header(base, offset);
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+
+    _Atomic uint32_t* seq = q_seqs(h);
+    void* data = q_data(h);
+    uint32_t cap = h->capacity;
+    uint32_t tail, slot;
+    int32_t diff;
+
+    for (;;) {
+        tail = atomic_load_explicit(&h->tail, memory_order_relaxed);
+        slot = tail % cap;
+        uint32_t s = atomic_load_explicit(&seq[slot], memory_order_acquire);
+        diff = (int32_t)(s - tail);
+
+        if (diff == 0) {
+            if (atomic_compare_exchange_weak_explicit(
+                    &h->tail, &tail, tail + 1,
+                    memory_order_relaxed, memory_order_relaxed))
+                break;
+        } else if (diff < 0) {
+            return FFI_FULL;
+        }
+        /* diff > 0: another producer claimed this slot, retry */
+    }
+
+    /* Write data, then publish */
+    memcpy((char*)data + slot * elem_size, value, elem_size);
+    atomic_store_explicit(&seq[slot], tail + 1, memory_order_release);
+    return FFI_OK;
+}
+
+int zeroipc_raw_queue_pop(void* base, size_t offset,
+                          void* value_out, uint32_t elem_size) {
+    ffi_queue_header_t* h = q_header(base, offset);
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+
+    _Atomic uint32_t* seq = q_seqs(h);
+    void* data = q_data(h);
+    uint32_t cap = h->capacity;
+    uint32_t head, slot;
+    int32_t diff;
+
+    for (;;) {
+        head = atomic_load_explicit(&h->head, memory_order_relaxed);
+        slot = head % cap;
+        uint32_t s = atomic_load_explicit(&seq[slot], memory_order_acquire);
+        diff = (int32_t)(s - (head + 1));
+
+        if (diff == 0) {
+            if (atomic_compare_exchange_weak_explicit(
+                    &h->head, &head, head + 1,
+                    memory_order_relaxed, memory_order_relaxed))
+                break;
+        } else if (diff < 0) {
+            return FFI_EMPTY;
+        }
+    }
+
+    /* Read data, then recycle slot */
+    memcpy(value_out, (char*)data + slot * elem_size, elem_size);
+    atomic_store_explicit(&seq[slot], head + cap, memory_order_release);
+    return FFI_OK;
+}
+
+int zeroipc_raw_queue_size(void* base, size_t offset) {
+    ffi_queue_header_t* h = q_header(base, offset);
+    uint32_t tail = atomic_load_explicit(&h->tail, memory_order_relaxed);
+    uint32_t head = atomic_load_explicit(&h->head, memory_order_relaxed);
+    return (int)(tail - head);
+}
+
+int zeroipc_raw_queue_empty(void* base, size_t offset) {
+    return zeroipc_raw_queue_size(base, offset) == 0;
+}
+
+int zeroipc_raw_queue_full(void* base, size_t offset) {
+    ffi_queue_header_t* h = q_header(base, offset);
+    uint32_t tail = atomic_load_explicit(&h->tail, memory_order_relaxed);
+    uint32_t head = atomic_load_explicit(&h->head, memory_order_relaxed);
+    return (tail - head) >= h->capacity;
+}
+
+/* ============================================================================
+ * Stack layout (4-state CAS)
+ * Header: [top:i32][capacity:u32][elem_size:u32] = 12 bytes
+ * Data:   capacity * elem_size bytes
+ * State:  capacity * 4 bytes (per-slot state: EMPTY/WRITING/READY/READING)
+ * ============================================================================ */
+
+typedef struct {
+    _Atomic int32_t top;
+    uint32_t capacity;
+    uint32_t elem_size;
+} ffi_stack_header_t;
+
+_Static_assert(sizeof(ffi_stack_header_t) == 12, "Stack header must be 12 bytes");
+
+#define SLOT_EMPTY   0
+#define SLOT_WRITING 1
+#define SLOT_READY   2
+#define SLOT_READING 3
+
+static inline ffi_stack_header_t* s_header(void* base, size_t offset) {
+    return (ffi_stack_header_t*)((char*)base + offset);
+}
+
+static inline void* s_data(ffi_stack_header_t* h) {
+    return (char*)h + sizeof(ffi_stack_header_t);
+}
+
+static inline _Atomic uint32_t* s_state(ffi_stack_header_t* h) {
+    return (_Atomic uint32_t*)((char*)s_data(h) + h->capacity * h->elem_size);
+}
+
+int zeroipc_raw_stack_push(void* base, size_t offset,
+                           const void* value, uint32_t elem_size) {
+    ffi_stack_header_t* h = s_header(base, offset);
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+
+    _Atomic uint32_t* state = s_state(h);
+    void* data = s_data(h);
+    int32_t current_top, new_top;
+
+    /* Step 1: Reserve slot by CAS-incrementing top */
+    do {
+        current_top = atomic_load_explicit(&h->top, memory_order_relaxed);
+        if (current_top >= (int32_t)(h->capacity - 1))
+            return FFI_FULL;
+        new_top = current_top + 1;
+    } while (!atomic_compare_exchange_weak_explicit(
+                &h->top, &current_top, new_top,
+                memory_order_acq_rel, memory_order_relaxed));
+
+    /* Step 2: CAS slot EMPTY -> WRITING */
+    uint32_t expected = SLOT_EMPTY;
+    while (!atomic_compare_exchange_weak_explicit(
+                &state[new_top], &expected, SLOT_WRITING,
+                memory_order_acq_rel, memory_order_relaxed))
+        expected = SLOT_EMPTY;
+
+    /* Step 3: Write data */
+    memcpy((char*)data + new_top * elem_size, value, elem_size);
+
+    /* Step 4: Publish WRITING -> READY */
+    atomic_store_explicit(&state[new_top], SLOT_READY, memory_order_release);
+    return FFI_OK;
+}
+
+int zeroipc_raw_stack_pop(void* base, size_t offset,
+                          void* value_out, uint32_t elem_size) {
+    ffi_stack_header_t* h = s_header(base, offset);
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+
+    _Atomic uint32_t* state = s_state(h);
+    void* data = s_data(h);
+    int32_t current_top, new_top;
+
+    /* Step 1: Reserve slot by CAS-decrementing top */
+    do {
+        current_top = atomic_load_explicit(&h->top, memory_order_relaxed);
+        if (current_top < 0)
+            return FFI_EMPTY;
+        new_top = current_top - 1;
+    } while (!atomic_compare_exchange_weak_explicit(
+                &h->top, &current_top, new_top,
+                memory_order_acq_rel, memory_order_relaxed));
+
+    /* Step 2: CAS slot READY -> READING */
+    uint32_t expected = SLOT_READY;
+    while (!atomic_compare_exchange_weak_explicit(
+                &state[current_top], &expected, SLOT_READING,
+                memory_order_acq_rel, memory_order_relaxed))
+        expected = SLOT_READY;
+
+    /* Step 3: Read data */
+    memcpy(value_out, (char*)data + current_top * elem_size, elem_size);
+
+    /* Step 4: Release READING -> EMPTY */
+    atomic_store_explicit(&state[current_top], SLOT_EMPTY, memory_order_release);
+    return FFI_OK;
+}
+
+int zeroipc_raw_stack_top(void* base, size_t offset,
+                          void* value_out, uint32_t elem_size) {
+    ffi_stack_header_t* h = s_header(base, offset);
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+
+    _Atomic uint32_t* state = s_state(h);
+    void* data = s_data(h);
+
+    int32_t top = atomic_load_explicit(&h->top, memory_order_acquire);
+    if (top < 0) return FFI_EMPTY;
+
+    /* Bounded spin waiting for READY */
+    for (int spins = 0; spins < 10000; ++spins) {
+        if (atomic_load_explicit(&state[top], memory_order_acquire) == SLOT_READY) {
+            memcpy(value_out, (char*)data + top * elem_size, elem_size);
+            return FFI_OK;
+        }
+        if (atomic_load_explicit(&h->top, memory_order_acquire) != top)
+            return FFI_EMPTY;
+    }
+    return FFI_EMPTY;
+}
+
+int zeroipc_raw_stack_size(void* base, size_t offset) {
+    ffi_stack_header_t* h = s_header(base, offset);
+    int32_t top = atomic_load_explicit(&h->top, memory_order_relaxed);
+    return top + 1;
+}
+
+int zeroipc_raw_stack_empty(void* base, size_t offset) {
+    return zeroipc_raw_stack_size(base, offset) == 0;
+}
+
+int zeroipc_raw_stack_full(void* base, size_t offset) {
+    ffi_stack_header_t* h = s_header(base, offset);
+    int32_t top = atomic_load_explicit(&h->top, memory_order_relaxed);
+    return top >= (int32_t)(h->capacity - 1);
+}

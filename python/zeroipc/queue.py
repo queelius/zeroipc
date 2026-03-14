@@ -8,11 +8,9 @@ Binary layout:
   [data[0]][data[1]]...[data[cap-1]]                 (elem_size * capacity bytes)
   [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]        (4 * capacity bytes)
 
-Note: Python's struct.pack_into/unpack_from are not truly atomic across
-processes. This implementation is MPMC-safe within a single Python interpreter
-(protected by threading.Lock), but cross-process usage should follow SPSC
-(single-producer, single-consumer) discipline. For cross-process MPMC, use
-the C++ or Go implementations as producers/consumers.
+When libzeroipc_ffi.so is available, push/pop use C11 atomics via ctypes
+for true cross-process MPMC safety. Otherwise falls back to struct.pack_into
+(SPSC-only across processes, MPMC within a single interpreter via threading.Lock).
 """
 
 import struct
@@ -21,6 +19,7 @@ from typing import Optional, TypeVar, Generic, Type
 import numpy as np
 
 from .memory import Memory
+from . import _cffi
 
 T = TypeVar('T')
 
@@ -176,43 +175,33 @@ class Queue(Generic[T]):
         return diff
 
     def push(self, value: T) -> bool:
-        """Push value onto queue (enqueue).
+        """Push value onto queue. Returns True on success, False if full."""
+        if _cffi.AVAILABLE:
+            value_bytes = self.dtype.type(value).tobytes()
+            return _cffi.queue_push(self.memory, self.offset,
+                                    value_bytes, self.elem_size) == _cffi.OK
 
-        Uses Vyukov MPMC algorithm with per-slot sequence numbers.
-        Thread-safe within a single process (GIL). For cross-process use,
-        safe in SPSC mode (one producer process, one consumer process).
-
-        Returns:
-            True if successful, False if queue is full or contended
-        """
         with self._lock:
             tail = self._read_tail()
             slot = tail % self.capacity
             seq = self._read_seq(slot)
 
             if self._signed_diff(seq, tail) != 0:
-                return False  # Full (diff < 0) or contended (diff > 0)
+                return False
 
-            # Advance tail to claim slot
             self._write_tail((tail + 1) & 0xFFFFFFFF)
-
-            # Write data
             self.data[slot] = value
-
-            # Publish: set seq = tail + 1 to signal slot contains valid data
             self._write_seq(slot, (tail + 1) & 0xFFFFFFFF)
             return True
 
     def pop(self) -> Optional[T]:
-        """Pop value from queue (dequeue).
+        """Pop value from queue. Returns value or None if empty."""
+        if _cffi.AVAILABLE:
+            rc, raw = _cffi.queue_pop(self.memory, self.offset, self.elem_size)
+            if rc != _cffi.OK:
+                return None
+            return np.frombuffer(raw, dtype=self.dtype)[0].copy()
 
-        Uses Vyukov MPMC algorithm with per-slot sequence numbers.
-        Thread-safe within a single process (GIL). For cross-process use,
-        safe in SPSC mode (one producer process, one consumer process).
-
-        Returns:
-            Value if available, None if queue is empty or contended
-        """
         with self._lock:
             head = self._read_head()
             slot = head % self.capacity
@@ -220,37 +209,30 @@ class Queue(Generic[T]):
 
             expected = (head + 1) & 0xFFFFFFFF
             if self._signed_diff(seq, expected) != 0:
-                return None  # Empty (diff < 0) or contended (diff > 0)
+                return None
 
-            # Advance head to claim slot
             self._write_head((head + 1) & 0xFFFFFFFF)
-
-            # Read value
             value = self.data[slot].copy()
-
-            # Release: set seq = head + capacity to mark slot as reusable
             self._write_seq(slot, (head + self.capacity) & 0xFFFFFFFF)
             return value
 
     def empty(self) -> bool:
         """Check if queue is empty."""
-        head = self._read_head()
-        tail = self._read_tail()
-        return head == tail
+        if _cffi.AVAILABLE:
+            return _cffi.queue_empty(self.memory, self.offset)
+        return self._read_head() == self._read_tail()
 
     def full(self) -> bool:
         """Check if queue is full."""
-        head = self._read_head()
-        tail = self._read_tail()
-        # Modular arithmetic handles uint32 wraparound
-        return ((tail - head) & 0xFFFFFFFF) >= self.capacity
+        if _cffi.AVAILABLE:
+            return _cffi.queue_full(self.memory, self.offset)
+        return ((self._read_tail() - self._read_head()) & 0xFFFFFFFF) >= self.capacity
 
     def size(self) -> int:
         """Get current number of elements."""
-        head = self._read_head()
-        tail = self._read_tail()
-        # Modular arithmetic handles uint32 wraparound
-        return (tail - head) & 0xFFFFFFFF
+        if _cffi.AVAILABLE:
+            return _cffi.queue_size(self.memory, self.offset)
+        return (self._read_tail() - self._read_head()) & 0xFFFFFFFF
 
     def __len__(self) -> int:
         """Get current size."""

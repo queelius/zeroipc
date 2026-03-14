@@ -75,9 +75,7 @@ public:
             if (!counter_entry) {
                 throw std::runtime_error("Monitor counter not found");
             }
-            waiting_count_ = reinterpret_cast<std::atomic<uint32_t>*>(
-                static_cast<char*>(mem.data()) + counter_entry->offset
-            );
+            waiting_count_ = mem.ptr_at<std::atomic<uint32_t>>(counter_entry->offset);
         } else {
             // Create new
             mutex_ = std::make_unique<Mutex>(mem, mutex_name);
@@ -85,9 +83,7 @@ public:
 
             // Create waiting counter
             size_t counter_offset = mem.allocate(counter_name, sizeof(std::atomic<uint32_t>));
-            waiting_count_ = reinterpret_cast<std::atomic<uint32_t>*>(
-                static_cast<char*>(mem.data()) + counter_offset
-            );
+            waiting_count_ = mem.ptr_at<std::atomic<uint32_t>>(counter_offset);
             new (waiting_count_) std::atomic<uint32_t>(0);
 
             // Add monitor entry to table (just a marker)

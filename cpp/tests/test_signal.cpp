@@ -9,17 +9,7 @@
 
 using namespace zeroipc::test;
 
-class SignalTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_signal_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        shm_unlink(shm_name_.c_str());
-    }
-
-    std::string shm_name_;
+class SignalTest : public SharedMemoryTestBase {
 };
 
 TEST_F(SignalTest, BasicGetSet) {

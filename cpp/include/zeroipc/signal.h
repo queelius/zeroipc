@@ -93,9 +93,7 @@ public:
                 throw std::runtime_error("Signal state not found");
             }
 
-            state_ = reinterpret_cast<SignalState<T>*>(
-                static_cast<char*>(mem.data()) + state_entry->offset
-            );
+            state_ = mem.ptr_at<SignalState<T>>(state_entry->offset);
 
             mutex_ = std::make_unique<Mutex>(mem, mutex_name);
         } else {
@@ -105,9 +103,7 @@ public:
 
             // Create new
             size_t state_offset = mem.allocate(state_name, sizeof(SignalState<T>));
-            state_ = reinterpret_cast<SignalState<T>*>(
-                static_cast<char*>(mem.data()) + state_offset
-            );
+            state_ = mem.ptr_at<SignalState<T>>(state_offset);
             new (state_) SignalState<T>(initial_value);
 
             mutex_ = std::make_unique<Mutex>(mem, mutex_name);

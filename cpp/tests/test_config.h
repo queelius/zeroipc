@@ -1,7 +1,11 @@
 #pragma once
 
+#include <gtest/gtest.h>
+#include <zeroipc/memory.h>
 #include <chrono>
 #include <cstdlib>
+#include <string>
+#include <unistd.h>
 
 namespace zeroipc::test {
 
@@ -52,6 +56,24 @@ enum class TestCategory {
     SLOW,      // >5s - Full synchronization tests
     STRESS,    // >30s - Exhaustive stress testing
     INTEROP    // Cross-language integration
+};
+
+/// Base test fixture with PID-based shared memory name and automatic cleanup.
+/// Derive from this instead of ::testing::Test to get unique shm names
+/// and guaranteed cleanup, avoiding inter-test contamination.
+class SharedMemoryTestBase : public ::testing::Test {
+protected:
+    std::string shm_name_;
+
+    void SetUp() override {
+        shm_name_ = "/test_" + std::to_string(getpid()) + "_" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch().count());
+    }
+
+    void TearDown() override {
+        zeroipc::Memory::unlink(shm_name_);
+    }
 };
 
 } // namespace zeroipc::test

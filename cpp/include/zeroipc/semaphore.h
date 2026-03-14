@@ -1,9 +1,9 @@
 #pragma once
 
 #include "memory.h"
+#include "detail/spin_wait.h"
 #include <atomic>
 #include <chrono>
-#include <thread>
 #include <stdexcept>
 
 namespace zeroipc {
@@ -60,8 +60,7 @@ public:
 
         size_t offset = memory.allocate(name, sizeof(Header));
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header
         header_->count.store(initial_count, std::memory_order_relaxed);
@@ -88,8 +87,7 @@ public:
             throw std::runtime_error("Invalid semaphore size");
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
     }
 
     /**
@@ -101,30 +99,18 @@ public:
     void acquire() {
         header_->waiting.fetch_add(1, std::memory_order_relaxed);
 
-        int backoff = 1;
-        const int max_backoff = 1000; // Max 1ms
-
-        while (true) {
+        detail::spin_wait([this] {
             int32_t current = header_->count.load(std::memory_order_acquire);
-
             if (current > 0) {
-                // Try to decrement
-                if (header_->count.compare_exchange_weak(
-                        current, current - 1,
-                        std::memory_order_acquire,
-                        std::memory_order_relaxed)) {
-                    // Success!
-                    header_->waiting.fetch_sub(1, std::memory_order_relaxed);
-                    return;
-                }
+                return header_->count.compare_exchange_weak(
+                    current, current - 1,
+                    std::memory_order_acquire,
+                    std::memory_order_relaxed);
             }
+            return false;
+        });
 
-            // Exponential backoff to reduce CPU usage
-            std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-            if (backoff < max_backoff) {
-                backoff *= 2;
-            }
-        }
+        header_->waiting.fetch_sub(1, std::memory_order_relaxed);
     }
 
     /**
@@ -158,38 +144,21 @@ public:
     [[nodiscard]] bool acquire_for(
             const std::chrono::duration<Rep, Period>& timeout) {
 
-        auto start = std::chrono::steady_clock::now();
         header_->waiting.fetch_add(1, std::memory_order_relaxed);
 
-        int backoff = 1;
-        const int max_backoff = 1000;
-
-        while (true) {
+        bool acquired = detail::spin_wait_for([this] {
             int32_t current = header_->count.load(std::memory_order_acquire);
-
             if (current > 0) {
-                if (header_->count.compare_exchange_weak(
-                        current, current - 1,
-                        std::memory_order_acquire,
-                        std::memory_order_relaxed)) {
-                    header_->waiting.fetch_sub(1, std::memory_order_relaxed);
-                    return true;
-                }
+                return header_->count.compare_exchange_weak(
+                    current, current - 1,
+                    std::memory_order_acquire,
+                    std::memory_order_relaxed);
             }
+            return false;
+        }, timeout);
 
-            // Check timeout
-            auto elapsed = std::chrono::steady_clock::now() - start;
-            if (elapsed >= timeout) {
-                header_->waiting.fetch_sub(1, std::memory_order_relaxed);
-                return false;
-            }
-
-            // Backoff
-            std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-            if (backoff < max_backoff) {
-                backoff *= 2;
-            }
-        }
+        header_->waiting.fetch_sub(1, std::memory_order_relaxed);
+        return acquired;
     }
 
     /**

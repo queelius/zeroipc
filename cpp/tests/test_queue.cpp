@@ -4,23 +4,16 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include "test_config.h"
 
 using namespace zeroipc;
+using namespace zeroipc::test;
 
-class QueueTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        // Clean up any leftover shared memory
-        Memory::unlink("/test_queue");
-    }
-    
-    void TearDown() override {
-        Memory::unlink("/test_queue");
-    }
+class QueueTest : public SharedMemoryTestBase {
 };
 
 TEST_F(QueueTest, CreateAndBasicOps) {
-    Memory mem("/test_queue", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Queue<int> queue(mem, "int_queue", 100);
     
     EXPECT_TRUE(queue.empty());
@@ -54,7 +47,7 @@ TEST_F(QueueTest, CreateAndBasicOps) {
 }
 
 TEST_F(QueueTest, FullQueue) {
-    Memory mem("/test_queue", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Queue<int> queue(mem, "small_queue", 3);
 
     // Vyukov-style queue uses all capacity slots (no wasted slot)
@@ -71,7 +64,7 @@ TEST_F(QueueTest, FullQueue) {
 }
 
 TEST_F(QueueTest, CircularWrap) {
-    Memory mem("/test_queue", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Queue<int> queue(mem, "wrap_queue", 5);
     
     // Fill queue
@@ -96,8 +89,8 @@ TEST_F(QueueTest, CircularWrap) {
 }
 
 TEST_F(QueueTest, OpenExisting) {
-    Memory mem("/test_queue", 1024*1024);
-    
+    Memory mem(shm_name_, 1024*1024);
+
     {
         Queue<float> queue1(mem, "float_queue", 50);
         queue1.push(3.14f);
@@ -114,7 +107,7 @@ TEST_F(QueueTest, OpenExisting) {
 }
 
 TEST_F(QueueTest, ConcurrentProducerConsumer) {
-    Memory mem("/test_queue", 10*1024*1024);
+    Memory mem(shm_name_, 10*1024*1024);
     Queue<int> queue(mem, "concurrent_queue", 1000);
     
     const int num_items = 10000;
@@ -153,7 +146,7 @@ TEST_F(QueueTest, ConcurrentProducerConsumer) {
 }
 
 TEST_F(QueueTest, MultipleProducersConsumers) {
-    Memory mem("/test_queue", 10*1024*1024);
+    Memory mem(shm_name_, 10*1024*1024);
     Queue<int> queue(mem, "mpmc_queue", 1000);
     
     const int num_producers = 4;

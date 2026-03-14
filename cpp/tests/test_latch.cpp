@@ -6,21 +6,12 @@
 #include <atomic>
 #include <chrono>
 #include <unistd.h>
+#include "test_config.h"
 
 using namespace zeroipc;
+using namespace zeroipc::test;
 
-class LatchTest : public ::testing::Test {
-protected:
-    std::string shm_name;
-
-    void SetUp() override {
-        shm_name = "/test_latch_" + std::to_string(getpid()) + "_" +
-                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    }
-
-    void TearDown() override {
-        Memory::unlink(shm_name);
-    }
+class LatchTest : public SharedMemoryTestBase {
 };
 
 // ============================================================================
@@ -28,7 +19,7 @@ protected:
 // ============================================================================
 
 TEST_F(LatchTest, CreateLatch) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 5);
 
     EXPECT_EQ(latch.count(), 5);
@@ -38,7 +29,7 @@ TEST_F(LatchTest, CreateLatch) {
 }
 
 TEST_F(LatchTest, CreateLatchWithZero) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "zero", 0);
 
     EXPECT_EQ(latch.count(), 0);
@@ -47,7 +38,7 @@ TEST_F(LatchTest, CreateLatchWithZero) {
 }
 
 TEST_F(LatchTest, OpenExistingLatch) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     // Create latch
     {
@@ -62,7 +53,7 @@ TEST_F(LatchTest, OpenExistingLatch) {
 }
 
 TEST_F(LatchTest, InvalidCount) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     EXPECT_THROW({
         Latch latch(mem, "test", -1);
@@ -70,7 +61,7 @@ TEST_F(LatchTest, InvalidCount) {
 }
 
 TEST_F(LatchTest, NotFound) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     EXPECT_THROW({
         Latch latch(mem, "nonexistent");
@@ -82,7 +73,7 @@ TEST_F(LatchTest, NotFound) {
 // ============================================================================
 
 TEST_F(LatchTest, CountDownByOne) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 3);
 
     EXPECT_EQ(latch.count(), 3);
@@ -98,7 +89,7 @@ TEST_F(LatchTest, CountDownByOne) {
 }
 
 TEST_F(LatchTest, CountDownByN) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 10);
 
     latch.count_down(3);
@@ -112,7 +103,7 @@ TEST_F(LatchTest, CountDownByN) {
 }
 
 TEST_F(LatchTest, CountDownSaturatesAtZero) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 5);
 
     latch.count_down(10);  // Count down more than current
@@ -123,7 +114,7 @@ TEST_F(LatchTest, CountDownSaturatesAtZero) {
 }
 
 TEST_F(LatchTest, CountDownInvalidAmount) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 5);
 
     EXPECT_THROW({
@@ -140,7 +131,7 @@ TEST_F(LatchTest, CountDownInvalidAmount) {
 // ============================================================================
 
 TEST_F(LatchTest, WaitWhenAlreadyZero) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 0);
 
     // Should return immediately
@@ -152,7 +143,7 @@ TEST_F(LatchTest, WaitWhenAlreadyZero) {
 }
 
 TEST_F(LatchTest, TryWait) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 2);
 
     EXPECT_FALSE(latch.try_wait());
@@ -165,7 +156,7 @@ TEST_F(LatchTest, TryWait) {
 }
 
 TEST_F(LatchTest, WaitReleasedByCountDown) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 1);
 
     std::atomic<bool> waiter_done{false};
@@ -189,7 +180,7 @@ TEST_F(LatchTest, WaitReleasedByCountDown) {
 }
 
 TEST_F(LatchTest, WaitForSuccess) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 1);
 
     auto countdown_thread = [&]() {
@@ -207,7 +198,7 @@ TEST_F(LatchTest, WaitForSuccess) {
 }
 
 TEST_F(LatchTest, WaitForTimeout) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 100);  // Never reaches 0
 
     auto start = std::chrono::steady_clock::now();
@@ -223,7 +214,7 @@ TEST_F(LatchTest, WaitForTimeout) {
 // ============================================================================
 
 TEST_F(LatchTest, MultipleThreadsCountDown) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_threads = 10;
     Latch latch(mem, "test", num_threads);
 
@@ -243,7 +234,7 @@ TEST_F(LatchTest, MultipleThreadsCountDown) {
 }
 
 TEST_F(LatchTest, MultipleWaiters) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "test", 3);
 
     std::atomic<int> waiters_released{0};
@@ -278,7 +269,7 @@ TEST_F(LatchTest, MultipleWaiters) {
 // ============================================================================
 
 TEST_F(LatchTest, StartGatePattern) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch start_latch(mem, "start_gate", 1);
 
     std::atomic<int> workers_started{0};
@@ -314,7 +305,7 @@ TEST_F(LatchTest, StartGatePattern) {
 // ============================================================================
 
 TEST_F(LatchTest, CompletionDetectionPattern) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_workers = 8;
     Latch completion_latch(mem, "completion", num_workers);
 
@@ -351,7 +342,7 @@ TEST_F(LatchTest, CompletionDetectionPattern) {
 // ============================================================================
 
 TEST_F(LatchTest, SingleCountLatch) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "single", 1);
 
     EXPECT_EQ(latch.count(), 1);
@@ -364,7 +355,7 @@ TEST_F(LatchTest, SingleCountLatch) {
 }
 
 TEST_F(LatchTest, LargeCount) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "large", 1000000);
 
     latch.count_down(1000000);
@@ -372,7 +363,7 @@ TEST_F(LatchTest, LargeCount) {
 }
 
 TEST_F(LatchTest, OneTimeUse) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "onetime", 2);
 
     latch.count_down(2);
@@ -387,7 +378,7 @@ TEST_F(LatchTest, OneTimeUse) {
 }
 
 TEST_F(LatchTest, ReusableWithReset) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Latch latch(mem, "reusable", 3);
 
     // First use

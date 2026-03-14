@@ -1,9 +1,8 @@
 #pragma once
 
 #include "memory.h"
+#include "detail/hash.h"
 #include <atomic>
-#include <cstring>
-#include <functional>
 
 namespace zeroipc {
 
@@ -46,9 +45,8 @@ public:
         size_t total_size = sizeof(Header) + sizeof(Entry) * capacity;
         size_t offset = memory.allocate(name, total_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize header
         header_->size.store(0, std::memory_order_relaxed);
         header_->capacity = capacity;
@@ -72,9 +70,8 @@ public:
             throw std::runtime_error("Set not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         if (header_->elem_size != sizeof(T)) {
             throw std::runtime_error("Type size mismatch");
         }
@@ -220,25 +217,8 @@ private:
     Header* header_ = nullptr;
     Entry* entries_ = nullptr;
     
-    size_t hash_value(const T& value) const {
-        if constexpr (std::is_integral_v<T>) {
-            // For integers, use a simple multiplicative hash
-            return static_cast<size_t>(value) * 2654435761U;
-        } else {
-            // For other types, hash the bytes
-            std::hash<std::string_view> hasher;
-            std::string_view sv(reinterpret_cast<const char*>(&value), sizeof(T));
-            return hasher(sv);
-        }
-    }
-    
-    bool values_equal(const T& a, const T& b) const {
-        if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
-            return a == b;
-        } else {
-            return std::memcmp(&a, &b, sizeof(T)) == 0;
-        }
-    }
+    size_t hash_value(const T& value) const { return detail::trivial_hash(value); }
+    bool values_equal(const T& a, const T& b) const { return detail::trivial_equal(a, b); }
 };
 
 } // namespace zeroipc

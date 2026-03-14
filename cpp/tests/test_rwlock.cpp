@@ -10,17 +10,7 @@
 
 using namespace zeroipc::test;
 
-class RWLockTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_rwlock_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        shm_unlink(shm_name_.c_str());
-    }
-
-    std::string shm_name_;
+class RWLockTest : public SharedMemoryTestBase {
 };
 
 TEST_F(RWLockTest, BasicReaderLock) {

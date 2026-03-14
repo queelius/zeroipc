@@ -56,8 +56,7 @@ public:
         size_t total_size = sizeof(Header) + sizeof(Node) * capacity;
         size_t offset = memory.allocate(name, total_size);
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header with tagged pointer (generation=0, index=0)
         header_->free_head.store(pack_tagged(0, 0), std::memory_order_relaxed);
@@ -85,8 +84,7 @@ public:
             throw std::runtime_error("Pool not found: " + std::string(name));
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         if (header_->elem_size != sizeof(T)) {
             throw std::runtime_error("Type size mismatch");

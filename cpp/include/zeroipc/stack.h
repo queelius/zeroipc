@@ -38,8 +38,7 @@ public:
                           + sizeof(std::atomic<uint32_t>) * capacity;
         size_t offset = memory.allocate(name, total_size);
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header
         header_->top.store(-1, std::memory_order_relaxed);
@@ -68,8 +67,7 @@ public:
             throw std::runtime_error("Stack not found: " + std::string(name));
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         if (header_->elem_size != sizeof(T)) {
             throw std::runtime_error("Type size mismatch");
@@ -166,11 +164,17 @@ public:
         if (current_top < 0) {
             return std::nullopt;
         }
-        // Wait for the slot to have data
-        while (state_[current_top].load(std::memory_order_acquire) != SLOT_READY) {
+        // Wait for the slot to have data, but bail if top changes
+        for (int spins = 0; spins < 10000; ++spins) {
+            if (state_[current_top].load(std::memory_order_acquire) == SLOT_READY) {
+                return data_[current_top];
+            }
+            if (header_->top.load(std::memory_order_acquire) != current_top) {
+                return std::nullopt;
+            }
             std::this_thread::yield();
         }
-        return data_[current_top];
+        return std::nullopt;
     }
 
     // Check if empty

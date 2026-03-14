@@ -19,7 +19,7 @@ protected:
     
     // Helper to run the CLI tool and capture output
     std::string runCLI(const std::string& args) {
-        std::string cmd = "./zeroipc-inspect " + args + " 2>&1";
+        std::string cmd = "./zeroipc " + args + " 2>&1";
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) return "ERROR";
         

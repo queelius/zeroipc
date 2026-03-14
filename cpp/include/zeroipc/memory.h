@@ -135,12 +135,27 @@ public:
         }
         return static_cast<char*>(memory_) + offset;
     }
-    
+
     const void* at(size_t offset) const {
         if (offset >= size_) {
             throw std::out_of_range("Offset out of bounds");
         }
         return static_cast<const char*>(memory_) + offset;
+    }
+
+    /**
+     * Get typed pointer to memory at specific offset.
+     * Replaces the common pattern:
+     *   reinterpret_cast<T*>(static_cast<char*>(memory.base()) + offset)
+     */
+    template<typename T>
+    T* ptr_at(size_t offset) {
+        return reinterpret_cast<T*>(static_cast<char*>(memory_) + offset);
+    }
+
+    template<typename T>
+    const T* ptr_at(size_t offset) const {
+        return reinterpret_cast<const T*>(static_cast<const char*>(memory_) + offset);
     }
     
     /**

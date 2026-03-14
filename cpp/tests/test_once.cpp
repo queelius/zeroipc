@@ -10,17 +10,7 @@
 
 using namespace zeroipc::test;
 
-class OnceTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_once_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        shm_unlink(shm_name_.c_str());
-    }
-
-    std::string shm_name_;
+class OnceTest : public SharedMemoryTestBase {
 };
 
 TEST_F(OnceTest, BasicCallOnce) {

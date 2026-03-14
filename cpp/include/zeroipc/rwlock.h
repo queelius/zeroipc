@@ -90,18 +90,14 @@ public:
             if (!state_entry) {
                 throw std::runtime_error("RWLock state not found");
             }
-            state_ = reinterpret_cast<RWLockState*>(
-                static_cast<char*>(mem.data()) + state_entry->offset
-            );
+            state_ = mem.ptr_at<RWLockState>(state_entry->offset);
 
             reader_mutex_ = std::make_unique<Mutex>(mem, reader_mtx_name);
             writer_mutex_ = std::make_unique<Mutex>(mem, writer_mtx_name);
         } else {
             // Create new
             size_t state_offset = mem.allocate(state_name, sizeof(RWLockState));
-            state_ = reinterpret_cast<RWLockState*>(
-                static_cast<char*>(mem.data()) + state_offset
-            );
+            state_ = mem.ptr_at<RWLockState>(state_offset);
             new (state_) RWLockState();
 
             reader_mutex_ = std::make_unique<Mutex>(mem, reader_mtx_name);

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "memory.h"
+#include "detail/spin_wait.h"
 #include <atomic>
 #include <chrono>
-#include <thread>
 #include <stdexcept>
 
 namespace zeroipc {
@@ -62,8 +62,7 @@ public:
 
         size_t offset = memory.allocate(name, sizeof(Header));
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header
         header_->count.store(count, std::memory_order_relaxed);
@@ -90,8 +89,7 @@ public:
             throw std::runtime_error("Invalid latch size");
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
     }
 
     /**
@@ -131,16 +129,9 @@ public:
      * Uses spin-waiting with exponential backoff to reduce CPU usage.
      */
     void wait() {
-        int backoff = 1;
-        const int max_backoff = 1000; // Max 1ms
-
-        while (header_->count.load(std::memory_order_acquire) > 0) {
-            // Spin-wait with exponential backoff
-            std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-            if (backoff < max_backoff) {
-                backoff *= 2;
-            }
-        }
+        detail::spin_wait([this] {
+            return header_->count.load(std::memory_order_acquire) <= 0;
+        });
     }
 
     /**
@@ -162,25 +153,9 @@ public:
     [[nodiscard]] bool wait_for(
             const std::chrono::duration<Rep, Period>& timeout) {
 
-        auto start = std::chrono::steady_clock::now();
-        int backoff = 1;
-        const int max_backoff = 1000;
-
-        while (header_->count.load(std::memory_order_acquire) > 0) {
-            // Check timeout
-            auto elapsed = std::chrono::steady_clock::now() - start;
-            if (elapsed >= timeout) {
-                return false;
-            }
-
-            // Backoff
-            std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-            if (backoff < max_backoff) {
-                backoff *= 2;
-            }
-        }
-
-        return true;
+        return detail::spin_wait_for([this] {
+            return header_->count.load(std::memory_order_acquire) <= 0;
+        }, timeout);
     }
 
     /**

@@ -36,8 +36,7 @@ public:
         size_t total_size = sizeof(Header) + sizeof(T) * capacity + seq_array_size;
         size_t offset = memory.allocate(name, total_size);
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header
         header_->head.store(0, std::memory_order_relaxed);
@@ -67,8 +66,7 @@ public:
             throw std::runtime_error("Queue not found: " + std::string(name));
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         if (header_->elem_size != sizeof(T)) {
             throw std::runtime_error("Type size mismatch");
@@ -165,7 +163,8 @@ public:
     size_t size() const {
         uint32_t head = header_->head.load(std::memory_order_acquire);
         uint32_t tail = header_->tail.load(std::memory_order_acquire);
-        return tail >= head ? tail - head : 0;
+        // uint32_t subtraction handles wraparound correctly
+        return static_cast<size_t>(tail - head);
     }
 
     size_t capacity() const { return header_->capacity; }

@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include "memory.h"
 #include "semaphore.h"
+#include "detail/spin_wait.h"
 
 namespace zeroipc {
 
@@ -75,9 +76,7 @@ public:
 
         if (entry) {
             // Open existing
-            state_ = reinterpret_cast<EventState*>(
-                static_cast<char*>(mem.data()) + entry->offset
-            );
+            state_ = mem.ptr_at<EventState>(entry->offset);
 
             // Find the semaphore
             std::string sem_name = std::string(name) + "_sem";
@@ -87,9 +86,7 @@ public:
             size_t total_size = sizeof(EventState);
             size_t offset = mem.allocate(name, total_size);
 
-            state_ = reinterpret_cast<EventState*>(
-                static_cast<char*>(mem.data()) + offset
-            );
+            state_ = mem.ptr_at<EventState>(offset);
 
             // Initialize state
             new (state_) EventState(mode);
@@ -126,10 +123,12 @@ public:
      */
     void wait() {
         if (state_->mode == static_cast<uint32_t>(EventMode::ManualReset)) {
-            // ManualReset: check signaled flag
-            while (state_->signaled.load(std::memory_order_acquire) == 0) {
-                std::this_thread::yield();
-            }
+            // ManualReset: register as waiter, spin until signaled, unregister
+            state_->waiting.fetch_add(1, std::memory_order_relaxed);
+            detail::spin_wait([this] {
+                return state_->signaled.load(std::memory_order_acquire) != 0;
+            });
+            state_->waiting.fetch_sub(1, std::memory_order_release);
         } else {
             // AutoReset: acquire the semaphore, then clear signaled flag
             sem_->acquire();
@@ -145,15 +144,13 @@ public:
     template<typename Rep, typename Period>
     [[nodiscard]] bool wait_for(const std::chrono::duration<Rep, Period>& timeout) {
         if (state_->mode == static_cast<uint32_t>(EventMode::ManualReset)) {
-            // ManualReset: poll the signaled flag with timeout
-            auto deadline = std::chrono::steady_clock::now() + timeout;
-            while (std::chrono::steady_clock::now() < deadline) {
-                if (state_->signaled.load(std::memory_order_acquire) == 1) {
-                    return true;
-                }
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
-            }
-            return false;
+            // ManualReset: register as waiter, spin with timeout, unregister
+            state_->waiting.fetch_add(1, std::memory_order_relaxed);
+            bool signaled = detail::spin_wait_for([this] {
+                return state_->signaled.load(std::memory_order_acquire) != 0;
+            }, timeout);
+            state_->waiting.fetch_sub(1, std::memory_order_release);
+            return signaled;
         } else {
             // AutoReset: use semaphore's timed acquire, then clear flag
             if (sem_->acquire_for(timeout)) {
@@ -175,14 +172,17 @@ public:
     }
 
     /**
-     * @brief Pulse the event (signal + reset atomically)
+     * @brief Pulse the event (signal then reset after all waiters wake)
      *
-     * Wakes all waiting threads then immediately resets. Useful for
-     * one-shot broadcasts.
+     * Wakes all waiting threads then resets once they've all seen the signal.
+     * Only meaningful for ManualReset events.
      */
     void pulse() {
         signal();
-        std::this_thread::sleep_for(std::chrono::microseconds(100));  // Let waiters wake
+        // Wait for all registered waiters to see the signal and unregister
+        detail::spin_wait([this] {
+            return state_->waiting.load(std::memory_order_acquire) == 0;
+        });
         reset();
     }
 

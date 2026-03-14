@@ -1,10 +1,9 @@
 #pragma once
 
 #include "memory.h"
+#include "detail/hash.h"
 #include <atomic>
-#include <cstring>
 #include <optional>
-#include <functional>
 
 namespace zeroipc {
 
@@ -13,8 +12,10 @@ class Map {
 public:
     static_assert(std::is_trivially_copyable_v<K>, 
                   "Key type must be trivially copyable for shared memory");
-    static_assert(std::is_trivially_copyable_v<V>, 
+    static_assert(std::is_trivially_copyable_v<V>,
                   "Value type must be trivially copyable for shared memory");
+    static_assert(sizeof(V) <= 8,
+                  "Value type must be <= 8 bytes for lock-free atomic updates");
     
     struct Entry {
         std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted, 3=inserting
@@ -51,9 +52,8 @@ public:
         size_t total_size = sizeof(Header) + sizeof(Entry) * capacity;
         size_t offset = memory.allocate(name, total_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize header
         header_->size.store(0, std::memory_order_relaxed);
         header_->capacity = capacity;
@@ -78,9 +78,8 @@ public:
             throw std::runtime_error("Map not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         if (header_->key_size != sizeof(K) || header_->value_size != sizeof(V)) {
             throw std::runtime_error("Type size mismatch");
         }
@@ -237,25 +236,8 @@ private:
     Header* header_ = nullptr;
     Entry* entries_ = nullptr;
     
-    size_t hash_key(const K& key) const {
-        if constexpr (std::is_integral_v<K>) {
-            // For integers, use a simple multiplicative hash
-            return static_cast<size_t>(key) * 2654435761U;
-        } else {
-            // For other types, hash the bytes
-            std::hash<std::string_view> hasher;
-            std::string_view sv(reinterpret_cast<const char*>(&key), sizeof(K));
-            return hasher(sv);
-        }
-    }
-    
-    bool keys_equal(const K& a, const K& b) const {
-        if constexpr (std::is_integral_v<K> || std::is_floating_point_v<K>) {
-            return a == b;
-        } else {
-            return std::memcmp(&a, &b, sizeof(K)) == 0;
-        }
-    }
+    size_t hash_key(const K& key) const { return detail::trivial_hash(key); }
+    bool keys_equal(const K& a, const K& b) const { return detail::trivial_equal(a, b); }
 };
 
 } // namespace zeroipc

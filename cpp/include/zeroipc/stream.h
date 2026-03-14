@@ -101,9 +101,8 @@ public:
         std::string header_name = std::string(name) + "_header";
         size_t offset = memory.allocate(header_name, header_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize header
         header_->sequence.store(0, std::memory_order_relaxed);
         header_->subscribers.store(0, std::memory_order_relaxed);
@@ -127,9 +126,8 @@ public:
             throw std::runtime_error("Stream not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Open ring buffer
         std::string buffer_name = std::string(name) + "_buffer";
         buffer_ = std::make_unique<Ring<T>>(memory, buffer_name);
@@ -365,9 +363,8 @@ public:
         : memory_(memory), name_(name) {
         
         size_t offset = memory.allocate(name, sizeof(Header));
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         header_->event_count.store(0, std::memory_order_relaxed);
         header_->closed.store(false, std::memory_order_relaxed);
     }

@@ -67,16 +67,12 @@ public:
 
         if (entry) {
             // Open existing
-            flag_ = reinterpret_cast<OnceFlag*>(
-                static_cast<char*>(mem.data()) + entry->offset
-            );
+            flag_ = mem.ptr_at<OnceFlag>(entry->offset);
         } else {
             // Create new
             size_t offset = mem.allocate(name, sizeof(OnceFlag));
 
-            flag_ = reinterpret_cast<OnceFlag*>(
-                static_cast<char*>(mem.data()) + offset
-            );
+            flag_ = mem.ptr_at<OnceFlag>(offset);
 
             // Initialize to PENDING state
             new (flag_) OnceFlag();

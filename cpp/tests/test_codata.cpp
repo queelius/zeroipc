@@ -7,26 +7,14 @@
 #include <thread>
 #include <chrono>
 #include <vector>
+#include "test_config.h"
 
 using namespace zeroipc;
 using namespace std::chrono_literals;
+using namespace zeroipc::test;
 
-class CodataTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_codata_" + std::to_string(getpid()) + "_" + 
-                    std::to_string(test_counter_++);
-    }
-    
-    void TearDown() override {
-        Memory::unlink(shm_name_);
-    }
-    
-    std::string shm_name_;
-    static int test_counter_;
+class CodataTest : public SharedMemoryTestBase {
 };
-
-int CodataTest::test_counter_ = 0;
 
 // Future Tests
 TEST_F(CodataTest, FutureBasicOperations) {

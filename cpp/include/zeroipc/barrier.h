@@ -1,9 +1,9 @@
 #pragma once
 
 #include "memory.h"
+#include "detail/spin_wait.h"
 #include <atomic>
 #include <chrono>
-#include <thread>
 #include <stdexcept>
 
 namespace zeroipc {
@@ -58,8 +58,7 @@ public:
 
         size_t offset = memory.allocate(name, sizeof(Header));
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
 
         // Initialize header
         header_->arrived.store(0, std::memory_order_relaxed);
@@ -86,8 +85,7 @@ public:
             throw std::runtime_error("Invalid barrier size");
         }
 
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
     }
 
     /**
@@ -115,16 +113,9 @@ public:
             header_->generation.fetch_add(1, std::memory_order_release);
         } else {
             // Not last - wait for generation to change
-            int backoff = 1;
-            const int max_backoff = 1000; // Max 1ms
-
-            while (header_->generation.load(std::memory_order_acquire) == my_generation) {
-                // Spin-wait with exponential backoff
-                std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-                if (backoff < max_backoff) {
-                    backoff *= 2;
-                }
-            }
+            detail::spin_wait([this, my_generation] {
+                return header_->generation.load(std::memory_order_acquire) != my_generation;
+            });
         }
     }
 
@@ -156,25 +147,17 @@ public:
             return true;
         } else {
             // Not last - wait for generation to change or timeout
-            int backoff = 1;
-            const int max_backoff = 1000;
+            auto remaining = timeout - (std::chrono::steady_clock::now() - start);
+            bool released = detail::spin_wait_for([this, my_generation] {
+                return header_->generation.load(std::memory_order_acquire) != my_generation;
+            }, remaining);
 
-            while (header_->generation.load(std::memory_order_acquire) == my_generation) {
-                // Check timeout
-                auto elapsed = std::chrono::steady_clock::now() - start;
-                if (elapsed >= timeout) {
-                    // Timeout - decrement arrived count
-                    // WARNING: This creates a race if the last participant arrives
-                    // during this window. Use with caution.
-                    header_->arrived.fetch_sub(1, std::memory_order_acq_rel);
-                    return false;
-                }
-
-                // Backoff
-                std::this_thread::sleep_for(std::chrono::microseconds(backoff));
-                if (backoff < max_backoff) {
-                    backoff *= 2;
-                }
+            if (!released) {
+                // Timeout - decrement arrived count
+                // WARNING: This creates a race if the last participant arrives
+                // during this window. Use with caution.
+                header_->arrived.fetch_sub(1, std::memory_order_acq_rel);
+                return false;
             }
 
             return true;

@@ -10,17 +10,7 @@
 
 using namespace zeroipc::test;
 
-class MonitorTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_monitor_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        shm_unlink(shm_name_.c_str());
-    }
-
-    std::string shm_name_;
+class MonitorTest : public SharedMemoryTestBase {
 };
 
 TEST_F(MonitorTest, BasicNotify) {

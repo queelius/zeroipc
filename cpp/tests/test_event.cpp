@@ -10,17 +10,7 @@
 
 using namespace zeroipc::test;
 
-class EventTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_event_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        shm_unlink(shm_name_.c_str());
-    }
-
-    std::string shm_name_;
+class EventTest : public SharedMemoryTestBase {
 };
 
 TEST_F(EventTest, AutoResetBasic) {

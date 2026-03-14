@@ -37,13 +37,15 @@ struct TableHeader {
     uint32_t magic;         // 0x5A49504D ('ZIPM')
     uint32_t version;       // Format version (currently 1)
     uint32_t entry_count;   // Number of active entries
-    uint32_t next_offset;   // Next allocation offset
+    uint32_t reserved;      // Padding/reserved
+    uint64_t memory_size;   // Total memory size
+    uint64_t next_offset;   // Next allocation offset
 };
 
 struct TableEntry {
     char name[32];
-    uint32_t offset;
-    uint32_t size;
+    uint64_t offset;
+    uint64_t size;
 };
 
 // Structure headers for detection

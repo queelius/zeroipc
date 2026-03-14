@@ -11,18 +11,7 @@
 using namespace zeroipc;
 using namespace zeroipc::test;
 
-class BarrierTest : public ::testing::Test {
-protected:
-    std::string shm_name;
-
-    void SetUp() override {
-        shm_name = "/test_barrier_" + std::to_string(getpid()) + "_" +
-                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    }
-
-    void TearDown() override {
-        Memory::unlink(shm_name);
-    }
+class BarrierTest : public SharedMemoryTestBase {
 };
 
 // ============================================================================
@@ -30,7 +19,7 @@ protected:
 // ============================================================================
 
 TEST_F(BarrierTest, CreateBarrier) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "test", 4);
 
     EXPECT_EQ(barrier.num_participants(), 4);
@@ -40,7 +29,7 @@ TEST_F(BarrierTest, CreateBarrier) {
 }
 
 TEST_F(BarrierTest, OpenExistingBarrier) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     // Create barrier
     {
@@ -55,7 +44,7 @@ TEST_F(BarrierTest, OpenExistingBarrier) {
 }
 
 TEST_F(BarrierTest, InvalidNumParticipants) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     EXPECT_THROW({
         Barrier barrier(mem, "test", 0);
@@ -67,7 +56,7 @@ TEST_F(BarrierTest, InvalidNumParticipants) {
 }
 
 TEST_F(BarrierTest, NotFound) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
 
     EXPECT_THROW({
         Barrier barrier(mem, "nonexistent");
@@ -79,7 +68,7 @@ TEST_F(BarrierTest, NotFound) {
 // ============================================================================
 
 TEST_F(BarrierTest, TwoThreadBarrier) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "sync", 2);
 
     std::atomic<int> phase{0};
@@ -109,7 +98,7 @@ TEST_F(BarrierTest, TwoThreadBarrier) {
 }
 
 TEST_F(BarrierTest, MultipleThreadsBarrier) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_threads = 8;
     Barrier barrier(mem, "sync", num_threads);
 
@@ -144,7 +133,7 @@ TEST_F(BarrierTest, MultipleThreadsBarrier) {
 }
 
 TEST_F(BarrierTest, BarrierReusability) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_threads = 4;
     const int num_iterations = 10;
     Barrier barrier(mem, "reusable", num_threads);
@@ -177,7 +166,7 @@ TEST_F(BarrierTest, BarrierReusability) {
 }
 
 TEST_F(BarrierTest, GenerationCounter) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "gen_test", 3);
 
     EXPECT_EQ(barrier.generation(), 0);
@@ -203,7 +192,7 @@ TEST_F(BarrierTest, GenerationCounter) {
 }
 
 TEST_F(BarrierTest, ArrivedCounter) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "arrived_test", 3);
 
     EXPECT_EQ(barrier.arrived(), 0);
@@ -250,7 +239,7 @@ TEST_F(BarrierTest, ArrivedCounter) {
 // ============================================================================
 
 TEST_F(BarrierTest, WaitForSuccess) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "timeout_test", 2);
 
     auto worker = [&]() {
@@ -268,7 +257,7 @@ TEST_F(BarrierTest, WaitForSuccess) {
 }
 
 TEST_F(BarrierTest, WaitForTimeout) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "timeout_test", 3);  // Need 3, but only 1 arrives
 
     auto start = std::chrono::steady_clock::now();
@@ -280,7 +269,7 @@ TEST_F(BarrierTest, WaitForTimeout) {
 }
 
 TEST_F(BarrierTest, WaitForWithMultipleThreads) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "timeout_multi", 4);
 
     std::atomic<int> success_count{0};
@@ -317,7 +306,7 @@ TEST_F(BarrierTest, WaitForWithMultipleThreads) {
 // ============================================================================
 
 TEST_F(BarrierTest, ParallelPhaseBasedAlgorithm) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_workers = 4;
     const int array_size = 100;
     Barrier barrier(mem, "phase_sync", num_workers);
@@ -374,7 +363,7 @@ TEST_F(BarrierTest, ParallelPhaseBasedAlgorithm) {
 // ============================================================================
 
 TEST_F(BarrierTest, StressTestManyIterations) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_threads = 8;
     const int iterations = 100;
     Barrier barrier(mem, "stress", num_threads);
@@ -406,7 +395,7 @@ TEST_F(BarrierTest, StressTestManyIterations) {
 // ============================================================================
 
 TEST_F(BarrierTest, SingleParticipant) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Barrier barrier(mem, "single", 1);
 
     // Should pass through immediately
@@ -418,7 +407,7 @@ TEST_F(BarrierTest, SingleParticipant) {
 }
 
 TEST_F(BarrierTest, LargeNumberOfParticipants) {
-    Memory mem(shm_name, 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     const int num_threads = 50;
     Barrier barrier(mem, "large", num_threads);
 

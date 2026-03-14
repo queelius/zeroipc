@@ -108,9 +108,8 @@ public:
         std::string header_name = std::string(name) + "_header";
         size_t offset = memory.allocate(header_name, header_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize header
         header_->capacity.store(capacity, std::memory_order_relaxed);
         header_->senders.store(0, std::memory_order_relaxed);
@@ -129,9 +128,8 @@ public:
             std::string slot_name = std::string(name) + "_slot";
             size_t slot_offset = memory.allocate(slot_name, slot_size);
             
-            slot_ = reinterpret_cast<RendezvousSlot*>(
-                static_cast<char*>(memory.base()) + slot_offset);
-            
+            slot_ = memory.ptr_at<RendezvousSlot>(slot_offset);
+
             slot_->ready.store(false, std::memory_order_relaxed);
             slot_->consumed.store(false, std::memory_order_relaxed);
         }
@@ -149,9 +147,8 @@ public:
             throw std::runtime_error("Channel not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         capacity_ = header_->capacity.load(std::memory_order_relaxed);
         
         if (capacity_ > 0) {
@@ -163,8 +160,7 @@ public:
             if (!memory.find(slot_name, offset, size)) {
                 throw std::runtime_error("Channel slot not found");
             }
-            slot_ = reinterpret_cast<RendezvousSlot*>(
-                static_cast<char*>(memory.base()) + offset);
+            slot_ = memory.ptr_at<RendezvousSlot>(offset);
         }
     }
     

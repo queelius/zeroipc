@@ -77,9 +77,8 @@ public:
         size_t total_size = sizeof(Header);
         size_t offset = memory.allocate(name, total_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize header
         header_->state.store(PENDING, std::memory_order_relaxed);
         header_->waiters.store(0, std::memory_order_relaxed);
@@ -96,10 +95,9 @@ public:
             throw std::runtime_error("Future not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
     }
-    
+
     // Set the value (can only be called once)
     [[nodiscard]] bool set_value(const T& value) {
         State expected = PENDING;

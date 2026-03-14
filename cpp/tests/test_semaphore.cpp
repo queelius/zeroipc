@@ -11,17 +11,7 @@ using namespace zeroipc;
 using namespace std::chrono_literals;
 using namespace zeroipc::test;
 
-class SemaphoreTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        shm_name_ = "/test_semaphore_" + std::to_string(getpid());
-    }
-
-    void TearDown() override {
-        Memory::unlink(shm_name_);
-    }
-
-    std::string shm_name_;
+class SemaphoreTest : public SharedMemoryTestBase {
 };
 
 // Basic tests

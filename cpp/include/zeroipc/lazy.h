@@ -107,9 +107,8 @@ public:
         size_t total_size = sizeof(Header);
         size_t offset = memory.allocate(name, total_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         // Initialize as constant
         header_->state.store(COMPUTED, std::memory_order_relaxed);
         header_->computation.type = ComputationOp::CONSTANT;
@@ -126,9 +125,8 @@ public:
         size_t total_size = sizeof(Header);
         size_t offset = memory.allocate(name, total_size);
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         header_->state.store(NOT_COMPUTED, std::memory_order_relaxed);
         header_->computation.type = op;
         header_->compute_count.store(0, std::memory_order_relaxed);
@@ -144,10 +142,9 @@ public:
             throw std::runtime_error("Lazy not found: " + std::string(name));
         }
         
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
+        header_ = memory.ptr_at<Header>(offset);
     }
-    
+
     // Force evaluation
     [[nodiscard]] T force() {
         ComputeState expected = NOT_COMPUTED;
@@ -324,9 +321,8 @@ public:
         : memory_(memory), name_(name) {
         
         size_t offset = memory.allocate(name, sizeof(Header));
-        header_ = reinterpret_cast<Header*>(
-            static_cast<char*>(memory.base()) + offset);
-        
+        header_ = memory.ptr_at<Header>(offset);
+
         header_->state.store(COMPUTED, std::memory_order_relaxed);
         header_->operation.type = LogicalOp::CONSTANT;
         header_->operation.data.value = value;

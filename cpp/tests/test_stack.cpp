@@ -3,22 +3,16 @@
 #include <zeroipc/stack.h>
 #include <thread>
 #include <vector>
+#include "test_config.h"
 
 using namespace zeroipc;
+using namespace zeroipc::test;
 
-class StackTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        Memory::unlink("/test_stack");
-    }
-    
-    void TearDown() override {
-        Memory::unlink("/test_stack");
-    }
+class StackTest : public SharedMemoryTestBase {
 };
 
 TEST_F(StackTest, CreateAndBasicOps) {
-    Memory mem("/test_stack", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Stack<int> stack(mem, "int_stack", 100);
     
     EXPECT_TRUE(stack.empty());
@@ -58,7 +52,7 @@ TEST_F(StackTest, CreateAndBasicOps) {
 }
 
 TEST_F(StackTest, FullStack) {
-    Memory mem("/test_stack", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Stack<int> stack(mem, "small_stack", 3);
     
     EXPECT_TRUE(stack.push(1));
@@ -74,7 +68,7 @@ TEST_F(StackTest, FullStack) {
 }
 
 TEST_F(StackTest, OpenExisting) {
-    Memory mem("/test_stack", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     
     {
         Stack<double> stack1(mem, "double_stack", 50);
@@ -97,7 +91,7 @@ TEST_F(StackTest, StructType) {
         float x, y, z;
     };
     
-    Memory mem("/test_stack", 1024*1024);
+    Memory mem(shm_name_, 1024*1024);
     Stack<Point> stack(mem, "point_stack", 10);
     
     Point p1{1.0f, 2.0f, 3.0f};
@@ -114,7 +108,7 @@ TEST_F(StackTest, StructType) {
 }
 
 TEST_F(StackTest, ConcurrentPushPop) {
-    Memory mem("/test_stack", 10*1024*1024);
+    Memory mem(shm_name_, 10*1024*1024);
     Stack<int> stack(mem, "concurrent_stack", 10000);
     
     const int num_threads = 4;

@@ -6,7 +6,6 @@ with lock-free operations using linear probing and atomic state management.
 """
 
 import struct
-import hashlib
 from typing import Optional, TypeVar, Generic, Any, Union
 import numpy as np
 
@@ -31,6 +30,15 @@ class Map(Generic[K, V]):
     OCCUPIED = 1
     DELETED = 2
     INSERTING = 3
+
+    # Numpy dtype → struct format char (class-level constant)
+    _DTYPE_FORMAT = {
+        np.dtype('int8'): 'b', np.dtype('uint8'): 'B',
+        np.dtype('int16'): 'h', np.dtype('uint16'): 'H',
+        np.dtype('int32'): 'i', np.dtype('uint32'): 'I',
+        np.dtype('int64'): 'q', np.dtype('uint64'): 'Q',
+        np.dtype('float32'): 'f', np.dtype('float64'): 'd',
+    }
 
     def __init__(self, memory: Memory, name: str,
                  capacity: Optional[int] = None,
@@ -137,21 +145,25 @@ class Map(Generic[K, V]):
         Returns:
             Hash value as integer
         """
-        # Convert key to bytes for hashing
+        # Multiplicative hash (matches C++ implementation's approach)
         if isinstance(key, (int, float, np.number)):
-            key_bytes = np.array([key], dtype=self.key_dtype).tobytes()
+            # Normalize to target dtype, then hash the raw bytes
+            val = np.array([key], dtype=self.key_dtype).view(np.uint8)
+            h = 0
+            for b in val:
+                h = h * 31 + int(b)
+            return (h * 2654435761) & 0xFFFFFFFFFFFFFFFF
         elif isinstance(key, str):
             key_bytes = key.encode('utf-8')
         elif isinstance(key, bytes):
             key_bytes = key
         else:
-            # Try to convert to numpy array and get bytes
             key_bytes = np.array([key], dtype=self.key_dtype).tobytes()
 
-        # Use SHA-256 hash for good distribution
-        hash_obj = hashlib.sha256(key_bytes)
-        # Take first 8 bytes and convert to int
-        return int.from_bytes(hash_obj.digest()[:8], 'little')
+        h = 0
+        for b in key_bytes:
+            h = h * 31 + b
+        return (h * 2654435761) & 0xFFFFFFFFFFFFFFFF
 
     def _keys_equal(self, key1: K, key2: K) -> bool:
         """
@@ -187,20 +199,7 @@ class Map(Generic[K, V]):
 
     def _get_struct_format(self, dtype):
         """Get proper struct format for numpy dtype."""
-        # Map numpy dtypes to struct format codes
-        format_map = {
-            np.dtype('int8'): 'b',
-            np.dtype('uint8'): 'B',
-            np.dtype('int16'): 'h',
-            np.dtype('uint16'): 'H',
-            np.dtype('int32'): 'i',
-            np.dtype('uint32'): 'I',
-            np.dtype('int64'): 'q',
-            np.dtype('uint64'): 'Q',
-            np.dtype('float32'): 'f',
-            np.dtype('float64'): 'd',
-        }
-        return format_map.get(dtype, dtype.char)
+        return self._DTYPE_FORMAT.get(dtype, dtype.char)
 
     def _read_entry_state(self, index: int) -> int:
         """Read entry state at given index."""

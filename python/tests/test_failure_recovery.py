@@ -112,7 +112,7 @@ class TestFailureRecovery:
             """Calculate simple checksum."""
             checksum = sequence
             for byte in data:
-                checksum = ((checksum << 1) ^ byte) & 0xFFFFFFFF
+                checksum = ((checksum << 1) ^ int(byte)) & 0xFFFFFFFF
             return checksum
         
         queue = Queue(mem, "checksum_queue", capacity=100, dtype=dtype)

@@ -84,7 +84,6 @@ class Lazy:
         self.dtype = np.dtype(dtype)
         self.value_size = self.dtype.itemsize
         self.computation = computation
-        self._compute_fn = computation  # Private storage
 
         # Try to find existing lazy
         entry = memory.table.find(name)
@@ -193,7 +192,6 @@ class Lazy:
         must provide its own computation function.
         """
         self.computation = computation
-        self.compute_fn = computation  # Keep alias in sync
 
     def init(self, computation: Callable[[], T]):
         """
@@ -236,13 +234,7 @@ class Lazy:
                         if self.computation is None:
                             raise RuntimeError("No computation function provided")
 
-                        # Use compute_fn if set, otherwise use computation
-                        compute_func = getattr(self, 'compute_fn', None) or self.computation
-                        if compute_func is None:
-                            raise RuntimeError("No computation function provided")
-
-                        # Perform the computation
-                        result = compute_func()
+                        result = self.computation()
 
                         # Store the result
                         self._write_value(result)
@@ -346,7 +338,7 @@ class Lazy:
             try:
                 value = self._read_value()
                 return f"Lazy(name='{self.name}', state={state.name}, value={value}, dtype={self.dtype})"
-            except:
+            except Exception:
                 return f"Lazy(name='{self.name}', state={state.name}, dtype={self.dtype})"
         else:
             return f"Lazy(name='{self.name}', state={state.name}, dtype={self.dtype})"

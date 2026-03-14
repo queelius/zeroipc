@@ -10,9 +10,15 @@ from .memory import Memory
 
 T = TypeVar('T')
 
-# Format for a single ready flag (uint32_t, matching C++ std::atomic<uint32_t>)
-_READY_FORMAT = 'I'
-_READY_SIZE = struct.calcsize(_READY_FORMAT)
+# Per-slot state values matching C++/Go/C
+_SLOT_EMPTY   = 0
+_SLOT_WRITING = 1
+_SLOT_READY   = 2
+_SLOT_READING = 3
+
+# Per-slot state format (uint32_t, matching C++ std::atomic<uint32_t>)
+_STATE_FORMAT = 'I'
+_STATE_SIZE = struct.calcsize(_STATE_FORMAT)
 
 
 class Stack(Generic[T]):
@@ -60,7 +66,7 @@ class Stack(Generic[T]):
             # Layout: [Header][data: T * capacity][ready: uint32 * capacity]
             total_size = (self.HEADER_SIZE
                           + self.elem_size * capacity
-                          + _READY_SIZE * capacity)
+                          + _STATE_SIZE * capacity)
 
             # Allocate in shared memory
             self.offset = memory.allocate(name, total_size)
@@ -75,8 +81,8 @@ class Stack(Generic[T]):
             # Initialize all ready flags to 0
             ready_base = self.offset + self.HEADER_SIZE + self.elem_size * capacity
             for i in range(capacity):
-                off = ready_base + i * _READY_SIZE
-                struct.pack_into(_READY_FORMAT, memory.data, off, 0)
+                off = ready_base + i * _STATE_SIZE
+                struct.pack_into(_STATE_FORMAT, memory.data, off, 0)
 
         else:
             # Open existing stack
@@ -126,16 +132,19 @@ class Stack(Generic[T]):
 
     def _read_ready(self, index: int) -> int:
         """Read the ready flag for a slot."""
-        off = self._ready_base + index * _READY_SIZE
-        return struct.unpack_from(_READY_FORMAT, self.memory.data, off)[0]
+        off = self._ready_base + index * _STATE_SIZE
+        return struct.unpack_from(_STATE_FORMAT, self.memory.data, off)[0]
 
     def _write_ready(self, index: int, value: int):
         """Write the ready flag for a slot."""
-        off = self._ready_base + index * _READY_SIZE
-        struct.pack_into(_READY_FORMAT, self.memory.data, off, value)
+        off = self._ready_base + index * _STATE_SIZE
+        struct.pack_into(_STATE_FORMAT, self.memory.data, off, value)
 
     def push(self, value: T) -> bool:
         """Push value onto stack.
+
+        Uses full 4-state protocol matching C++/Go/C:
+        EMPTY(0) -> WRITING(1) -> READY(2)
 
         Returns:
             True if successful, False if stack is full
@@ -147,19 +156,27 @@ class Stack(Generic[T]):
             if top >= capacity - 1:
                 return False
 
-            # Step 1: Advance top
+            # Step 1: Advance top to reserve slot
             new_top = top + 1
             self._write_header(new_top, capacity, elem_size)
 
-            # Step 2: Write data
+            # Step 2: Transition EMPTY -> WRITING (wait for slot to be EMPTY)
+            while self._read_ready(new_top) != _SLOT_EMPTY:
+                time.sleep(0)  # yield
+            self._write_ready(new_top, _SLOT_WRITING)
+
+            # Step 3: Write data
             self.data[new_top] = value
 
-            # Step 3: Signal slot is ready
-            self._write_ready(new_top, 1)
+            # Step 4: Transition WRITING -> READY
+            self._write_ready(new_top, _SLOT_READY)
             return True
 
     def pop(self) -> Optional[T]:
         """Pop value from stack.
+
+        Uses full 4-state protocol matching C++/Go/C:
+        READY(2) -> READING(3) -> EMPTY(0)
 
         Returns:
             Value if available, None if stack is empty
@@ -171,34 +188,45 @@ class Stack(Generic[T]):
             if top < 0:
                 return None
 
-            # Step 1: Decrement top
+            # Step 1: Decrement top to reserve slot
             self._write_header(top - 1, capacity, elem_size)
 
-            # Step 2: Wait for slot data to be ready (cross-process safety)
-            while self._read_ready(top) != 1:
+            # Step 2: Transition READY -> READING (wait for data to be ready)
+            while self._read_ready(top) != _SLOT_READY:
                 time.sleep(0)  # yield
+            self._write_ready(top, _SLOT_READING)
 
             # Step 3: Read value
-            value = self.data[top].copy()  # Copy to avoid reference issues
+            value = self.data[top].copy()
 
-            # Step 4: Clear ready flag for slot reuse
-            self._write_ready(top, 0)
+            # Step 4: Transition READING -> EMPTY
+            self._write_ready(top, _SLOT_EMPTY)
 
             return value
+
+    _PEEK_MAX_SPINS = 10000
 
     def top(self) -> Optional[T]:
         """Peek at top value without removing it.
 
         Returns:
-            Value if available, None if stack is empty
+            Value if available, None if stack is empty or top changed during peek
         """
         top_idx, _, _ = self._read_header()
 
         if top_idx < 0:
             return None
 
-        # Wait for slot data to be ready (cross-process safety)
-        while self._read_ready(top_idx) != 1:
+        # Wait for slot data to be ready, but bail if top changes
+        spins = 0
+        while self._read_ready(top_idx) != _SLOT_READY:
+            spins += 1
+            if spins > self._PEEK_MAX_SPINS:
+                return None  # Slot was popped or never became ready
+            # Re-check that top hasn't changed (avoids infinite spin)
+            current_top, _, _ = self._read_header()
+            if current_top != top_idx:
+                return None
             time.sleep(0)  # yield
 
         return self.data[top_idx].copy()

@@ -14,14 +14,14 @@ class TestQueue:
         """Clean up before each test."""
         try:
             Memory.unlink("/test_queue")
-        except:
+        except FileNotFoundError:
             pass
-    
+
     def teardown_method(self):
         """Clean up after each test."""
         try:
             Memory.unlink("/test_queue")
-        except:
+        except FileNotFoundError:
             pass
     
     def test_create_and_basic_ops(self):
@@ -52,19 +52,20 @@ class TestQueue:
         assert queue.pop() is None
     
     def test_full_queue(self):
-        """Test behavior when queue is full."""
+        """Test behavior when queue is full (Vyukov uses all N slots)."""
         mem = Memory("/test_queue", size=1024*1024)
         queue = Queue(mem, "small_queue", capacity=3, dtype=np.int32)
-        
+
         assert queue.push(1)
         assert queue.push(2)
-        assert not queue.push(3)  # Should fail - circular buffer full (capacity-1 usable)
-        
+        assert queue.push(3)  # Vyukov uses all N slots
+        assert not queue.push(4)  # Should fail - queue full
+
         assert queue.full()
-        
+
         queue.pop()
         assert not queue.full()
-        assert queue.push(3)
+        assert queue.push(4)
     
     def test_circular_wrap(self):
         """Test circular buffer wrapping."""

@@ -6,6 +6,7 @@ Sequential Processes (CSP) semantics, where processes communicate through
 synchronous message passing.
 """
 
+import struct
 import time
 from typing import Optional, TypeVar, Union, List
 import numpy as np
@@ -87,17 +88,16 @@ class Channel:
         self.name = name
         self.dtype = np.dtype(dtype)
         self.capacity = actual_capacity
-        self.buffer_size = actual_capacity  # Alias for compatibility
         self.unbuffered = (actual_capacity == 0)
 
-        # Queue uses circular buffer with one slot always empty to distinguish full/empty
-        # So to hold N items, we need capacity N+1
-        # For unbuffered channels (capacity 0), we need queue capacity 2 to hold 1 item
-        # For buffered channels (capacity N), we need queue capacity N+1
+        # Vyukov MPMC queue uses all N slots but requires capacity >= 2
+        # for the sequence number arithmetic to be correct.
+        # For unbuffered channels (capacity 0), we need queue capacity 2
+        # For buffered channels (capacity N), we need queue capacity max(N, 2)
         if actual_capacity == 0:
-            queue_capacity = 2  # Unbuffered: needs 2 to hold 1 item
+            queue_capacity = 2  # Unbuffered: minimum 2 for Vyukov
         else:
-            queue_capacity = actual_capacity + 1  # Buffered: +1 for circular buffer
+            queue_capacity = max(actual_capacity, 2)  # Minimum 2 for Vyukov
 
         if open_existing:
             # Try to find existing channel
@@ -105,69 +105,64 @@ class Channel:
             if entry is None:
                 raise RuntimeError(f"Channel not found: {name}")
 
-            # Open the existing queue to determine actual capacity
-            temp_queue = Queue(memory, name, 0, dtype)  # capacity=0 means open existing
-            queue_capacity = temp_queue.capacity
+            # Open the existing queue
+            self._queue = Queue(memory, name, 0, dtype)  # capacity=0 means open existing
 
-            # Infer channel capacity from queue capacity
-            # Unbuffered uses queue capacity 2, buffered uses N+1
-            if queue_capacity == 2:
-                actual_capacity = 0  # Unbuffered
-            else:
-                actual_capacity = queue_capacity - 1  # Buffered
-
-            self.capacity = actual_capacity
-            self.buffer_size = actual_capacity
-            self.unbuffered = (actual_capacity == 0)
-            self._queue = temp_queue
+            # Recover logical capacity from sync metadata (set below)
+            # Deferred until after sync_buffer is set up
         else:
             # Use Queue as underlying storage with additional synchronization state
             self._queue = Queue(memory, name, queue_capacity, dtype)
 
-        # All channels need synchronization state for closing and unbuffered channels need it for coordination
+        # Sync state layout: [sender_waiting:u32][receiver_waiting:u32][closed:u32][capacity:u32]
         sync_name = f"{name}_sync"
         sync_entry = memory.table.find(sync_name)
 
         if sync_entry is None and not open_existing:
-            # Create synchronization state: sender_waiting(4) + receiver_waiting(4) + closed(4)
-            sync_size = 12
+            sync_size = 16
             sync_offset = memory.table.allocate(sync_size)
             if not memory.table.add(sync_name, sync_offset, sync_size):
                 raise RuntimeError("Failed to add channel synchronization state")
 
             self.sync_buffer = memory.at(sync_offset)
-            # Initialize: no one waiting, not closed
-            import struct
-            struct.pack_into('<III', self.sync_buffer, 0, 0, 0, 0)
+            # Initialize: no one waiting, not closed, store logical capacity
+            struct.pack_into('<IIII', self.sync_buffer, 0,
+                            0, 0, 0, actual_capacity)
         elif sync_entry is not None:
             self.sync_buffer = memory.at(sync_entry.offset)
+            if open_existing:
+                # Recover logical capacity from sync metadata
+                actual_capacity = struct.unpack_from('<I', self.sync_buffer, 12)[0]
+                self.capacity = actual_capacity
+                self.unbuffered = (actual_capacity == 0)
         else:
             raise RuntimeError(f"Channel synchronization state not found: {sync_name}")
+
+    @property
+    def buffer_size(self) -> int:
+        """Alias for capacity (backward compatibility)."""
+        return self.capacity
 
     def _is_closed(self) -> bool:
         """Check if channel is closed."""
         if self.sync_buffer is not None:
-            import struct
             return struct.unpack_from('<I', self.sync_buffer, 8)[0] != 0
         return False
 
     def _set_closed(self):
         """Mark channel as closed."""
         if self.sync_buffer is not None:
-            import struct
             struct.pack_into('<I', self.sync_buffer, 8, 1)
 
     def _get_sender_waiting(self) -> int:
         """Get number of senders waiting."""
         if self.sync_buffer is not None:
-            import struct
             return struct.unpack_from('<I', self.sync_buffer, 0)[0]
         return 0
 
     def _get_receiver_waiting(self) -> int:
         """Get number of receivers waiting."""
         if self.sync_buffer is not None:
-            import struct
             return struct.unpack_from('<I', self.sync_buffer, 4)[0]
         return 0
 
@@ -227,6 +222,16 @@ class Channel:
         while True:
             if self._is_closed():
                 return False  # Cannot send on closed channel
+
+            # Enforce channel's logical capacity (may be less than queue's
+            # physical capacity when Vyukov minimum of 2 exceeds requested)
+            if self._queue.size() >= self.capacity:
+                # Channel is logically full
+                if timeout is not None:
+                    if time.time() - start_time >= timeout:
+                        return False
+                time.sleep(0.001)
+                continue
 
             # Try to send (non-blocking)
             if self._queue.push(value):
@@ -389,7 +394,9 @@ class Channel:
             # For unbuffered, only succeed if receiver is waiting
             return self._get_receiver_waiting() > 0 and self._queue.push(value)
         else:
-            # For buffered, succeed if queue has space
+            # Enforce channel's logical capacity
+            if self._queue.size() >= self.capacity:
+                return False
             return self._queue.push(value)
 
     def try_receive(self) -> Optional[T]:
@@ -432,7 +439,7 @@ class Channel:
         """Check if channel is full."""
         if self.unbuffered:
             return False  # Unbuffered channels are never "full" in the traditional sense
-        return self._queue.full()
+        return self._queue.size() >= self.capacity
 
     def __len__(self) -> int:
         """Get number of messages in channel."""

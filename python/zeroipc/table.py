@@ -64,8 +64,7 @@ class Table:
         entry_start = self.HEADER_SIZE
         entry_area_size = self.max_entries * self.ENTRY_SIZE
         if entry_start + entry_area_size <= len(self.buffer):
-            for i in range(entry_area_size):
-                self.buffer[entry_start + i] = 0
+            self.buffer[entry_start:entry_start + entry_area_size] = b'\x00' * entry_area_size
         else:
             raise RuntimeError(f"Buffer too small: need {entry_start + entry_area_size}, have {len(self.buffer)}")
     

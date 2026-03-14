@@ -26,6 +26,15 @@ class FutureState(IntEnum):
     ERROR = 3
 
 
+def _dtype_format_char(dtype: np.dtype) -> str:
+    """Get struct format char for a numpy dtype, handling int64/uint64 edge cases."""
+    if dtype == np.dtype('int64'):
+        return 'q'
+    elif dtype == np.dtype('uint64'):
+        return 'Q'
+    return dtype.char
+
+
 class Future:
     """
     Shared memory Future for asynchronous computation results.
@@ -144,6 +153,22 @@ class Future:
         """Get byte offset of error message in buffer."""
         return 16 + self.value_size
 
+    def _read_value(self) -> T:
+        """Read the value from shared memory."""
+        value_offset = self._get_value_offset()
+        if self.dtype.kind in 'iuf':
+            format_char = _dtype_format_char(self.dtype)
+            return struct.unpack_from(f'<{format_char}', self.buffer, value_offset)[0]
+        else:
+            value_bytes = self.buffer[value_offset:value_offset + self.value_size]
+            return np.frombuffer(value_bytes, dtype=self.dtype)[0]
+
+    def _read_error(self) -> str:
+        """Read the error message from shared memory."""
+        error_offset = self._get_error_offset()
+        error_bytes = bytes(self.buffer[error_offset:error_offset + 256])
+        return error_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
+
     def set_value(self, value: T) -> bool:
         """
         Set the future's value (completes the computation).
@@ -167,13 +192,7 @@ class Future:
         # Write the value
         value_offset = self._get_value_offset()
         if self.dtype.kind in 'iuf':  # integer, unsigned, float
-            # Map numpy char to struct format, handling int64 specifically
-            if self.dtype == np.dtype('int64'):
-                format_char = 'q'  # Always use 'q' for int64 (8 bytes)
-            elif self.dtype == np.dtype('uint64'):
-                format_char = 'Q'  # Always use 'Q' for uint64 (8 bytes)
-            else:
-                format_char = self.dtype.char
+            format_char = _dtype_format_char(self.dtype)
             struct.pack_into(f'<{format_char}', self.buffer, value_offset, value)
         else:
             value_array = np.array([value], dtype=self.dtype)
@@ -314,27 +333,10 @@ class Future:
                 current_state = state_atomic.load()
 
                 if current_state == FutureState.READY:
-                    # Read and return value
-                    value_offset = self._get_value_offset()
-                    if self.dtype.kind in 'iuf':
-                        # Map numpy char to struct format, handling int64 specifically
-                        if self.dtype == np.dtype('int64'):
-                            format_char = 'q'  # Always use 'q' for int64 (8 bytes)
-                        elif self.dtype == np.dtype('uint64'):
-                            format_char = 'Q'  # Always use 'Q' for uint64 (8 bytes)
-                        else:
-                            format_char = self.dtype.char
-                        return struct.unpack_from(f'<{format_char}', self.buffer, value_offset)[0]
-                    else:
-                        value_bytes = self.buffer[value_offset:value_offset + self.value_size]
-                        return np.frombuffer(value_bytes, dtype=self.dtype)[0]
+                    return self._read_value()
 
                 elif current_state == FutureState.ERROR:
-                    # Read error message and raise
-                    error_offset = self._get_error_offset()
-                    error_bytes = bytes(self.buffer[error_offset:error_offset + 256])
-                    error_msg = error_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
-                    raise RuntimeError(f"Future computation failed: {error_msg}")
+                    raise RuntimeError(f"Future computation failed: {self._read_error()}")
 
                 # Check timeout
                 if timeout_seconds is not None:
@@ -389,24 +391,9 @@ class Future:
         current_state = self.get_state()
 
         if current_state == FutureState.READY:
-            value_offset = self._get_value_offset()
-            if self.dtype.kind in 'iuf':
-                # Map numpy char to struct format, handling int64 specifically
-                if self.dtype == np.dtype('int64'):
-                    format_char = 'q'  # Always use 'q' for int64 (8 bytes)
-                elif self.dtype == np.dtype('uint64'):
-                    format_char = 'Q'  # Always use 'Q' for uint64 (8 bytes)
-                else:
-                    format_char = self.dtype.char
-                return struct.unpack_from(f'<{format_char}', self.buffer, value_offset)[0]
-            else:
-                value_bytes = self.buffer[value_offset:value_offset + self.value_size]
-                return np.frombuffer(value_bytes, dtype=self.dtype)[0]
+            return self._read_value()
         elif current_state == FutureState.ERROR:
-            error_offset = self._get_error_offset()
-            error_bytes = bytes(self.buffer[error_offset:error_offset + 256])
-            error_msg = error_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
-            raise RuntimeError(f"Future computation failed: {error_msg}")
+            raise RuntimeError(f"Future computation failed: {self._read_error()}")
         else:
             return None
 

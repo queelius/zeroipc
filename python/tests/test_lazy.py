@@ -126,8 +126,6 @@ class TestLazyBasic:
                 os.unlink(f"/dev/shm{shm_name}")
 
 
-
-
     def test_lazy_reset(self):
         """Test resetting lazy value."""
         shm_name = f"/test_lazy_reset_{os.getpid()}"
@@ -482,8 +480,8 @@ class TestLazyAdvanced:
         finally:
             Memory.unlink(shm_name)
 
-    def test_lazy_compute_fn_alias(self):
-        """Test that compute_fn is kept in sync with computation."""
+    def test_lazy_set_computation_updates_function(self):
+        """Test that set_computation updates the computation function."""
         shm_name = f"/test_lazy_compute_fn_{os.getpid()}"
         try:
             memory = Memory(shm_name, 1024 * 1024)
@@ -493,11 +491,8 @@ class TestLazyAdvanced:
             # Set computation via set_computation
             lazy_val.set_computation(lambda: 999)
 
-            # compute_fn should be set as an alias
-            assert hasattr(lazy_val, 'compute_fn')
-            assert lazy_val.compute_fn is not None
+            assert lazy_val.computation is not None
 
-            # Should work
             result = lazy_val.force()
             assert result == 999
 

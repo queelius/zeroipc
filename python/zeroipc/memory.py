@@ -4,7 +4,6 @@ POSIX shared memory wrapper with automatic cleanup and table management.
 
 import os
 import mmap
-import tempfile
 from typing import Optional
 
 
@@ -68,8 +67,8 @@ class Memory:
         # Map the memory
         self.mmap = mmap.mmap(self.fd, self.size)
         
-        # Zero out the memory
-        self.mmap[:] = bytes(self.size)
+        # Zero out the memory (ftruncate may not guarantee zeroed pages on all platforms)
+        self.mmap[:] = b'\x00' * self.size
     
     def _open(self):
         """Open existing shared memory"""

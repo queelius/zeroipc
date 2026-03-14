@@ -10,8 +10,6 @@ import time
 import threading
 import multiprocessing
 import numpy as np
-from typing import Any
-from dataclasses import dataclass
 import random
 
 # Add parent directory to path
@@ -47,14 +45,14 @@ def test_queue_basic_correctness():
     assert val == 42
     assert q.empty()
     
-    # Test fill to capacity
-    for i in range(99):  # Circular buffer uses one slot
+    # Test fill to capacity (Vyukov uses all N slots)
+    for i in range(100):
         assert q.push(i)
     assert q.full()
     assert not q.push(999)  # Should fail when full
-    
+
     # Test drain
-    for i in range(99):
+    for i in range(100):
         val = q.pop()
         assert val == i
     assert q.empty()
@@ -133,76 +131,85 @@ def test_queue_threading():
     print(f"  ✓ Produced: {len(produced)}, Consumed: {len(consumed)}, Checksum verified")
 
 
-def test_queue_multiprocessing():
-    """Test Queue with multiprocessing (true parallelism)."""
-    print("Testing Queue with multiprocessing...")
-    
-    def producer_process(process_id, queue_name, items_count):
-        mem = Memory("/test_queue_mp", size=0)  # Open existing
-        q = Queue(mem, queue_name, dtype=np.int32)
-        
-        for i in range(items_count):
-            value = process_id * items_count + i
-            while not q.push(value):
-                time.sleep(0.0001)
-        mem.close()
-    
-    def consumer_process(queue_name, items_count):
-        mem = Memory("/test_queue_mp", size=0)  # Open existing
-        q = Queue(mem, queue_name, dtype=np.int32)
-        
-        consumed = []
-        for i in range(items_count):
-            while True:
-                value = q.pop()
-                if value is not None:
-                    consumed.append(value)
-                    break
-                time.sleep(0.0001)
-        mem.close()
-        return sum(consumed)
-    
-    # Create shared memory
-    mem = Memory("/test_queue_mp", size=100 * 1024 * 1024)
-    q = Queue(mem, "mp_queue", capacity=1000, dtype=np.int32)
+def _mp_producer(queue_name, items_count):
+    """Producer for multiprocessing test (must be top-level for pickling)."""
+    mem = Memory("/test_queue_mp", size=0)
+    q = Queue(mem, queue_name, dtype=np.int32)
+    for i in range(items_count):
+        while not q.push(i):
+            time.sleep(0.0001)
     mem.close()
-    
-    processes = []
-    num_producers = 4
-    num_consumers = 4
-    items_per_process = 500
-    
-    # Start producers
-    for i in range(num_producers):
-        p = multiprocessing.Process(target=producer_process, 
-                                   args=(i, "mp_queue", items_per_process))
-        processes.append(p)
-        p.start()
-    
-    # Start consumers
-    with multiprocessing.Pool(num_consumers) as pool:
-        consumer_futures = [
-            pool.apply_async(consumer_process, ("mp_queue", items_per_process))
-            for _ in range(num_consumers)
-        ]
-    
-    # Wait for producers
-    for p in processes:
-        p.join()
-    
-    # Get consumer results
-    consumer_sums = [f.get() for f in consumer_futures]
-    
-    # Verify
-    expected_sum = sum(i for i in range(num_producers * items_per_process))
-    actual_sum = sum(consumer_sums)
-    
-    # Note: Due to process-based concurrency, exact sum match might vary
-    # Just verify all items were processed
-    total_items = num_producers * items_per_process
-    
+
+
+def _mp_consumer(queue_name, items_count, result_shm_name):
+    """Consumer for multiprocessing test (must be top-level for pickling)."""
+    mem = Memory("/test_queue_mp", size=0)
+    q = Queue(mem, queue_name, dtype=np.int32)
+    # Write results to a shared array so the parent can read them
+    result_mem = Memory(result_shm_name, size=0)
+    from zeroipc import Array
+    results = Array(result_mem, "results", dtype=np.int32)
+    for i in range(items_count):
+        while True:
+            value = q.pop()
+            if value is not None:
+                results[i] = int(value)
+                break
+            time.sleep(0.0001)
+    mem.close()
+    result_mem.close()
+
+
+def test_queue_multiprocessing():
+    """Test Queue with multiprocessing (SPSC: single-producer, single-consumer).
+
+    Python cannot do true atomic CAS on shared memory, so MPMC across
+    processes is not safe. SPSC works because producer only writes tail
+    and consumer only writes head — no write contention on the same field.
+    """
+    print("Testing Queue with multiprocessing (SPSC)...")
+    from zeroipc import Array
+
+    num_items = 2000
+
+    # Create shared memory for queue and results
     Memory.unlink("/test_queue_mp")
-    print(f"  ✓ Multiprocessing test completed")
+    Memory.unlink("/test_queue_mp_results")
+    mem = Memory("/test_queue_mp", size=10 * 1024 * 1024)
+    Queue(mem, "mp_queue", capacity=1000, dtype=np.int32)
+    mem.close()
+
+    result_mem = Memory("/test_queue_mp_results", size=1 * 1024 * 1024)
+    Array(result_mem, "results", capacity=num_items, dtype=np.int32)
+    result_mem.close()
+
+    # Start both processes
+    producer = multiprocessing.Process(
+        target=_mp_producer, args=("mp_queue", num_items))
+    consumer = multiprocessing.Process(
+        target=_mp_consumer, args=("mp_queue", num_items, "/test_queue_mp_results"))
+
+    producer.start()
+    consumer.start()
+
+    producer.join(timeout=30)
+    consumer.join(timeout=30)
+
+    assert not producer.is_alive(), "Producer timed out"
+    assert not consumer.is_alive(), "Consumer timed out"
+
+    # Read results
+    result_mem = Memory("/test_queue_mp_results", size=0)
+    results = Array(result_mem, "results", dtype=np.int32)
+    consumed = [int(results[i]) for i in range(num_items)]
+    result_mem.close()
+
+    # Verify all items received in order (SPSC preserves FIFO)
+    assert consumed == list(range(num_items))
+
+    Memory.unlink("/test_queue_mp")
+    Memory.unlink("/test_queue_mp_results")
+    print(f"  ✓ Multiprocessing SPSC test completed ({num_items} items)")
 
 
 # ==================
@@ -382,14 +389,14 @@ def test_array_large_data():
         record = np.zeros(1, dtype=dtype)[0]
         record['id'] = i
         record['data'][:] = np.arange(100) * i
-        record['checksum'] = i * 0xDEADBEEF
+        record['checksum'] = np.uint32(i * 0xDEADBEEF & 0xFFFFFFFF)
         arr[i] = record
     
     # Verify
     for i in range(100):
         record = arr[i]
         assert record['id'] == i
-        assert record['checksum'] == i * 0xDEADBEEF
+        assert record['checksum'] == np.uint32(i * 0xDEADBEEF & 0xFFFFFFFF)
         assert np.allclose(record['data'], np.arange(100) * i)
     
     try:
@@ -408,13 +415,15 @@ def test_edge_cases():
     """Test edge cases and error conditions."""
     print("Testing edge cases...")
     
-    # Test minimum size queue
+    # Test minimum size queue (Vyukov uses all N slots)
     mem = Memory("/test_edge_min", size=1 * 1024 * 1024)
     q = Queue(mem, "min_queue", capacity=2, dtype=np.int32)
-    
+
     assert q.push(1)
-    assert not q.push(2)  # Should be full with 1 item (circular buffer)
+    assert q.push(2)  # Vyukov uses all 2 slots
+    assert not q.push(3)  # Now full
     assert q.pop() == 1
+    assert q.pop() == 2
     assert q.empty()
     
     try:

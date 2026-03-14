@@ -558,9 +558,9 @@ bool zipc_queue_full(zipc_view_t queue) {
     queue_header_t* header = get_queue_header(queue);
     if (!header) return true;
 
+    uint32_t head = atomic_load(&header->head);
     uint32_t tail = atomic_load(&header->tail);
-    uint32_t next_tail = (tail + 1) % header->capacity;
-    return next_tail == atomic_load(&header->head);
+    return (tail - head) >= header->capacity;
 }
 
 size_t zipc_queue_size(zipc_view_t queue) {
@@ -569,12 +569,8 @@ size_t zipc_queue_size(zipc_view_t queue) {
 
     uint32_t head = atomic_load(&header->head);
     uint32_t tail = atomic_load(&header->tail);
-
-    if (tail >= head) {
-        return tail - head;
-    } else {
-        return header->capacity - head + tail;
-    }
+    /* uint32_t subtraction handles wraparound correctly */
+    return (size_t)(tail - head);
 }
 
 /* ============================================================================
@@ -681,15 +677,18 @@ zipc_result zipc_stack_top(zipc_view_t stack, void* data) {
     int32_t top = atomic_load(&header->top);
     if (top < 0) return ZIPC_EMPTY;
 
-    /* Wait for data to be ready */
-    while (atomic_load_explicit(&state[top], memory_order_acquire) != SLOT_READY) {
-        /* spin */
+    /* Bounded spin: bail out if slot never becomes READY or top changes */
+    for (int spins = 0; spins < 10000; ++spins) {
+        if (atomic_load_explicit(&state[top], memory_order_acquire) == SLOT_READY) {
+            void* slot = (char*)stack->data + top * stack->elemsize;
+            memcpy(data, slot, stack->elemsize);
+            return ZIPC_OK;
+        }
+        if (atomic_load_explicit(&header->top, memory_order_acquire) != top) {
+            return ZIPC_EMPTY;
+        }
     }
-
-    void* slot = (char*)stack->data + top * stack->elemsize;
-    memcpy(data, slot, stack->elemsize);
-
-    return ZIPC_OK;
+    return ZIPC_EMPTY;
 }
 
 bool zipc_stack_empty(zipc_view_t stack) {

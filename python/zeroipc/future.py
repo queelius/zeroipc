@@ -108,8 +108,7 @@ class Future:
     def _create_new(self):
         """Create a new Future in shared memory."""
         # Header: state(4) + waiters(4) + completion_time(8) + value + error_msg(256)
-        header_size = 16 + self.value_size + 256
-        total_size = header_size
+        total_size = 16 + self.value_size + 256
 
         # Allocate space
         self.offset = self.memory.table.allocate(total_size)
@@ -126,17 +125,10 @@ class Future:
                         0,  # waiters
                         0)  # completion_time
 
-        # Zero out value and error message
-        value_offset = 16
-        error_offset = value_offset + self.value_size
-
-        # Zero value area
-        for i in range(self.value_size):
-            self.buffer[value_offset + i] = 0
-
-        # Zero error message area
-        for i in range(256):
-            self.buffer[error_offset + i] = 0
+        # Zero out value and error message areas
+        zero_start = 16
+        zero_end = zero_start + self.value_size + 256
+        self.buffer[zero_start:zero_end] = b'\x00' * (zero_end - zero_start)
 
     def _open_existing(self, entry):
         """Open an existing Future from shared memory."""
@@ -243,17 +235,11 @@ class Future:
             if current_state != FutureState.COMPUTING:
                 return False  # Already completed
 
-        # Write error message
+        # Write error message (null-terminated, zero-padded)
         error_offset = self._get_error_offset()
-        error_bytes = error_message.encode('utf-8')[:255]  # Truncate if too long
-        error_bytes += b'\x00'  # Null terminate
-
-        # Clear error area first
-        for i in range(256):
-            self.buffer[error_offset + i] = 0
-
-        # Write error message
-        self.buffer[error_offset:error_offset + len(error_bytes)] = error_bytes
+        error_bytes = error_message.encode('utf-8')[:255]
+        padded = error_bytes + b'\x00' * (256 - len(error_bytes))
+        self.buffer[error_offset:error_offset + 256] = padded
 
         # Set completion time
         completion_time_atomic = AtomicInt64(self.buffer, 8)
@@ -435,9 +421,7 @@ class Future:
         state = self.get_state()
         return f"Future(name='{self.name}', state={state.name}, waiters={self.get_waiter_count()}, dtype={self.dtype})"
 
-    def __repr__(self) -> str:
-        """String representation."""
-        return self.__str__()
+    __repr__ = __str__
 
 
 class Promise:
@@ -486,6 +470,4 @@ class Promise:
         """String representation."""
         return f"Promise({self.future})"
 
-    def __repr__(self) -> str:
-        """String representation."""
-        return self.__str__()
+    __repr__ = __str__

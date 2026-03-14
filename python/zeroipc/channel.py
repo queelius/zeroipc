@@ -145,56 +145,45 @@ class Channel:
 
     def _is_closed(self) -> bool:
         """Check if channel is closed."""
-        if self.sync_buffer is not None:
-            return struct.unpack_from('<I', self.sync_buffer, 8)[0] != 0
-        return False
+        return struct.unpack_from('<I', self.sync_buffer, 8)[0] != 0
 
     def _set_closed(self):
         """Mark channel as closed."""
-        if self.sync_buffer is not None:
-            struct.pack_into('<I', self.sync_buffer, 8, 1)
+        struct.pack_into('<I', self.sync_buffer, 8, 1)
 
     def _get_sender_waiting(self) -> int:
         """Get number of senders waiting."""
-        if self.sync_buffer is not None:
-            return struct.unpack_from('<I', self.sync_buffer, 0)[0]
-        return 0
+        return struct.unpack_from('<I', self.sync_buffer, 0)[0]
 
     def _get_receiver_waiting(self) -> int:
         """Get number of receivers waiting."""
-        if self.sync_buffer is not None:
-            return struct.unpack_from('<I', self.sync_buffer, 4)[0]
-        return 0
+        return struct.unpack_from('<I', self.sync_buffer, 4)[0]
 
     def _inc_sender_waiting(self):
         """Increment sender waiting count."""
-        if self.sync_buffer is not None:
-            sender_atomic = AtomicInt(self.sync_buffer, 0)
-            sender_atomic.fetch_add(1)
+        sender_atomic = AtomicInt(self.sync_buffer, 0)
+        sender_atomic.fetch_add(1)
 
     def _dec_sender_waiting(self):
         """Decrement sender waiting count."""
-        if self.sync_buffer is not None:
-            sender_atomic = AtomicInt(self.sync_buffer, 0)
-            current = sender_atomic.load()
-            while current > 0:
-                if sender_atomic.compare_exchange_weak(current, current - 1):
-                    break
+        sender_atomic = AtomicInt(self.sync_buffer, 0)
+        current = sender_atomic.load()
+        while current > 0:
+            if sender_atomic.compare_exchange_weak(current, current - 1):
+                break
 
     def _inc_receiver_waiting(self):
         """Increment receiver waiting count."""
-        if self.sync_buffer is not None:
-            receiver_atomic = AtomicInt(self.sync_buffer, 4)
-            receiver_atomic.fetch_add(1)
+        receiver_atomic = AtomicInt(self.sync_buffer, 4)
+        receiver_atomic.fetch_add(1)
 
     def _dec_receiver_waiting(self):
         """Decrement receiver waiting count."""
-        if self.sync_buffer is not None:
-            receiver_atomic = AtomicInt(self.sync_buffer, 4)
-            current = receiver_atomic.load()
-            while current > 0:
-                if receiver_atomic.compare_exchange_weak(current, current - 1):
-                    break
+        receiver_atomic = AtomicInt(self.sync_buffer, 4)
+        current = receiver_atomic.load()
+        while current > 0:
+            if receiver_atomic.compare_exchange_weak(current, current - 1):
+                break
 
     def send(self, value: T, timeout: Optional[float] = None) -> bool:
         """
@@ -221,28 +210,17 @@ class Channel:
 
         while True:
             if self._is_closed():
-                return False  # Cannot send on closed channel
+                return False
 
             # Enforce channel's logical capacity (may be less than queue's
             # physical capacity when Vyukov minimum of 2 exceeds requested)
-            if self._queue.size() >= self.capacity:
-                # Channel is logically full
-                if timeout is not None:
-                    if time.time() - start_time >= timeout:
-                        return False
-                time.sleep(0.001)
-                continue
-
-            # Try to send (non-blocking)
-            if self._queue.push(value):
+            if self._queue.size() < self.capacity and self._queue.push(value):
                 return True
 
             # Check timeout
-            if timeout is not None:
-                if time.time() - start_time >= timeout:
-                    return False
+            if timeout is not None and time.time() - start_time >= timeout:
+                return False
 
-            # Brief sleep when queue is full
             time.sleep(0.001)
 
     def _send_unbuffered(self, value: T, timeout: Optional[float] = None) -> bool:
@@ -475,9 +453,7 @@ class Channel:
         return (f"Channel(name='{self.name}', type={channel_type}, "
                 f"status={status}, size={self.size()}, dtype={self.dtype})")
 
-    def __repr__(self) -> str:
-        """String representation."""
-        return self.__str__()
+    __repr__ = __str__
 
     @staticmethod
     def select(channels: List['Channel'], timeout: Optional[float] = None) -> Optional['Channel']:

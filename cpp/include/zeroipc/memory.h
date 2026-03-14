@@ -150,11 +150,17 @@ public:
      */
     template<typename T>
     T* ptr_at(size_t offset) {
+        if (offset + sizeof(T) > size_) {
+            throw std::out_of_range("ptr_at: offset out of bounds");
+        }
         return reinterpret_cast<T*>(static_cast<char*>(memory_) + offset);
     }
 
     template<typename T>
     const T* ptr_at(size_t offset) const {
+        if (offset + sizeof(T) > size_) {
+            throw std::out_of_range("ptr_at: offset out of bounds");
+        }
         return reinterpret_cast<const T*>(static_cast<const char*>(memory_) + offset);
     }
     

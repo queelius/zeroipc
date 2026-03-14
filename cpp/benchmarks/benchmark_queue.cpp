@@ -235,7 +235,7 @@ private:
                  << ", p50=" << latencies[n * 50 / 100]
                  << ", p90=" << latencies[n * 90 / 100]
                  << ", p99=" << latencies[n * 99 / 100]
-                 << ", p99.9=" << latencies[n * 999 / 1000] << std::endl;
+                 << ", p99.9=" << latencies[std::min(n * 999 / 1000, n - 1)] << std::endl;
     }
 };
 

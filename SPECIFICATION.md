@@ -69,23 +69,30 @@ struct ArrayHeader {
 // Followed by: capacity * element_size bytes of data
 ```
 
-### Queue Structure (Lock-free Circular Buffer)
+### Queue Structure (Vyukov Bounded MPMC)
 ```c
 struct QueueHeader {
-    atomic_uint64_t head;   // 0x00: Head index
-    atomic_uint64_t tail;   // 0x08: Tail index  
-    uint64_t capacity;      // 0x10: Number of elements
+    atomic_uint32_t head;       // 0x00: Head index (monotonically increasing)
+    atomic_uint32_t tail;       // 0x04: Tail index (monotonically increasing)
+    uint32_t capacity;          // 0x08: Number of slots
+    uint32_t elem_size;         // 0x0C: Element size in bytes
 };
-// Followed by: capacity * element_size bytes of circular buffer
+// Followed by: capacity * elem_size bytes of data
+// Followed by: capacity * 4 bytes of per-slot sequence numbers (atomic_uint32_t)
+// Total size: 16 + capacity * (elem_size + 4)
 ```
 
-### Stack Structure (Lock-free)
+### Stack Structure (4-State CAS Lock-free)
 ```c
 struct StackHeader {
-    atomic_uint64_t top;    // 0x00: Top index
-    uint64_t capacity;      // 0x08: Number of elements
+    atomic_int32_t top;         // 0x00: Top index (-1 when empty)
+    uint32_t capacity;          // 0x04: Number of slots
+    uint32_t elem_size;         // 0x08: Element size in bytes
 };
-// Followed by: capacity * element_size bytes of data
+// Followed by: capacity * elem_size bytes of data
+// Followed by: capacity * 4 bytes of per-slot state (atomic_uint32_t)
+//   States: EMPTY(0) -> WRITING(1) -> READY(2) -> READING(3) -> EMPTY(0)
+// Total size: 12 + capacity * (elem_size + 4)
 ```
 
 ### Semaphore Structure (Lock-free)

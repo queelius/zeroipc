@@ -230,27 +230,8 @@ class Map(Generic[K, V]):
 
     def _write_entry(self, index: int, state: int, key: K, value: V):
         """Write complete entry at given index."""
-        offset = self._get_entry_offset(index)
-
-        # Write state
-        struct.pack_into('<I', self.buffer, offset, state)
-
-        # Write key
-        if self.key_dtype.kind in 'iuf':
-            fmt = self._get_struct_format(self.key_dtype)
-            struct.pack_into(f'<{fmt}', self.buffer, offset + 4, key)
-        else:
-            key_array = np.array([key], dtype=self.key_dtype)
-            self.buffer[offset + 4:offset + 4 + self.key_size] = key_array.tobytes()
-
-        # Write value
-        value_offset = offset + 4 + self.key_size
-        if self.value_dtype.kind in 'iuf':
-            fmt = self._get_struct_format(self.value_dtype)
-            struct.pack_into(f'<{fmt}', self.buffer, value_offset, value)
-        else:
-            value_array = np.array([value], dtype=self.value_dtype)
-            self.buffer[value_offset:value_offset + self.value_size] = value_array.tobytes()
+        self._store_entry_state(index, state)
+        self._write_entry_key_value(index, key, value)
 
     def _write_entry_key_value(self, index: int, key: K, value: V):
         """Write key and value at given index without touching state."""

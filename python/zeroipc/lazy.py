@@ -122,13 +122,10 @@ class Lazy:
 
         # Zero out value and error message areas
         if immediate_value is None:
-            value_offset = 4
-            for i in range(self.value_size):
-                self.buffer[value_offset + i] = 0
+            self.buffer[4:4 + self.value_size] = b'\x00' * self.value_size
 
         error_offset = 4 + self.value_size
-        for i in range(256):
-            self.buffer[error_offset + i] = 0
+        self.buffer[error_offset:error_offset + 256] = b'\x00' * 256
 
     def _open_existing(self, entry):
         """Open an existing Lazy from shared memory."""
@@ -164,15 +161,9 @@ class Lazy:
     def _write_error(self, error_message: str):
         """Write error message to shared memory."""
         error_offset = self._get_error_offset()
-        error_bytes = error_message.encode('utf-8')[:255]  # Truncate if too long
-        error_bytes += b'\x00'  # Null terminate
-
-        # Clear error area first
-        for i in range(256):
-            self.buffer[error_offset + i] = 0
-
-        # Write error message
-        self.buffer[error_offset:error_offset + len(error_bytes)] = error_bytes
+        error_bytes = error_message.encode('utf-8')[:255]
+        padded = error_bytes + b'\x00' * (256 - len(error_bytes))
+        self.buffer[error_offset:error_offset + 256] = padded
 
     def _read_error(self) -> str:
         """Read error message from shared memory."""
@@ -301,27 +292,21 @@ class Lazy:
         Warning: This operation is not atomic and should only be used
         when no other processes are accessing the lazy value.
         """
+        error_offset = self._get_error_offset()
+
         if value is not None:
             # Set to evaluated state with the provided value
             struct.pack_into('<I', self.buffer, 0, LazyState.EVALUATED)
             self._write_value(value)
-
-            # Clear error area
-            error_offset = self._get_error_offset()
-            for i in range(256):
-                self.buffer[error_offset + i] = 0
         else:
             # Reset to unevaluated state
             struct.pack_into('<I', self.buffer, 0, LazyState.UNEVALUATED)
-
-            # Clear value and error areas
+            # Clear value area
             value_offset = self._get_value_offset()
-            for i in range(self.value_size):
-                self.buffer[value_offset + i] = 0
+            self.buffer[value_offset:value_offset + self.value_size] = b'\x00' * self.value_size
 
-            error_offset = self._get_error_offset()
-            for i in range(256):
-                self.buffer[error_offset + i] = 0
+        # Clear error area in both cases
+        self.buffer[error_offset:error_offset + 256] = b'\x00' * 256
 
     def __call__(self) -> T:
         """Make Lazy callable (alias for force)."""
@@ -343,9 +328,7 @@ class Lazy:
         else:
             return f"Lazy(name='{self.name}', state={state.name}, dtype={self.dtype})"
 
-    def __repr__(self) -> str:
-        """String representation."""
-        return self.__str__()
+    __repr__ = __str__
 
 
 def lazy_constant(memory: Memory, name: str, value: T, dtype: Optional[Union[np.dtype, str, type]] = None) -> Lazy:

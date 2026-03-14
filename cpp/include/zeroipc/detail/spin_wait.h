@@ -30,10 +30,16 @@ template<typename Pred, typename Rep, typename Period>
     constexpr int max_backoff_us = 1000;
 
     while (!pred()) {
-        if (std::chrono::steady_clock::now() >= deadline) {
+        auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(backoff_us));
+        auto remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            deadline - now).count();
+        int sleep_us = static_cast<int>(std::min(static_cast<long>(backoff_us), remaining_us));
+        if (sleep_us > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+        }
         if (backoff_us < max_backoff_us) {
             backoff_us *= 2;
         }

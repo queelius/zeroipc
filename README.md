@@ -127,8 +127,8 @@ Not designed for: network distribution, persistent storage, or general-purpose m
 - [API Reference](docs/api_reference.md) — complete API docs
 - [Codata Guide](docs/codata_guide.md) — futures, streams, lazy evaluation
 - [Sync Primitives Guide](docs/sync_primitives_guide.md) — mutex, monitor, rwlock, etc.
-- [Design Philosophy](docs/design_philosophy.md) — core principles and trade-offs
-- [The Single-Machine Thesis](docs/single_machine_thesis.md) — why shared memory IPC matters
+- [Design Philosophy](design_philosophy.md) — core principles and trade-offs
+- [The Single-Machine Thesis](single_machine_thesis.md) — why shared memory IPC matters
 - [Design Patterns](docs/patterns.md) — cross-process communication patterns
 - [CLI Tools](docs/cli_tools.md) — command-line utilities
 - [Testing Strategy](docs/TESTING_STRATEGY.md) — test suite architecture

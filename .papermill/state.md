@@ -40,11 +40,11 @@ Single-machine shared memory IPC is a fundamentally different computational mode
 
 ## Source Materials
 
-- `docs/single_machine_thesis.md` — core thesis argument (strongest existing writing)
+- `single_machine_thesis.md` — core thesis argument (strongest existing writing)
 - `whitepaper/zeroipc_whitepaper.tex` — old paper (wrong framing, stale numbers)
 - `whitepaper/submissions/arXiv/` — most complete old version (reference only)
 - `whitepaper/submissions/JOSS/` — software paper (separate venue)
-- `docs/design_philosophy.md` — design rationale
+- `design_philosophy.md` — design rationale
 - `SPECIFICATION.md` — binary format spec
 - `cpp/benchmarks/` — C++ benchmark suite (Queue, Stack, Array)
 - `c/benchmarks/` — C benchmark suite

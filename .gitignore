@@ -5,7 +5,17 @@ cmake-build-*/
 out/
 _build/
 
-# CMake-generated Makefiles (should not be tracked)
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+_CPack_Packages/
+_deps/
+*.cmake
+!cmake/*.cmake
 /Makefile
 /cpp/Makefile
 /cpp/benchmarks/Makefile
@@ -21,29 +31,6 @@ _build/
 compile_commands.json
 .ccls-cache/
 
-# Generated documentation
-docs/html/
-docs/latex/
-doxygen_warnings.txt
-site/
-
-# C binaries
-c/bin/
-c/benchmarks/benchmark_all
-c/examples/interop_test
-c/test_table_debug
-c/test_table_stress
-
-# Test artifacts
-Testing/
-test_results/
-*.gcda
-*.gcno
-*.gcov
-coverage.info
-coverage_filtered.info
-coverage/
-
 # Compiled files
 *.o
 *.a
@@ -54,7 +41,14 @@ coverage/
 *.exe
 *.out
 
-# CLI tool binary (built from cpp/tools/zeroipc.cpp)
+# C binaries
+c/bin/
+c/benchmarks/benchmark_all
+c/examples/interop_test
+c/test_table_debug
+c/test_table_stress
+
+# C++ CLI tool binary
 /cpp/zeroipc
 
 # Go built binary
@@ -64,19 +58,37 @@ go/bin/
 interop/cpp_reader
 interop/cpp_writer
 
-# Conan files
-conan.lock
-conaninfo.txt
-graph_info.json
+# Test artifacts
+Testing/
+test_results/
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage_filtered.info
+coverage/
+.pytest_cache/
+.benchmarks/
+
+# Python
 *.pyc
 __pycache__/
-.conan/
-conanbuild*
-conanrun*
+*.egg-info/
+dist/
+.eggs/
 
-# vcpkg files
-vcpkg_installed/
-vcpkg-manifest-install.log
+# LaTeX build artifacts
+*.aux
+*.pdf
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# Generated documentation
+site/
+doxygen_warnings.txt
 
 # Package files
 *.tar.gz
@@ -88,40 +100,14 @@ vcpkg-manifest-install.log
 .DS_Store
 *.dSYM/
 
-# Debug files
+# Debug/temp files
 debug_*
 core
 vgcore.*
 *.log
-
-# Temporary files
 *.tmp
 /tmp/
 temp/
-
-# Shared memory segments (local testing)
-/dev/shm/test_*
-/dev/shm/debug_*
-
-# CMake
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-CTestTestfile.cmake
-_deps/
-*.cmake
-!cmake/*.cmake
-!vcpkg/*.cmake
-
-# CPack
-_CPack_Packages/
-CPackConfig.cmake
-CPackSourceConfig.cmake
-
-# Python
-*.egg-info/
-dist/
-.eggs/
 
 # Benchmark results
 benchmark_results/
@@ -130,10 +116,12 @@ benchmark_results/
 # Editor backup files
 *.bak
 *.orig
-
-# Git
 *.patch
 
-# LaTeX build artifacts
-*.aux
-*.pdf
+# Build output directories
+bin/
+lib/
+
+# Shared memory segments (local testing)
+/dev/shm/test_*
+/dev/shm/debug_*

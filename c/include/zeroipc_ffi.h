@@ -12,6 +12,7 @@
  *   0 = success
  *  -1 = full (push) or empty (pop/top)
  *  -2 = elem_size mismatch
+ *  -3 = invalid header (capacity/elem_size is 0)
  */
 
 #include <stdint.h>
@@ -26,7 +27,7 @@ int zeroipc_raw_queue_push(void* base, size_t offset,
                            const void* value, uint32_t elem_size);
 int zeroipc_raw_queue_pop(void* base, size_t offset,
                           void* value_out, uint32_t elem_size);
-int zeroipc_raw_queue_size(void* base, size_t offset);
+uint32_t zeroipc_raw_queue_size(void* base, size_t offset);
 int zeroipc_raw_queue_empty(void* base, size_t offset);
 int zeroipc_raw_queue_full(void* base, size_t offset);
 
@@ -37,7 +38,7 @@ int zeroipc_raw_stack_pop(void* base, size_t offset,
                           void* value_out, uint32_t elem_size);
 int zeroipc_raw_stack_top(void* base, size_t offset,
                           void* value_out, uint32_t elem_size);
-int zeroipc_raw_stack_size(void* base, size_t offset);
+uint32_t zeroipc_raw_stack_size(void* base, size_t offset);
 int zeroipc_raw_stack_empty(void* base, size_t offset);
 int zeroipc_raw_stack_full(void* base, size_t offset);
 

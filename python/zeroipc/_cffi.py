@@ -16,6 +16,15 @@ _lib = None
 OK = 0
 EMPTY_OR_FULL = -1
 MISMATCH = -2
+INVALID = -3
+
+
+def _check_rc(rc, op="operation"):
+    """Check FFI return code, raising on mismatch/invalid errors."""
+    if rc == MISMATCH:
+        raise ValueError(f"FFI {op}: elem_size mismatch between Python and shared memory")
+    if rc == INVALID:
+        raise ValueError(f"FFI {op}: invalid header (capacity or elem_size is 0)")
 
 
 def _find_library():
@@ -27,6 +36,7 @@ def _find_library():
             return None
         if os.path.isfile(env_path):
             return env_path
+        return None  # Explicit path invalid — don't silently search elsewhere
 
     # 2. Relative to this package (installed alongside or in-tree development)
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
@@ -52,14 +62,14 @@ def _setup_functions():
     for fn_name, argtypes, restype in [
         ("zeroipc_raw_queue_push", [c_void_p, c_size_t, c_void_p, c_uint32], c_int),
         ("zeroipc_raw_queue_pop", [c_void_p, c_size_t, c_void_p, c_uint32], c_int),
-        ("zeroipc_raw_queue_size", [c_void_p, c_size_t], c_int),
+        ("zeroipc_raw_queue_size", [c_void_p, c_size_t], c_uint32),
         ("zeroipc_raw_queue_empty", [c_void_p, c_size_t], c_int),
         ("zeroipc_raw_queue_full", [c_void_p, c_size_t], c_int),
         # Stack
         ("zeroipc_raw_stack_push", [c_void_p, c_size_t, c_void_p, c_uint32], c_int),
         ("zeroipc_raw_stack_pop", [c_void_p, c_size_t, c_void_p, c_uint32], c_int),
         ("zeroipc_raw_stack_top", [c_void_p, c_size_t, c_void_p, c_uint32], c_int),
-        ("zeroipc_raw_stack_size", [c_void_p, c_size_t], c_int),
+        ("zeroipc_raw_stack_size", [c_void_p, c_size_t], c_uint32),
         ("zeroipc_raw_stack_empty", [c_void_p, c_size_t], c_int),
         ("zeroipc_raw_stack_full", [c_void_p, c_size_t], c_int),
     ]:
@@ -88,7 +98,7 @@ _load()
 def _base_ptr(memory):
     """Get a ctypes void pointer to the mmap'd region."""
     return ctypes.c_void_p(ctypes.addressof(
-        (ctypes.c_char * len(memory.mmap)).from_buffer(memory.mmap)))
+        ctypes.c_char.from_buffer(memory.mmap, 0)))
 
 
 # --- Queue operations ---
@@ -96,13 +106,16 @@ def _base_ptr(memory):
 def queue_push(memory, offset, value_bytes, elem_size):
     base = _base_ptr(memory)
     buf = (ctypes.c_char * elem_size).from_buffer_copy(value_bytes)
-    return _lib.zeroipc_raw_queue_push(base, offset, buf, elem_size)
+    rc = _lib.zeroipc_raw_queue_push(base, offset, buf, elem_size)
+    _check_rc(rc, "queue_push")
+    return rc
 
 
 def queue_pop(memory, offset, elem_size):
     base = _base_ptr(memory)
     buf = (ctypes.c_char * elem_size)()
     rc = _lib.zeroipc_raw_queue_pop(base, offset, buf, elem_size)
+    _check_rc(rc, "queue_pop")
     return rc, bytes(buf) if rc == OK else None
 
 
@@ -123,13 +136,16 @@ def queue_full(memory, offset):
 def stack_push(memory, offset, value_bytes, elem_size):
     base = _base_ptr(memory)
     buf = (ctypes.c_char * elem_size).from_buffer_copy(value_bytes)
-    return _lib.zeroipc_raw_stack_push(base, offset, buf, elem_size)
+    rc = _lib.zeroipc_raw_stack_push(base, offset, buf, elem_size)
+    _check_rc(rc, "stack_push")
+    return rc
 
 
 def stack_pop(memory, offset, elem_size):
     base = _base_ptr(memory)
     buf = (ctypes.c_char * elem_size)()
     rc = _lib.zeroipc_raw_stack_pop(base, offset, buf, elem_size)
+    _check_rc(rc, "stack_pop")
     return rc, bytes(buf) if rc == OK else None
 
 
@@ -137,6 +153,7 @@ def stack_top(memory, offset, elem_size):
     base = _base_ptr(memory)
     buf = (ctypes.c_char * elem_size)()
     rc = _lib.zeroipc_raw_stack_top(base, offset, buf, elem_size)
+    _check_rc(rc, "stack_top")
     return rc, bytes(buf) if rc == OK else None
 
 

@@ -18,6 +18,7 @@
 #define FFI_EMPTY   -1
 #define FFI_FULL    -1
 #define FFI_MISMATCH -2
+#define FFI_INVALID  -3
 
 /* ============================================================================
  * Queue layout (Vyukov bounded MPMC)
@@ -35,6 +36,12 @@ typedef struct {
 
 _Static_assert(sizeof(ffi_queue_header_t) == 16, "Queue header must be 16 bytes");
 
+static inline int q_validate(ffi_queue_header_t* h, uint32_t elem_size) {
+    if (h->capacity == 0 || h->elem_size == 0) return FFI_INVALID;
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    return FFI_OK;
+}
+
 static inline ffi_queue_header_t* q_header(void* base, size_t offset) {
     return (ffi_queue_header_t*)((char*)base + offset);
 }
@@ -50,7 +57,8 @@ static inline _Atomic uint32_t* q_seqs(ffi_queue_header_t* h) {
 int zeroipc_raw_queue_push(void* base, size_t offset,
                            const void* value, uint32_t elem_size) {
     ffi_queue_header_t* h = q_header(base, offset);
-    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    int rc = q_validate(h, elem_size);
+    if (rc != FFI_OK) return rc;
 
     _Atomic uint32_t* seq = q_seqs(h);
     void* data = q_data(h);
@@ -84,7 +92,8 @@ int zeroipc_raw_queue_push(void* base, size_t offset,
 int zeroipc_raw_queue_pop(void* base, size_t offset,
                           void* value_out, uint32_t elem_size) {
     ffi_queue_header_t* h = q_header(base, offset);
-    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    int rc = q_validate(h, elem_size);
+    if (rc != FFI_OK) return rc;
 
     _Atomic uint32_t* seq = q_seqs(h);
     void* data = q_data(h);
@@ -114,11 +123,11 @@ int zeroipc_raw_queue_pop(void* base, size_t offset,
     return FFI_OK;
 }
 
-int zeroipc_raw_queue_size(void* base, size_t offset) {
+uint32_t zeroipc_raw_queue_size(void* base, size_t offset) {
     ffi_queue_header_t* h = q_header(base, offset);
     uint32_t tail = atomic_load_explicit(&h->tail, memory_order_relaxed);
     uint32_t head = atomic_load_explicit(&h->head, memory_order_relaxed);
-    return (int)(tail - head);
+    return tail - head;
 }
 
 int zeroipc_raw_queue_empty(void* base, size_t offset) {
@@ -147,6 +156,12 @@ typedef struct {
 
 _Static_assert(sizeof(ffi_stack_header_t) == 12, "Stack header must be 12 bytes");
 
+static inline int s_validate(ffi_stack_header_t* h, uint32_t elem_size) {
+    if (h->capacity == 0 || h->elem_size == 0) return FFI_INVALID;
+    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    return FFI_OK;
+}
+
 #define SLOT_EMPTY   0
 #define SLOT_WRITING 1
 #define SLOT_READY   2
@@ -167,7 +182,8 @@ static inline _Atomic uint32_t* s_state(ffi_stack_header_t* h) {
 int zeroipc_raw_stack_push(void* base, size_t offset,
                            const void* value, uint32_t elem_size) {
     ffi_stack_header_t* h = s_header(base, offset);
-    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    int rc = s_validate(h, elem_size);
+    if (rc != FFI_OK) return rc;
 
     _Atomic uint32_t* state = s_state(h);
     void* data = s_data(h);
@@ -201,7 +217,8 @@ int zeroipc_raw_stack_push(void* base, size_t offset,
 int zeroipc_raw_stack_pop(void* base, size_t offset,
                           void* value_out, uint32_t elem_size) {
     ffi_stack_header_t* h = s_header(base, offset);
-    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    int rc = s_validate(h, elem_size);
+    if (rc != FFI_OK) return rc;
 
     _Atomic uint32_t* state = s_state(h);
     void* data = s_data(h);
@@ -235,7 +252,8 @@ int zeroipc_raw_stack_pop(void* base, size_t offset,
 int zeroipc_raw_stack_top(void* base, size_t offset,
                           void* value_out, uint32_t elem_size) {
     ffi_stack_header_t* h = s_header(base, offset);
-    if (h->elem_size != elem_size) return FFI_MISMATCH;
+    int rc = s_validate(h, elem_size);
+    if (rc != FFI_OK) return rc;
 
     _Atomic uint32_t* state = s_state(h);
     void* data = s_data(h);
@@ -255,10 +273,10 @@ int zeroipc_raw_stack_top(void* base, size_t offset,
     return FFI_EMPTY;
 }
 
-int zeroipc_raw_stack_size(void* base, size_t offset) {
+uint32_t zeroipc_raw_stack_size(void* base, size_t offset) {
     ffi_stack_header_t* h = s_header(base, offset);
     int32_t top = atomic_load_explicit(&h->top, memory_order_relaxed);
-    return top + 1;
+    return top < 0 ? 0 : (uint32_t)(top + 1);
 }
 
 int zeroipc_raw_stack_empty(void* base, size_t offset) {

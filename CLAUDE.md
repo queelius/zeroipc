@@ -9,15 +9,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 ### Parallel Language Implementations
-- `c/` - Pure C99 implementation with static library
-- `cpp/` - Modern C++23 header-only template library  
+- `cpp/` - Modern C++23 header-only template library (primary development focus)
+- `go/` - Go 1.21+ implementation with generics and CLI tool
 - `python/` - Pure Python implementation using mmap and numpy
-- `interop/` - Cross-language integration tests
+- `c/` - Pure C99 implementation with static library
+- `interop/` - Cross-language integration tests (C++/Python/Go)
 - `SPECIFICATION.md` - Binary format all implementations must follow
 
 ### Core Design Principles
 - **Minimal metadata**: Table stores only name, offset, and size (no type information)
-- **Duck typing**: Users specify types at runtime (Python) or compile time (C++)
+- **Duck typing**: Users specify types at runtime (Python), compile time (C++), or via generics (Go)
 - **Lock-free operations**: All concurrent structures use atomic CAS operations
 - **No automatic memory management**: Users control layout, no defragmentation
 - **Binary compatibility**: All languages read/write identical format
@@ -54,21 +55,8 @@ ctest -L sync --output-on-failure               # All synchronization primitive 
 ctest -L unit --output-on-failure               # Unit tests only
 ctest -L integration --output-on-failure        # Integration tests only
 
-# Run specific test executable
-./build/tests/test_queue
-./build/tests/test_lockfree_comprehensive
-./build/tests/test_semaphore
-./build/tests/test_barrier
-
-# Run a single test by name
-cd build && ctest -R "MonitorTest.BasicLockUnlock" --output-on-failure
-cd build && ctest -R "QueueTest" --output-on-failure  # All queue tests
-
-# Run tests with verbose output
-cd build && ctest -V
-
-# Clean build
-rm -rf build/
+# Run specific test by name
+cd build && ctest -R "QueueTest" --output-on-failure
 ```
 
 ### C
@@ -89,22 +77,24 @@ make lint         # Run linting (ruff, mypy)
 make format       # Format code (black, isort)
 ```
 
+### Go
+```bash
+cd go
+go test ./zeroipc/...      # Run tests
+go build -o zeroipc ./cmd/zeroipc  # Build CLI tool
+go run ./cmd/interop       # Run Go cross-language interop
+```
+
 ### Cross-Language Testing
 ```bash
 cd interop
 ./test_interop.sh          # C++ writes, Python reads
-./test_reverse_interop.sh  # Python writes, C++ reads  
+./test_reverse_interop.sh  # Python writes, C++ reads
+./test_three_way_interop.sh  # C++/Python/Go three-way
+./test_go_cpp_interop.sh   # Go/C++ specific interop
 ```
 
 ## C++ Implementation Details
-
-### Modern C++23 Features Used
-- **Concepts**: `requires std::is_trivially_copyable_v<T>` for type constraints
-- **std::atomic**: Explicit memory ordering for lock-free operations
-- **std::optional**: Safe error handling without exceptions
-- **std::string_view**: Zero-allocation string handling
-- **[[nodiscard]]**: API safety attributes
-- **Designated initializers**: Clear struct initialization
 
 ### Lock-Free Implementation
 
@@ -126,26 +116,7 @@ std::atomic_thread_fence(std::memory_order_release);
 
 ### Table Size Configuration
 
-The metadata table uses template parameters for compile-time size configuration:
-
-```cpp
-// Predefined table sizes (N = number of entries)
-table1      // 1 entry (minimal)
-table4      // 4 entries (quad)  
-table8      // 8 entries (tiny)
-table16     // 16 entries (small)
-table32     // 32 entries (compact)
-table64     // 64 entries (standard, aliased as 'table')
-table128    // 128 entries (medium)
-table256    // 256 entries (large)
-table512    // 512 entries (xlarge)
-table1024   // 1024 entries (huge)
-table2048   // 2048 entries (xhuge)
-table4096   // 4096 entries (maximum)
-
-// Custom configuration
-table_impl<name_size, max_entries>  // Full control
-```
+Predefined sizes: `table1` through `table4096` (default `table` = `table64`). Use `table_impl<name_size, max_entries>` for custom configuration.
 
 **Important**: Tests creating many structures need larger tables:
 ```cpp
@@ -184,52 +155,9 @@ zeroipc::memory<table256> shm("/test", size);  // For tests with >64 structures
 - `stream<T>`: Reactive data flows with FRP operators (map, filter, fold)
 - `channel<T>`: CSP-style synchronous/buffered message passing
 
-### Synchronization Primitive Patterns
-
-```cpp
-// Mutex - simple mutual exclusion
-zeroipc::Mutex mtx(mem, "data_lock");
-{
-    std::lock_guard<zeroipc::Mutex> lock(mtx);
-    // Critical section
-}
-
-// RWLock - multiple readers OR exclusive writer
-zeroipc::RWLock rwlock(mem, "cache_lock");
-{
-    SharedLock read(rwlock);   // Multiple readers OK
-    // Read data
-}
-{
-    UniqueLock write(rwlock);  // Exclusive writer
-    // Modify data
-}
-
-// Monitor - condition variable with predicate wait
-zeroipc::Monitor mon(mem, "bounded_buffer");
-mon.lock();
-mon.wait([&]{ return buffer_count > 0; });  // Wait until condition true
-// Consume from buffer
-mon.notify_one();  // Wake one waiter
-mon.unlock();
-
-// Event - AutoReset (wake one) or ManualReset (wake all)
-zeroipc::Event event(mem, "work_ready", EventMode::AUTO_RESET);
-event.signal();  // Wake one waiter
-event.wait();    // Block until signaled
-
-// Signal<T> - reactive value with version tracking
-zeroipc::Signal<double> temp(mem, "temperature", 20.0);
-temp.set(25.5);
-if (temp.has_changed(last_version)) {
-    double val = temp.get();
-    last_version = temp.version();
-}
-```
-
 ### Structure Creation Pattern
 
-Both languages can create and discover structures:
+All languages can create and discover structures:
 
 ```cpp
 // C++ creates
@@ -239,6 +167,10 @@ zeroipc::array<float> temps(mem, "temperatures", 1000);
 // Python discovers and reads
 mem = Memory("/data")
 temps = Array(mem, "temperatures", dtype=np.float32)
+
+// Go discovers and reads
+mem, _ := zeroipc.OpenMemory("/data", 10*1024*1024)
+temps, _ := zeroipc.OpenArray[float32](mem, "temperatures")
 ```
 
 ## Testing Approach
@@ -255,46 +187,15 @@ temps = Array(mem, "temperatures", dtype=np.float32)
 
 ### Test Categories
 
-**FAST Tests** (<100ms each, ~30 seconds total):
-- Core functionality validation
-- No intentional delays
-- Minimal threading
-- Single-process unit tests
-- Run on every commit
+- **FAST** (<100ms): unit tests, no threading — run on every commit
+- **MEDIUM** (<5s): multi-threaded, lock-free correctness — included in default suite
+- **SLOW** (>5s): full sync validation — CI only
+- **STRESS** (>30s): exhaustive, 32+ threads — manual only
 
-**MEDIUM Tests** (<5s each, ~2 minutes total):
-- Multi-threaded integration tests (4-8 threads)
-- Lock-free algorithm correctness
-- Minimal delays (1-10ms total)
-- Default suite includes fast + medium
-
-**SLOW Tests** (>5s each):
-- Full synchronization validation
-- Real-world timing scenarios
-- Large-scale thread orchestration
-- Disabled by default, run in CI
-
-**STRESS Tests** (>30s each):
-- 32+ threads, millions of operations
-- ABA problem detection
-- Exhaustive validation
-- Disabled by default, run manually
-
-### Unit Tests
-- GoogleTest for C++ (`tests/test_*.cpp`) - 20 test files
-- pytest for Python (`tests/test_*.py`)
-- Each structure has dedicated test file
-- Uses `test_config.h` for timing constants
-
-### Integration Tests
-- `test_lockfree_comprehensive.cpp`: Multi-threaded stress testing (MEDIUM)
-- `test_stress.cpp`: High contention scenarios (STRESS, disabled by default)
-- `test_aba_problem.cpp`: ABA problem verification (MEDIUM)
-- `test_memory_boundaries.cpp`: Memory safety validation (MEDIUM)
-- `test_failure_recovery.cpp`: Process crash recovery (MEDIUM)
-- `test_semaphore.cpp`: Semaphore synchronization (SLOW, optimized variant)
-- `test_barrier.cpp`: Barrier synchronization (SLOW, optimized variant)
-- `test_latch.cpp`: Latch countdown tests (MEDIUM)
+### Test Frameworks
+- GoogleTest for C++ (`cpp/tests/test_*.cpp`) — 26 test files
+- pytest for Python (`python/tests/test_*.py`)
+- `go test` for Go (`go/zeroipc/`)
 
 ### Test Isolation
 Tests use unique shared memory names (often with PID) to avoid conflicts:
@@ -302,68 +203,9 @@ Tests use unique shared memory names (often with PID) to avoid conflicts:
 std::string shm_name = "/test_" + std::to_string(getpid());
 ```
 
-### Running Tests by Category
-```bash
-# Fast development loop
-cmake --build build --target test_fast
+### test_config.h
 
-# Before commit
-cmake --build build --target test_default
-
-# CI pipeline
-cmake --build build --target test_ci
-
-# Full validation (including stress)
-cmake --build build --target test_all
-
-# Specific features
-ctest -L lockfree --output-on-failure
-ctest -L sync --output-on-failure
-```
-
-### Using test_config.h
-
-The `cpp/tests/test_config.h` file provides parameterized timing constants for all tests:
-
-```cpp
-#include "test_config.h"
-
-// Use standard timing constants
-TEST(SemaphoreTest, BasicAcquireRelease) {
-    using namespace zeroipc::test;
-
-    // Thread synchronization delays
-    std::this_thread::sleep_for(TestTiming::THREAD_START_DELAY);  // 1ms
-    std::this_thread::sleep_for(TestTiming::THREAD_SYNC_DELAY);   // 2ms
-
-    // Timeout values
-    bool acquired = sem.acquire_for(TestTiming::SHORT_TIMEOUT);   // 50ms
-
-    // Iteration counts based on test category
-    for (int i = 0; i < TestTiming::FAST_ITERATIONS; i++) {  // 100
-        // Fast test operations
-    }
-}
-
-// Check test mode
-if (strcmp(TestTiming::test_mode(), "STRESS") == 0) {
-    iterations = TestTiming::STRESS_ITERATIONS;  // 10000
-    num_threads = TestTiming::STRESS_THREADS;    // 32
-}
-
-// CI multiplier for longer timeouts
-auto timeout = TestTiming::MEDIUM_TIMEOUT * TestTiming::ci_multiplier();
-```
-
-**Environment Variables:**
-```bash
-# Set test mode (affects iteration counts)
-export ZEROIPC_TEST_MODE=FAST    # Minimal iterations
-export ZEROIPC_TEST_MODE=STRESS  # Maximum iterations
-
-# CI mode (3x timeout multiplier)
-export CI=1
-```
+Include `cpp/tests/test_config.h` and use `zeroipc::test::TestTiming::` constants for delays (`THREAD_START_DELAY`, `THREAD_SYNC_DELAY`), timeouts (`SHORT_TIMEOUT`, `MEDIUM_TIMEOUT`), and iterations (`FAST_ITERATIONS`, `STRESS_ITERATIONS`). Environment variables: `ZEROIPC_TEST_MODE=FAST|STRESS`, `CI=1` (3x timeout multiplier).
 
 ## Common Development Tasks
 
@@ -373,7 +215,9 @@ export CI=1
 3. Add comprehensive tests in `cpp/tests/test_<structure>.cpp`
 4. Implement Python version in `python/zeroipc/`
 5. Add Python tests in `python/tests/`
-6. Create interop tests in `interop/`
+6. Implement Go version in `go/zeroipc/`
+7. Add Go tests in `go/zeroipc/`
+8. Create cross-language interop tests in `interop/`
 
 ### Debugging Lock-Free Issues
 1. Run `test_lockfree_comprehensive` with thread sanitizer
@@ -405,34 +249,13 @@ cd cpp/build
 
 ## Recent Changes
 
-### v2.1 - Extended Synchronization Primitives (December 2024)
-- **6 New Sync Primitives**: Mutex, Once, Event, Monitor, RWLock, Signal<T>
-  - Full implementations in both C++ (`cpp/include/zeroipc/`) and Python (`python/zeroipc/`)
-  - Comprehensive test suites: 119 Python tests, 7/7 C++ Monitor tests passing
-  - Binary-compatible layouts between C++ and Python implementations
-  - Cross-process validation tests using Python multiprocessing
-  - Error handling tests for edge cases (timeouts, double-unlock, missing resources)
+### v2.2.0 - Go Implementation & Concurrency Fixes (March 2026)
+- **Go Implementation**: Full Go 1.21+ implementation with generics in `go/zeroipc/`
+  - CLI tool (`go/cmd/zeroipc/`) and cross-language interop tool (`go/cmd/interop/`)
+- **Critical Lock-Free Fixes**: Queue head/tail confusion, Stack ABA vulnerability, proper fence placement
+- **Documentation Overhaul**: Consolidated README, removed stale docs
 
-### v2.0 - Test Suite Optimization & CLI Enhancement (October 2024)
-- **Test Performance**: 200x speedup (20+ min → <2 min default suite)
-  - Implemented test categorization (FAST/MEDIUM/SLOW/STRESS)
-  - Created `test_config.h` with parameterized timing constants
-  - Added CTest labels and custom targets for selective execution
-  - Fixed ProducerConsumer deadlock in test_semaphore.cpp
-- **CLI Tool Enhancement**: Added complete feature parity for all 16 data structures
-  - `zeroipc` now supports Ring, Map, Set, Pool, Channel inspection
-  - Added structure-specific commands for all synchronization primitives
-  - Enhanced help text and error handling
-  - Tool expanded from 359KB to 482KB with full functionality
-- **Documentation**: Comprehensive testing strategy documentation
-  - Created `docs/TESTING_STRATEGY.md` with best practices
-  - Enhanced `docs/TDD_BEST_PRACTICES_LOCKFREE.md`
-
-### v1.0 - Minimal Metadata & Lock-Free Foundations
-- Switched to minimal metadata design - only name/offset/size stored
-- Implemented proper lock-free queue with CAS loops
-- Added comprehensive test suite for concurrency edge cases
-- Standardized table naming: `tableN` where N = entry count
-- Fixed ABA problems in lock-free structures
-- Added synchronization primitives (Semaphore, Barrier, Latch)
-- Implemented codata structures (Future, Lazy, Stream, Channel)
+### Previous Releases
+- **v2.1**: Added Mutex, Once, Event, Monitor, RWLock, Signal<T> sync primitives (C++ and Python)
+- **v2.0**: 200x test speedup, test categorization (FAST/MEDIUM/SLOW/STRESS), CLI feature parity for all 16 structures
+- **v1.0**: Minimal metadata design, lock-free foundations, initial sync primitives (Semaphore, Barrier, Latch), codata structures

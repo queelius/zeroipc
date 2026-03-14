@@ -1,4 +1,4 @@
-# ZeroIPC Shared Memory Format Specification v1.1
+# ZeroIPC Shared Memory Format Specification v1.2
 
 ## Overview
 
@@ -30,23 +30,25 @@ ZeroIPC defines a binary format for data structures in shared memory that can be
 
 ## Table Format
 
-### Table Header (16 bytes)
+### Table Header (32 bytes)
 
 ```c
 struct TableHeader {
     uint32_t magic;         // 0x00: Magic number 0x5A49504D ('ZIPM')
     uint32_t version;       // 0x04: Format version (currently 1)
     uint32_t entry_count;   // 0x08: Number of active entries
-    uint32_t next_offset;   // 0x0C: Next allocation offset
+    uint32_t max_entries;   // 0x0C: Maximum table entries (0 = implementation default)
+    uint64_t memory_size;   // 0x10: Total size of shared memory segment
+    uint64_t next_offset;   // 0x18: Next allocation offset
 };
 ```
 
-### Table Entry (40 bytes each)
+### Table Entry (48 bytes each)
 ```c
 struct TableEntry {
     char     name[32];      // 0x00: Null-terminated name
-    uint32_t offset;        // 0x20: Offset from start of shared memory
-    uint32_t size;          // 0x24: Total allocated size in bytes
+    uint64_t offset;        // 0x20: Offset from start of shared memory
+    uint64_t size;          // 0x28: Total allocated size in bytes
 };
 ```
 
@@ -54,7 +56,7 @@ struct TableEntry {
 
 The number of table entries is determined when the shared memory is created. The table size is:
 ```
-table_size = sizeof(TableHeader) + max_entries * sizeof(TableEntry)
+table_size = 32 + max_entries * 48
 ```
 
 ## Data Structure Formats
@@ -202,16 +204,19 @@ Mutex wraps a binary Semaphore with `max_count = 1`:
 ### Once Structure (Lock-free)
 ```c
 struct OnceFlag {
-    atomic_uint32_t state;      // 0x00: 0 = not called, 1 = done
+    atomic_uint32_t state;      // 0x00: 0=pending, 1=executing, 2=done
 };
 // Total size: 4 bytes
 ```
 
 **Semantics**:
-- `state`: Atomic flag indicating whether callable has been executed
+- `state`: Atomic flag tracking initialization progress (3-state protocol)
+  - `0` (PENDING): Callable has not been invoked yet
+  - `1` (EXECUTING): One process is currently running the callable
+  - `2` (DONE): Callable has completed successfully
 - Operations:
   - `call(func)`: Execute func exactly once across all processes
-  - `already_called()` / `is_called`: Check if already executed
+  - `already_called()` / `is_called`: Check if state == 2
   - `reset_unsafe()`: Reset for testing (NOT thread-safe!)
 
 **Usage**:
@@ -220,9 +225,9 @@ struct OnceFlag {
 - Similar to std::call_once
 
 **Algorithm**:
-1. Fast path: If state == 1, return immediately
-2. CAS(state, 0 → 1): If successful, execute func
-3. If CAS fails, func was already executed by another process
+1. Fast path: If state == 2 (DONE), return immediately
+2. CAS(state, 0 → 1): If successful, execute func, then store state = 2
+3. If CAS fails and state == 1: spin-wait until state == 2
 
 ### Event Structure (Lock-free)
 ```c
@@ -346,9 +351,9 @@ struct SignalState {
 
 ```text
 Offset   Size    Content
-0x0000   16      Table Header (magic=0x5A49504D, version=1, entries=2, next=0x1000)
-0x0010   40      Entry 0: name="sensor_data", offset=0x1000, size=0x2008
-0x0038   40      Entry 1: name="event_queue", offset=0x3008, size=0x0418
+0x0000   32      Table Header (magic=0x5A49504D, version=1, entries=2, max=64, mem_size=0x10000, next=0x1000)
+0x0020   48      Entry 0: name="sensor_data", offset=0x1000, size=0x2008
+0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0418
 ...
 0x1000   8       Array Header: capacity=1000
 0x1008   4000    Array Data: 1000 * 4 bytes (float32)
@@ -358,5 +363,6 @@ Offset   Size    Content
 
 ## Version History
 
+- v1.2: Updated Table Header to 32 bytes (added max_entries, memory_size; widened next_offset to uint64), Table Entry to 48 bytes (widened offset/size to uint64), Once to 3-state protocol (pending/executing/done)
 - v1.1: Extended synchronization primitives (Mutex, Once, Event, RWLock, Monitor, Signal)
 - v1.0: Initial release with minimal metadata design, runtime configurable table

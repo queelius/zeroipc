@@ -34,6 +34,7 @@ echo -e "${GREEN}Building C++ interop tool...${NC}"
 cd ../interop
 cat > cpp_interop.cpp << 'EOF'
 #include <zeroipc/memory.h>
+#include <zeroipc/array.h>
 #include <zeroipc/queue.h>
 #include <zeroipc/stack.h>
 #include <iostream>
@@ -60,7 +61,7 @@ void read_and_modify() {
     try {
         // Open existing memory
         zeroipc::Memory mem("/zeroipc_interop");
-        std::cout << "Opened shared memory with " << mem.count() << " structures\n" << std::endl;
+        std::cout << "Opened shared memory with " << mem.table()->entry_count() << " structures\n" << std::endl;
 
         // Access sensor array
         zeroipc::Array<SensorData> sensors(mem, "sensor_array");
@@ -166,7 +167,7 @@ def read_and_process():
     try:
         # Open existing memory
         mem = Memory("/zeroipc_interop")
-        print(f"Opened shared memory with {mem.table.count()} structures\n")
+        print(f"Opened shared memory with {mem.table.entry_count()} structures\n")
 
         # Access sensor array
         sensors = Array(mem, "sensor_array", dtype=np.dtype([
@@ -239,8 +240,13 @@ def read_and_process():
 
         # List all structures
         print(f"\nAll structures in memory:")
-        for i, (name, offset, size) in enumerate(mem.table.list(), 1):
-            print(f"  {i}. {name:20s} offset=0x{offset:08x} size={size} bytes")
+        import struct as st
+        for i in range(mem.table.entry_count()):
+            entry_off = mem.table.HEADER_SIZE + i * mem.table.ENTRY_SIZE
+            name_bytes, offset, size = st.unpack_from(
+                mem.table.ENTRY_FORMAT, mem.mmap, entry_off)
+            name = name_bytes.rstrip(b'\x00').decode('utf-8')
+            print(f"  {i+1}. {name:20s} offset=0x{offset:08x} size={size} bytes")
 
     except Exception as e:
         print(f"Python Error: {e}")
@@ -290,6 +296,7 @@ cat > cpp_stress.cpp << 'EOF'
 #include <zeroipc/queue.h>
 #include <iostream>
 #include <random>
+#include <cstring>
 
 struct Event {
     uint32_t event_id;

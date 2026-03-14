@@ -132,5 +132,8 @@ benchmark_results/
 *.orig
 
 # Git
-*.patch*.aux
+*.patch
+
+# LaTeX build artifacts
+*.aux
 *.pdf

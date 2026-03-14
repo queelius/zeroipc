@@ -29,6 +29,8 @@ site/
 
 # C binaries
 c/bin/
+c/benchmarks/benchmark_all
+c/examples/interop_test
 c/test_table_debug
 c/test_table_stress
 
@@ -54,6 +56,13 @@ coverage/
 
 # CLI tool binary (built from cpp/tools/zeroipc.cpp)
 /cpp/zeroipc
+
+# Go built binary
+go/bin/
+
+# Interop test binaries
+interop/cpp_reader
+interop/cpp_writer
 
 # Conan files
 conan.lock

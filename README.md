@@ -37,8 +37,6 @@ temps, _ := zeroipc.OpenArray[float32](mem, "temperature")
 fmt.Println(temps.Get(0))  // 23.5
 ```
 
-See [docs/examples/](docs/examples/) for streams, futures, channels, and more.
-
 ## Data Structures
 
 **Core** — Array, Queue (lock-free MPMC), Stack (lock-free), Ring, Map (lock-free), Set, Pool, Table
@@ -46,9 +44,6 @@ See [docs/examples/](docs/examples/) for streams, futures, channels, and more.
 **Sync** — Semaphore, Mutex, RWLock, Monitor, Barrier, Latch, Once, Event, Signal
 
 **Codata** — Future, Lazy, Stream (with map/filter/fold), Channel (CSP-style)
-
-See [docs/codata_guide.md](docs/codata_guide.md) for futures, streams, and lazy evaluation.
-See [docs/sync_primitives_guide.md](docs/sync_primitives_guide.md) for synchronization primitives.
 
 ## Design Principles
 
@@ -94,8 +89,6 @@ cd interop && ./test_interop.sh
 cd go && go run ./cmd/interop
 ```
 
-See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for test categories (FAST/MEDIUM/SLOW/STRESS) and CI configuration.
-
 ## CLI Tool
 
 ```bash
@@ -108,7 +101,7 @@ cd go && go build -o zeroipc ./cmd/zeroipc
 ./zeroipc repl /sensor_data                 # Interactive exploration
 ```
 
-Supports all 16 structure types. See [docs/cli_tools.md](docs/cli_tools.md) for full documentation.
+Supports all 16 structure types.
 
 ## Use Cases
 
@@ -123,16 +116,8 @@ Not designed for: network distribution, persistent storage, or general-purpose m
 ## Documentation
 
 - [Binary Specification](SPECIFICATION.md) — wire format all implementations follow
-- [Architecture](docs/architecture.md) — system design and memory layout
-- [API Reference](docs/api_reference.md) — complete API docs
-- [Codata Guide](docs/codata_guide.md) — futures, streams, lazy evaluation
-- [Sync Primitives Guide](docs/sync_primitives_guide.md) — mutex, monitor, rwlock, etc.
-- [Design Philosophy](design_philosophy.md) — core principles and trade-offs
-- [The Single-Machine Thesis](single_machine_thesis.md) — why shared memory IPC matters
-- [Design Patterns](docs/patterns.md) — cross-process communication patterns
-- [CLI Tools](docs/cli_tools.md) — command-line utilities
-- [Testing Strategy](docs/TESTING_STRATEGY.md) — test suite architecture
-- [Examples](docs/examples/) — working code examples
+- [The Single-Machine Thesis](docs/single_machine_thesis.md) — why shared memory IPC matters
+- [Design Philosophy](docs/design_philosophy.md) — core principles and trade-offs
 
 ## Contributing
 

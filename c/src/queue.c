@@ -5,42 +5,31 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-/* Queue header in shared memory */
+/*
+ * Queue binary layout (matches C++/Go/Python):
+ *   [head:u32][tail:u32][capacity:u32][elem_size:u32]  (16 bytes)
+ *   [data[0]][data[1]]...[data[cap-1]]
+ *   [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]
+ *
+ * Uses Vyukov bounded MPMC queue algorithm with per-slot sequence numbers.
+ */
+
+/* Queue header in shared memory — matches C++ Queue::Header */
 typedef struct {
-    _Atomic uint64_t head;      /* next position to pop */
-    _Atomic uint64_t tail;      /* next position to push (reserve) */
-    uint32_t capacity;          /* slot count */
-    uint32_t elem_size;         /* bytes per element */
-    uint32_t slot_size;         /* bytes per slot including metadata */
+    _Atomic uint32_t head;
+    _Atomic uint32_t tail;
+    uint32_t capacity;
+    uint32_t elem_size;
 } queue_header_t;
 
-/* Per-slot metadata preceding the element payload */
-typedef struct {
-    _Atomic uint64_t seq;       /* sequence number for Vyukov MPMC algorithm */
-    /* payload follows */
-} queue_slot_t;
-
-/* Queue structure */
+/* Queue structure (process-local handle) */
 struct zeroipc_queue {
     zeroipc_memory_t* memory;
     queue_header_t* header;
-    void* data;
+    void* data;                  /* pointer to data array */
+    _Atomic uint32_t* seq;       /* pointer to sequence array */
     char name[32];
 };
-
-static size_t align_up(size_t value, size_t alignment) {
-    if (alignment == 0) {
-        return value;
-    }
-    size_t remainder = value % alignment;
-    return remainder == 0 ? value : value + (alignment - remainder);
-}
-
-static queue_slot_t* queue_slot_at(zeroipc_queue_t* queue, uint64_t index) {
-    uint32_t capacity = queue->header->capacity;
-    uint64_t offset = (index % capacity) * queue->header->slot_size;
-    return (queue_slot_t*)((char*)queue->data + offset);
-}
 
 /* Create queue */
 zeroipc_queue_t* zeroipc_queue_create(zeroipc_memory_t* mem, const char* name,
@@ -48,186 +37,153 @@ zeroipc_queue_t* zeroipc_queue_create(zeroipc_memory_t* mem, const char* name,
     if (!mem || !name || elem_size == 0 || capacity == 0) {
         return NULL;
     }
-    
-    /* Allocate queue structure */
+
     zeroipc_queue_t* queue = calloc(1, sizeof(zeroipc_queue_t));
-    if (!queue) {
-        return NULL;
-    }
-    
+    if (!queue) return NULL;
+
     queue->memory = mem;
     strncpy(queue->name, name, sizeof(queue->name) - 1);
-    
-    /* Calculate total size with overflow check */
-    size_t slot_size = align_up(sizeof(queue_slot_t) + elem_size, sizeof(uint64_t));
-    if (capacity > (SIZE_MAX - sizeof(queue_header_t)) / slot_size) {
+
+    /* Layout: [header][data: elem_size * capacity][seq: uint32 * capacity] */
+    size_t seq_array_size = sizeof(uint32_t) * capacity;
+    if (capacity > (SIZE_MAX - sizeof(queue_header_t) - seq_array_size) / elem_size) {
         free(queue);
-        return NULL;  // Would overflow
+        return NULL;
     }
-    size_t total_size = sizeof(queue_header_t) + slot_size * capacity;
-    
-    /* Add to table and get offset */
+    size_t total_size = sizeof(queue_header_t) + elem_size * capacity + seq_array_size;
+
     size_t offset;
     int result = zeroipc_table_add(mem, name, total_size, &offset);
     if (result != ZEROIPC_OK) {
         free(queue);
         return NULL;
     }
-    
-    /* Get header and data pointers */
+
     queue->header = (queue_header_t*)((char*)zeroipc_memory_base(mem) + offset);
     queue->data = (char*)queue->header + sizeof(queue_header_t);
-    
+    queue->seq = (_Atomic uint32_t*)((char*)queue->data + elem_size * capacity);
+
     /* Initialize header */
     atomic_store(&queue->header->head, 0);
     atomic_store(&queue->header->tail, 0);
     queue->header->capacity = capacity;
     queue->header->elem_size = elem_size;
-    queue->header->slot_size = slot_size;
-    /* Initialize per-slot sequence numbers */
+
+    /* Initialize per-slot sequence numbers: seq[i] = i */
     for (uint32_t i = 0; i < capacity; ++i) {
-        queue_slot_t* slot = (queue_slot_t*)((char*)queue->data + i * slot_size);
-        atomic_store_explicit(&slot->seq, i, memory_order_relaxed);
+        atomic_store_explicit(&queue->seq[i], i, memory_order_relaxed);
     }
-    
+
     return queue;
 }
 
 /* Open existing queue */
 zeroipc_queue_t* zeroipc_queue_open(zeroipc_memory_t* mem, const char* name) {
-    if (!mem || !name) {
-        return NULL;
-    }
-    
-    /* Find in table */
+    if (!mem || !name) return NULL;
+
     size_t offset, size;
     int result = zeroipc_table_find(mem, name, &offset, &size);
-    if (result != ZEROIPC_OK) {
-        return NULL;
-    }
-    
-    /* Allocate queue structure */
+    if (result != ZEROIPC_OK) return NULL;
+
     zeroipc_queue_t* queue = calloc(1, sizeof(zeroipc_queue_t));
-    if (!queue) {
-        return NULL;
-    }
-    
+    if (!queue) return NULL;
+
     queue->memory = mem;
     strncpy(queue->name, name, sizeof(queue->name) - 1);
-    
-    /* Get header and data pointers */
+
     queue->header = (queue_header_t*)((char*)zeroipc_memory_base(mem) + offset);
-    queue->data = (char*)queue->header + sizeof(queue_header_t);
-    if (queue->header->slot_size == 0 || queue->header->capacity == 0 || queue->header->elem_size == 0) {
+    if (queue->header->capacity == 0 || queue->header->elem_size == 0) {
         free(queue);
         return NULL;
     }
-    
+
+    queue->data = (char*)queue->header + sizeof(queue_header_t);
+    queue->seq = (_Atomic uint32_t*)(
+        (char*)queue->data + queue->header->elem_size * queue->header->capacity);
+
     return queue;
 }
 
-/* Close queue */
 void zeroipc_queue_close(zeroipc_queue_t* queue) {
-    if (queue) {
-        free(queue);
-    }
+    free(queue);
 }
 
-/* Push to queue (lock-free MPSC - multiple producer, single consumer) */
+/* Push (Vyukov bounded MPMC) */
 int zeroipc_queue_push(zeroipc_queue_t* queue, const void* value) {
-    if (!queue || !value) {
-        return ZEROIPC_ERROR_SIZE;
-    }
-    
+    if (!queue || !value) return ZEROIPC_ERROR_SIZE;
+
+    uint32_t cap = queue->header->capacity;
+
     for (;;) {
-        uint64_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
-        queue_slot_t* slot = queue_slot_at(queue, tail);
-        uint64_t seq = atomic_load_explicit(&slot->seq, memory_order_acquire);
-        intptr_t diff = (intptr_t)seq - (intptr_t)tail;
-        
+        uint32_t tail = atomic_load_explicit(&queue->header->tail, memory_order_relaxed);
+        uint32_t slot = tail % cap;
+        uint32_t s = atomic_load_explicit(&queue->seq[slot], memory_order_acquire);
+        int32_t diff = (int32_t)s - (int32_t)tail;
+
         if (diff == 0) {
-            /* Try to reserve this slot */
             if (atomic_compare_exchange_weak_explicit(
                     &queue->header->tail, &tail, tail + 1,
-                    memory_order_acq_rel, memory_order_relaxed)) {
-                void* dest = (char*)slot + sizeof(queue_slot_t);
+                    memory_order_relaxed, memory_order_relaxed)) {
+                void* dest = (char*)queue->data + slot * queue->header->elem_size;
                 memcpy(dest, value, queue->header->elem_size);
-                /* Publish */
-                atomic_store_explicit(&slot->seq, tail + 1, memory_order_release);
+                atomic_store_explicit(&queue->seq[slot], tail + 1, memory_order_release);
                 return ZEROIPC_OK;
             }
         } else if (diff < 0) {
-            return ZEROIPC_ERROR_SIZE;  /* Queue full */
+            return ZEROIPC_ERROR_SIZE;  /* full */
         }
-        /* Otherwise, another producer is ahead; retry */
     }
 }
 
-/* Pop from queue (lock-free MPMC - multiple producer, multiple consumer) */
+/* Pop (Vyukov bounded MPMC) */
 int zeroipc_queue_pop(zeroipc_queue_t* queue, void* value) {
-    if (!queue || !value) {
-        return ZEROIPC_ERROR_SIZE;
-    }
-    
-    const uint32_t capacity = queue->header->capacity;
+    if (!queue || !value) return ZEROIPC_ERROR_SIZE;
+
+    uint32_t cap = queue->header->capacity;
+
     for (;;) {
-        uint64_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
-        queue_slot_t* slot = queue_slot_at(queue, head);
-        uint64_t seq = atomic_load_explicit(&slot->seq, memory_order_acquire);
-        intptr_t diff = (intptr_t)seq - (intptr_t)(head + 1);
-        
+        uint32_t head = atomic_load_explicit(&queue->header->head, memory_order_relaxed);
+        uint32_t slot = head % cap;
+        uint32_t s = atomic_load_explicit(&queue->seq[slot], memory_order_acquire);
+        int32_t diff = (int32_t)s - (int32_t)(head + 1);
+
         if (diff == 0) {
-            /* Slot contains data */
             if (atomic_compare_exchange_weak_explicit(
                     &queue->header->head, &head, head + 1,
-                    memory_order_acq_rel, memory_order_relaxed)) {
-                void* src = (char*)slot + sizeof(queue_slot_t);
+                    memory_order_relaxed, memory_order_relaxed)) {
+                void* src = (char*)queue->data + slot * queue->header->elem_size;
                 memcpy(value, src, queue->header->elem_size);
-                /* Mark slot free for next wrap */
-                atomic_store_explicit(&slot->seq, head + capacity, memory_order_release);
+                atomic_store_explicit(&queue->seq[slot], head + cap, memory_order_release);
                 return ZEROIPC_OK;
             }
         } else if (diff < 0) {
-            return ZEROIPC_ERROR_NOT_FOUND;  /* Queue empty */
+            return ZEROIPC_ERROR_NOT_FOUND;  /* empty */
         }
-        /* Otherwise, another consumer is ahead; retry */
     }
 }
 
-/* Check if empty */
 int zeroipc_queue_empty(zeroipc_queue_t* queue) {
     if (!queue) return 1;
-    
-    uint64_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
-    queue_slot_t* slot = queue_slot_at(queue, head);
-    uint64_t seq = atomic_load_explicit(&slot->seq, memory_order_acquire);
-    return seq != head + 1;
+    uint32_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
+    uint32_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
+    return head == tail;
 }
 
-/* Check if full */
 int zeroipc_queue_full(zeroipc_queue_t* queue) {
     if (!queue) return 1;
-    
-    uint64_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
-    queue_slot_t* slot = queue_slot_at(queue, tail);
-    uint64_t seq = atomic_load_explicit(&slot->seq, memory_order_acquire);
-    return (intptr_t)(seq - tail) < 0;
+    uint32_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
+    uint32_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
+    return (tail - head) >= queue->header->capacity;
 }
 
-/* Get size */
 size_t zeroipc_queue_size(zeroipc_queue_t* queue) {
     if (!queue) return 0;
-    
-    uint64_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
-    uint64_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
-    uint64_t distance = (tail >= head) ? (tail - head) : 0;
-    if (distance > queue->header->capacity) {
-        distance = queue->header->capacity;
-    }
-    return (size_t)distance;
+    uint32_t head = atomic_load_explicit(&queue->header->head, memory_order_acquire);
+    uint32_t tail = atomic_load_explicit(&queue->header->tail, memory_order_acquire);
+    /* uint32_t subtraction handles wraparound correctly */
+    return (size_t)(tail - head);
 }
 
-/* Get capacity */
 size_t zeroipc_queue_capacity(zeroipc_queue_t* queue) {
     return queue ? queue->header->capacity : 0;
 }

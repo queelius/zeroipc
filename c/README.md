@@ -10,7 +10,7 @@ Pure C implementation of the ZeroIPC shared memory protocol. Provides a minimal,
 - **Zero dependencies**: Only POSIX APIs
 - **Minimal overhead**: Direct memory access
 - **Simple API**: Easy to integrate
-- **Cross-language**: Interoperates with C++ and Python
+- **Cross-language**: Interoperates with C++, Go, and Python
 
 ## Building
 
@@ -158,7 +158,7 @@ The C implementation prioritizes:
 1. **Simplicity** - Minimal API surface
 2. **Portability** - Pure C99, POSIX only
 3. **Performance** - Zero-copy, direct access
-4. **Compatibility** - Same binary format as C++/Python
+4. **Compatibility** - Same binary format as C++/Go/Python
 
 ## Requirements
 

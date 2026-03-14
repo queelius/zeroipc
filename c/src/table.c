@@ -1,4 +1,5 @@
 #include "zeroipc.h"
+#include "table_layout.h"
 #include <string.h>
 #include <stddef.h>
 
@@ -10,31 +11,15 @@ static size_t align_up(size_t value, size_t alignment) {
 
 #define MAX_NAME_SIZE 32
 
-/* Table header structure */
-typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t entry_count;
-    uint32_t next_offset;
-    uint32_t max_entries;
-} table_header_t;
-
-/* Table entry structure */
-typedef struct {
-    char name[MAX_NAME_SIZE];
-    uint32_t offset;
-    uint32_t size;
-} table_entry_t;
-
 /* Internal: Get header */
-static table_header_t* get_header(zeroipc_memory_t* mem) {
-    return (table_header_t*)zeroipc_memory_base(mem);
+static zipc_table_header_t* get_header(zeroipc_memory_t* mem) {
+    return (zipc_table_header_t*)zeroipc_memory_base(mem);
 }
 
 /* Internal: Get entries */
-static table_entry_t* get_entries(zeroipc_memory_t* mem) {
+static zipc_table_entry_t* get_entries(zeroipc_memory_t* mem) {
     char* base = (char*)zeroipc_memory_base(mem);
-    return (table_entry_t*)(base + sizeof(table_header_t));
+    return (zipc_table_entry_t*)(base + sizeof(zipc_table_header_t));
 }
 
 /* Add entry to table */
@@ -42,13 +27,13 @@ int zeroipc_table_add(zeroipc_memory_t* mem, const char* name, size_t size, size
     if (!mem || !name || size == 0) {
         return ZEROIPC_ERROR_SIZE;
     }
-    
+
     if (strlen(name) >= MAX_NAME_SIZE) {
         return ZEROIPC_ERROR_NAME_TOO_LONG;
     }
-    
-    table_header_t* header = get_header(mem);
-    table_entry_t* entries = get_entries(mem);
+
+    zipc_table_header_t* header = get_header(mem);
+    zipc_table_entry_t* entries = get_entries(mem);
     
     /* Check if name already exists */
     for (uint32_t i = 0; i < header->entry_count; i++) {
@@ -70,7 +55,7 @@ int zeroipc_table_add(zeroipc_memory_t* mem, const char* name, size_t size, size
     }
     
     /* Add entry */
-    table_entry_t* entry = &entries[header->entry_count];
+    zipc_table_entry_t* entry = &entries[header->entry_count];
     strncpy(entry->name, name, MAX_NAME_SIZE - 1);
     entry->name[MAX_NAME_SIZE - 1] = '\0';
     entry->offset = aligned_offset;
@@ -91,9 +76,9 @@ int zeroipc_table_find(zeroipc_memory_t* mem, const char* name, size_t* offset, 
     if (!mem || !name) {
         return ZEROIPC_ERROR_NOT_FOUND;
     }
-    
-    table_header_t* header = get_header(mem);
-    table_entry_t* entries = get_entries(mem);
+
+    zipc_table_header_t* header = get_header(mem);
+    zipc_table_entry_t* entries = get_entries(mem);
     
     /* Search for entry */
     for (uint32_t i = 0; i < header->entry_count; i++) {
@@ -116,9 +101,9 @@ int zeroipc_table_remove(zeroipc_memory_t* mem, const char* name) {
     if (!mem || !name) {
         return ZEROIPC_ERROR_NOT_FOUND;
     }
-    
-    table_header_t* header = get_header(mem);
-    table_entry_t* entries = get_entries(mem);
+
+    zipc_table_header_t* header = get_header(mem);
+    zipc_table_entry_t* entries = get_entries(mem);
     
     /* Find entry */
     for (uint32_t i = 0; i < header->entry_count; i++) {
@@ -140,7 +125,7 @@ size_t zeroipc_table_count(zeroipc_memory_t* mem) {
     if (!mem) {
         return 0;
     }
-    
-    table_header_t* header = get_header(mem);
+
+    zipc_table_header_t* header = get_header(mem);
     return header->entry_count;
 }

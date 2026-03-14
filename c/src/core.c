@@ -6,6 +6,7 @@
 
 #define _GNU_SOURCE
 #include "zeroipc_core.h"
+#include "table_layout.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -22,23 +23,6 @@
 #define ZIPC_VERSION    1
 #define MAX_NAME_SIZE   32
 #define DEFAULT_ENTRIES 64
-
-/* Table header - binary compatible with C++ and Python */
-typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t entry_count;
-    uint32_t next_offset;
-    uint32_t max_entries;
-    uint32_t reserved[3];  /* Future expansion */
-} zipc_header_t;
-
-/* Table entry - binary compatible with C++ and Python */
-typedef struct {
-    char     name[MAX_NAME_SIZE];
-    uint32_t offset;
-    uint32_t size;
-} zipc_entry_t;
 
 /* Shared memory handle */
 struct zipc_shm {
@@ -71,11 +55,16 @@ typedef struct {
     uint32_t elem_size;
 } queue_header_t;
 
+/* Per-slot state values for stack 4-state CAS protocol */
+#define SLOT_EMPTY   0
+#define SLOT_WRITING 1
+#define SLOT_READY   2
+#define SLOT_READING 3
+
 typedef struct {
-    _Atomic uint32_t top;
+    _Atomic int32_t top;        /* index of top element, -1 when empty */
     uint32_t capacity;
     uint32_t elem_size;
-    uint32_t reserved;
 } stack_header_t;
 
 typedef struct {
@@ -89,17 +78,17 @@ typedef struct {
  * Internal Helper Functions
  * ============================================================================ */
 
-static inline zipc_header_t* get_header(zipc_shm_t shm) {
-    return (zipc_header_t*)shm->base;
+static inline zipc_table_header_t* get_header(zipc_shm_t shm) {
+    return (zipc_table_header_t*)shm->base;
 }
 
-static inline zipc_entry_t* get_entries(zipc_shm_t shm) {
-    return (zipc_entry_t*)((char*)shm->base + sizeof(zipc_header_t));
+static inline zipc_table_entry_t* get_entries(zipc_shm_t shm) {
+    return (zipc_table_entry_t*)((char*)shm->base + sizeof(zipc_table_header_t));
 }
 
 static size_t calculate_table_size(size_t entries) {
     if (entries == 0) entries = DEFAULT_ENTRIES;
-    return sizeof(zipc_header_t) + entries * sizeof(zipc_entry_t);
+    return sizeof(zipc_table_header_t) + entries * sizeof(zipc_table_entry_t);
 }
 
 /* Align offset to 8-byte boundary */
@@ -150,14 +139,15 @@ zipc_shm_t zipc_open(const char* name, size_t size, size_t entries) {
         if (shm->base == MAP_FAILED) goto error;
 
         /* Initialize table if we created it */
-        zipc_header_t* header = get_header(shm);
+        zipc_table_header_t* header = get_header(shm);
         if (header->magic != ZIPC_MAGIC) {
             memset(shm->base, 0, table_size);
             header->magic = ZIPC_MAGIC;
             header->version = ZIPC_VERSION;
             header->entry_count = 0;
-            header->next_offset = table_size;
             header->max_entries = entries ? entries : DEFAULT_ENTRIES;
+            header->memory_size = shm->size;
+            header->next_offset = table_size;
         }
     } else {
         /* Open existing shared memory */
@@ -176,8 +166,13 @@ zipc_shm_t zipc_open(const char* name, size_t size, size_t entries) {
         if (shm->base == MAP_FAILED) goto error;
 
         /* Validate magic */
-        zipc_header_t* header = get_header(shm);
+        zipc_table_header_t* header = get_header(shm);
         if (header->magic != ZIPC_MAGIC) goto error;
+
+        /* C++/Go write 0 for max_entries; use DEFAULT_ENTRIES in that case */
+        if (header->max_entries == 0) {
+            header->max_entries = DEFAULT_ENTRIES;
+        }
     }
 
     return shm;
@@ -215,11 +210,11 @@ size_t zipc_size(zipc_shm_t shm) {
  * Table Management
  * ============================================================================ */
 
-static zipc_entry_t* find_entry(zipc_shm_t shm, const char* name) {
+static zipc_table_entry_t* find_entry(zipc_shm_t shm, const char* name) {
     if (!shm || !name) return NULL;
 
-    zipc_header_t* header = get_header(shm);
-    zipc_entry_t* entries = get_entries(shm);
+    zipc_table_header_t* header = get_header(shm);
+    zipc_table_entry_t* entries = get_entries(shm);
 
     for (uint32_t i = 0; i < header->entry_count; i++) {
         if (strncmp(entries[i].name, name, MAX_NAME_SIZE - 1) == 0) {
@@ -233,7 +228,7 @@ static zipc_entry_t* find_entry(zipc_shm_t shm, const char* name) {
 static size_t allocate_space(zipc_shm_t shm, const char* name, size_t size) {
     if (!shm || !name || size == 0) return 0;
 
-    zipc_header_t* header = get_header(shm);
+    zipc_table_header_t* header = get_header(shm);
 
     /* Check if name already exists */
     if (find_entry(shm, name)) return 0;
@@ -242,14 +237,14 @@ static size_t allocate_space(zipc_shm_t shm, const char* name, size_t size) {
     if (header->entry_count >= header->max_entries) return 0;
 
     /* Align offset */
-    size_t offset = align_offset(header->next_offset);
+    size_t offset = align_offset((size_t)header->next_offset);
 
     /* Check if there's enough space */
     if (offset + size > shm->size) return 0;
 
     /* Add entry */
-    zipc_entry_t* entries = get_entries(shm);
-    zipc_entry_t* entry = &entries[header->entry_count];
+    zipc_table_entry_t* entries = get_entries(shm);
+    zipc_table_entry_t* entry = &entries[header->entry_count];
 
     strncpy(entry->name, name, MAX_NAME_SIZE - 1);
     entry->name[MAX_NAME_SIZE - 1] = '\0';
@@ -291,10 +286,16 @@ zipc_view_t zipc_create(zipc_shm_t shm, const char* name,
             return NULL;
     }
 
-    /* Check for overflow */
-    if (capacity > (SIZE_MAX - header_size) / elemsize) return NULL;
+    /* Queue and stack need extra space for per-slot metadata arrays */
+    size_t extra_per_slot = 0;
+    if (type == ZIPC_TYPE_QUEUE || type == ZIPC_TYPE_STACK) {
+        extra_per_slot = sizeof(uint32_t);  /* sequence (queue) or state (stack) */
+    }
 
-    size_t total_size = header_size + elemsize * capacity;
+    /* Check for overflow */
+    if (capacity > (SIZE_MAX - header_size) / (elemsize + extra_per_slot)) return NULL;
+
+    size_t total_size = header_size + (elemsize + extra_per_slot) * capacity;
     size_t offset = allocate_space(shm, name, total_size);
     if (offset == 0) return NULL;
 
@@ -324,13 +325,27 @@ zipc_view_t zipc_create(zipc_shm_t shm, const char* name,
             atomic_store(&qh->tail, 0);
             qh->capacity = capacity;
             qh->elem_size = elemsize;
+            /* Initialize per-slot sequence numbers: seq[i] = i
+             * Layout: [header][data: T * capacity][seq: uint32 * capacity] */
+            _Atomic uint32_t* seq = (_Atomic uint32_t*)(
+                (char*)view->data + elemsize * capacity);
+            for (size_t i = 0; i < capacity; i++) {
+                atomic_store_explicit(&seq[i], (uint32_t)i, memory_order_relaxed);
+            }
             break;
         }
         case ZIPC_TYPE_STACK: {
             stack_header_t* sh = (stack_header_t*)header;
-            atomic_store(&sh->top, 0);
+            atomic_store(&sh->top, -1);  /* -1 = empty (signed) */
             sh->capacity = capacity;
             sh->elem_size = elemsize;
+            /* Initialize per-slot state array to SLOT_EMPTY(0)
+             * Layout: [header][data: T * capacity][state: uint32 * capacity] */
+            _Atomic uint32_t* state = (_Atomic uint32_t*)(
+                (char*)view->data + elemsize * capacity);
+            for (size_t i = 0; i < capacity; i++) {
+                atomic_store_explicit(&state[i], SLOT_EMPTY, memory_order_relaxed);
+            }
             break;
         }
         case ZIPC_TYPE_RING: {
@@ -353,7 +368,7 @@ zipc_view_t zipc_get(zipc_shm_t shm, const char* name,
                     zipc_type type, size_t elemsize) {
     if (!shm || !name) return NULL;
 
-    zipc_entry_t* entry = find_entry(shm, name);
+    zipc_table_entry_t* entry = find_entry(shm, name);
     if (!entry) return NULL;
 
     /* Create view */
@@ -459,35 +474,44 @@ static queue_header_t* get_queue_header(zipc_view_t queue) {
     return (queue_header_t*)((char*)queue->data - sizeof(queue_header_t));
 }
 
+/* Get pointer to sequence array (after data) */
+static _Atomic uint32_t* get_queue_seq(zipc_view_t queue) {
+    queue_header_t* header = get_queue_header(queue);
+    return (_Atomic uint32_t*)(
+        (char*)queue->data + queue->elemsize * header->capacity);
+}
+
 zipc_result zipc_queue_push(zipc_view_t queue, const void* data) {
     if (!queue || !data) return ZIPC_INVALID;
 
     queue_header_t* header = get_queue_header(queue);
     if (!header) return ZIPC_INVALID;
 
-    uint32_t current_tail, next_tail;
+    _Atomic uint32_t* seq = get_queue_seq(queue);
+    uint32_t cap = header->capacity;
 
-    /* Reserve a slot atomically */
-    do {
-        current_tail = atomic_load_explicit(&header->tail, memory_order_relaxed);
-        next_tail = (current_tail + 1) % header->capacity;
+    for (;;) {
+        uint32_t tail = atomic_load_explicit(&header->tail, memory_order_relaxed);
+        uint32_t slot = tail % cap;
+        uint32_t s = atomic_load_explicit(&seq[slot], memory_order_acquire);
+        int32_t diff = (int32_t)s - (int32_t)tail;
 
-        /* Check if full */
-        if (next_tail == atomic_load_explicit(&header->head, memory_order_acquire)) {
+        if (diff == 0) {
+            /* Slot ready for writing — try to claim it */
+            if (atomic_compare_exchange_weak_explicit(
+                    &header->tail, &tail, tail + 1,
+                    memory_order_relaxed, memory_order_relaxed)) {
+                void* dest = (char*)queue->data + slot * queue->elemsize;
+                memcpy(dest, data, queue->elemsize);
+                /* Publish: seq = tail + 1 */
+                atomic_store_explicit(&seq[slot], tail + 1, memory_order_release);
+                return ZIPC_OK;
+            }
+        } else if (diff < 0) {
             return ZIPC_FULL;
         }
-    } while (!atomic_compare_exchange_weak_explicit(
-                &header->tail, &current_tail, next_tail,
-                memory_order_relaxed, memory_order_relaxed));
-
-    /* Write data to our reserved slot */
-    void* slot = (char*)queue->data + current_tail * queue->elemsize;
-    memcpy(slot, data, queue->elemsize);
-
-    /* Ensure data is visible before other threads can read it */
-    atomic_thread_fence(memory_order_release);
-
-    return ZIPC_OK;
+        /* diff > 0: another producer claimed this slot; retry */
+    }
 }
 
 zipc_result zipc_queue_pop(zipc_view_t queue, void* data) {
@@ -496,27 +520,31 @@ zipc_result zipc_queue_pop(zipc_view_t queue, void* data) {
     queue_header_t* header = get_queue_header(queue);
     if (!header) return ZIPC_INVALID;
 
-    uint32_t current_head, next_head;
+    _Atomic uint32_t* seq = get_queue_seq(queue);
+    uint32_t cap = header->capacity;
 
-    /* Reserve a slot to read from */
-    do {
-        current_head = atomic_load_explicit(&header->head, memory_order_relaxed);
+    for (;;) {
+        uint32_t head = atomic_load_explicit(&header->head, memory_order_relaxed);
+        uint32_t slot = head % cap;
+        uint32_t s = atomic_load_explicit(&seq[slot], memory_order_acquire);
+        int32_t diff = (int32_t)s - (int32_t)(head + 1);
 
-        /* Check if empty */
-        if (current_head == atomic_load_explicit(&header->tail, memory_order_acquire)) {
+        if (diff == 0) {
+            /* Slot contains data — try to claim it */
+            if (atomic_compare_exchange_weak_explicit(
+                    &header->head, &head, head + 1,
+                    memory_order_relaxed, memory_order_relaxed)) {
+                void* src = (char*)queue->data + slot * queue->elemsize;
+                memcpy(data, src, queue->elemsize);
+                /* Release: seq = head + capacity */
+                atomic_store_explicit(&seq[slot], head + cap, memory_order_release);
+                return ZIPC_OK;
+            }
+        } else if (diff < 0) {
             return ZIPC_EMPTY;
         }
-
-        next_head = (current_head + 1) % header->capacity;
-    } while (!atomic_compare_exchange_weak_explicit(
-                &header->head, &current_head, next_head,
-                memory_order_relaxed, memory_order_relaxed));
-
-    /* Read data from our reserved slot */
-    void* slot = (char*)queue->data + current_head * queue->elemsize;
-    memcpy(data, slot, queue->elemsize);
-
-    return ZIPC_OK;
+        /* diff > 0: another consumer claimed this slot; retry */
+    }
 }
 
 bool zipc_queue_empty(zipc_view_t queue) {
@@ -558,32 +586,48 @@ static stack_header_t* get_stack_header(zipc_view_t stack) {
     return (stack_header_t*)((char*)stack->data - sizeof(stack_header_t));
 }
 
+/* Get pointer to per-slot state array (after data) */
+static _Atomic uint32_t* get_stack_state(zipc_view_t stack) {
+    stack_header_t* header = get_stack_header(stack);
+    return (_Atomic uint32_t*)(
+        (char*)stack->data + stack->elemsize * header->capacity);
+}
+
 zipc_result zipc_stack_push(zipc_view_t stack, const void* data) {
     if (!stack || !data) return ZIPC_INVALID;
 
     stack_header_t* header = get_stack_header(stack);
     if (!header) return ZIPC_INVALID;
 
-    uint32_t current_top, next_top;
+    _Atomic uint32_t* state = get_stack_state(stack);
+    int32_t current_top, new_top;
 
+    /* Step 1: Reserve a slot by CAS-advancing top */
     do {
         current_top = atomic_load_explicit(&header->top, memory_order_relaxed);
-
-        /* Check if full */
-        if (current_top >= header->capacity) {
+        if (current_top >= (int32_t)(header->capacity - 1)) {
             return ZIPC_FULL;
         }
-
-        next_top = current_top + 1;
+        new_top = current_top + 1;
     } while (!atomic_compare_exchange_weak_explicit(
-                &header->top, &current_top, next_top,
-                memory_order_relaxed, memory_order_relaxed));
+                &header->top, &current_top, new_top,
+                memory_order_acq_rel, memory_order_relaxed));
 
-    /* Write data */
-    void* slot = (char*)stack->data + current_top * stack->elemsize;
+    /* Step 2: CAS slot state EMPTY -> WRITING */
+    uint32_t expected = SLOT_EMPTY;
+    while (!atomic_compare_exchange_weak_explicit(
+                &state[new_top], &expected, SLOT_WRITING,
+                memory_order_acq_rel, memory_order_relaxed)) {
+        expected = SLOT_EMPTY;
+        /* Yield to avoid busy-spin */
+    }
+
+    /* Step 3: Write data (exclusive ownership) */
+    void* slot = (char*)stack->data + new_top * stack->elemsize;
     memcpy(slot, data, stack->elemsize);
 
-    atomic_thread_fence(memory_order_release);
+    /* Step 4: Publish: WRITING -> READY */
+    atomic_store_explicit(&state[new_top], SLOT_READY, memory_order_release);
 
     return ZIPC_OK;
 }
@@ -594,24 +638,35 @@ zipc_result zipc_stack_pop(zipc_view_t stack, void* data) {
     stack_header_t* header = get_stack_header(stack);
     if (!header) return ZIPC_INVALID;
 
-    uint32_t current_top, next_top;
+    _Atomic uint32_t* state = get_stack_state(stack);
+    int32_t current_top, new_top;
 
+    /* Step 1: Reserve a slot by CAS-decrementing top */
     do {
-        current_top = atomic_load_explicit(&header->top, memory_order_acquire);
-
-        /* Check if empty */
-        if (current_top == 0) {
+        current_top = atomic_load_explicit(&header->top, memory_order_relaxed);
+        if (current_top < 0) {
             return ZIPC_EMPTY;
         }
-
-        next_top = current_top - 1;
+        new_top = current_top - 1;
     } while (!atomic_compare_exchange_weak_explicit(
-                &header->top, &current_top, next_top,
-                memory_order_release, memory_order_relaxed));
+                &header->top, &current_top, new_top,
+                memory_order_acq_rel, memory_order_relaxed));
 
-    /* Read data */
-    void* slot = (char*)stack->data + next_top * stack->elemsize;
+    /* Step 2: CAS slot state READY -> READING */
+    uint32_t expected = SLOT_READY;
+    while (!atomic_compare_exchange_weak_explicit(
+                &state[current_top], &expected, SLOT_READING,
+                memory_order_acq_rel, memory_order_relaxed)) {
+        expected = SLOT_READY;
+        /* Yield to avoid busy-spin */
+    }
+
+    /* Step 3: Read data (exclusive ownership) */
+    void* slot = (char*)stack->data + current_top * stack->elemsize;
     memcpy(data, slot, stack->elemsize);
+
+    /* Step 4: Release: READING -> EMPTY */
+    atomic_store_explicit(&state[current_top], SLOT_EMPTY, memory_order_release);
 
     return ZIPC_OK;
 }
@@ -622,10 +677,16 @@ zipc_result zipc_stack_top(zipc_view_t stack, void* data) {
     stack_header_t* header = get_stack_header(stack);
     if (!header) return ZIPC_INVALID;
 
-    uint32_t top = atomic_load(&header->top);
-    if (top == 0) return ZIPC_EMPTY;
+    _Atomic uint32_t* state = get_stack_state(stack);
+    int32_t top = atomic_load(&header->top);
+    if (top < 0) return ZIPC_EMPTY;
 
-    void* slot = (char*)stack->data + (top - 1) * stack->elemsize;
+    /* Wait for data to be ready */
+    while (atomic_load_explicit(&state[top], memory_order_acquire) != SLOT_READY) {
+        /* spin */
+    }
+
+    void* slot = (char*)stack->data + top * stack->elemsize;
     memcpy(data, slot, stack->elemsize);
 
     return ZIPC_OK;
@@ -633,17 +694,19 @@ zipc_result zipc_stack_top(zipc_view_t stack, void* data) {
 
 bool zipc_stack_empty(zipc_view_t stack) {
     stack_header_t* header = get_stack_header(stack);
-    return !header || atomic_load(&header->top) == 0;
+    return !header || atomic_load(&header->top) < 0;
 }
 
 bool zipc_stack_full(zipc_view_t stack) {
     stack_header_t* header = get_stack_header(stack);
-    return !header || atomic_load(&header->top) >= header->capacity;
+    return !header || atomic_load(&header->top) >= (int32_t)(header->capacity - 1);
 }
 
 size_t zipc_stack_size(zipc_view_t stack) {
     stack_header_t* header = get_stack_header(stack);
-    return header ? atomic_load(&header->top) : 0;
+    if (!header) return 0;
+    int32_t top = atomic_load(&header->top);
+    return top < 0 ? 0 : (size_t)(top + 1);
 }
 
 /* ============================================================================
@@ -653,11 +716,11 @@ size_t zipc_stack_size(zipc_view_t stack) {
 void zipc_iterate(zipc_shm_t shm, zipc_iter_fn fn, void* ctx) {
     if (!shm || !fn) return;
 
-    zipc_header_t* header = get_header(shm);
-    zipc_entry_t* entries = get_entries(shm);
+    zipc_table_header_t* header = get_header(shm);
+    zipc_table_entry_t* entries = get_entries(shm);
 
     for (uint32_t i = 0; i < header->entry_count; i++) {
-        if (!fn(entries[i].name, entries[i].offset, entries[i].size, ctx)) {
+        if (!fn(entries[i].name, (size_t)entries[i].offset, (size_t)entries[i].size, ctx)) {
             break;
         }
     }
@@ -665,7 +728,7 @@ void zipc_iterate(zipc_shm_t shm, zipc_iter_fn fn, void* ctx) {
 
 size_t zipc_count(zipc_shm_t shm) {
     if (!shm) return 0;
-    zipc_header_t* header = get_header(shm);
+    zipc_table_header_t* header = get_header(shm);
     return header->entry_count;
 }
 

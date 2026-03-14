@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "zeroipc.h"
+#include "table_layout.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -11,22 +12,7 @@
 #define ZEROIPC_MAGIC 0x5A49504D  /* 'ZIPM' */
 #define ZEROIPC_VERSION 1
 #define MAX_NAME_SIZE 32
-
-/* Table header structure */
-typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t entry_count;
-    uint32_t next_offset;
-    uint32_t max_entries;
-} table_header_t;
-
-/* Table entry structure */
-typedef struct {
-    char name[MAX_NAME_SIZE];
-    uint32_t offset;
-    uint32_t size;
-} table_entry_t;
+#define DEFAULT_ENTRIES 64
 
 /* Memory structure */
 struct zeroipc_memory {
@@ -40,28 +26,29 @@ struct zeroipc_memory {
 
 /* Calculate table size */
 static size_t calculate_table_size(size_t max_entries) {
-    return sizeof(table_header_t) + (sizeof(table_entry_t) * max_entries);
+    return sizeof(zipc_table_header_t) + (sizeof(zipc_table_entry_t) * max_entries);
 }
 
 /* Get table header */
-static table_header_t* get_header(zeroipc_memory_t* mem) {
-    return (table_header_t*)mem->base;
+static zipc_table_header_t* get_header(zeroipc_memory_t* mem) {
+    return (zipc_table_header_t*)mem->base;
 }
 
 /* Get table entries - currently unused but kept for future use */
 __attribute__((unused))
-static table_entry_t* get_entries(zeroipc_memory_t* mem) {
-    return (table_entry_t*)((char*)mem->base + sizeof(table_header_t));
+static zipc_table_entry_t* get_entries(zeroipc_memory_t* mem) {
+    return (zipc_table_entry_t*)((char*)mem->base + sizeof(zipc_table_header_t));
 }
 
 /* Initialize table */
 static void init_table(zeroipc_memory_t* mem) {
-    table_header_t* header = get_header(mem);
+    zipc_table_header_t* header = get_header(mem);
     header->magic = ZEROIPC_MAGIC;
     header->version = ZEROIPC_VERSION;
     header->entry_count = 0;
-    header->next_offset = calculate_table_size(mem->max_entries);
     header->max_entries = mem->max_entries;
+    header->memory_size = mem->size;
+    header->next_offset = calculate_table_size(mem->max_entries);
 }
 
 /* Create or open shared memory */
@@ -159,7 +146,7 @@ zeroipc_memory_t* zeroipc_memory_open(const char* name) {
     }
     
     /* Verify magic and version */
-    table_header_t* header = get_header(mem);
+    zipc_table_header_t* header = get_header(mem);
     if (header->magic != ZEROIPC_MAGIC) {
         mem->last_error = ZEROIPC_ERROR_INVALID_MAGIC;
         munmap(mem->base, mem->size);
@@ -168,7 +155,7 @@ zeroipc_memory_t* zeroipc_memory_open(const char* name) {
         free(mem);
         return NULL;
     }
-    
+
     if (header->version != ZEROIPC_VERSION) {
         mem->last_error = ZEROIPC_ERROR_VERSION_MISMATCH;
         munmap(mem->base, mem->size);
@@ -177,9 +164,9 @@ zeroipc_memory_t* zeroipc_memory_open(const char* name) {
         free(mem);
         return NULL;
     }
-    
-    /* Get max_entries from header */
-    mem->max_entries = header->max_entries;
+
+    /* Get max_entries from header; C++/Go write 0 here, so fall back to default */
+    mem->max_entries = header->max_entries ? header->max_entries : DEFAULT_ENTRIES;
     
     return mem;
 }

@@ -130,13 +130,11 @@ class Stack(Generic[T]):
 
     def _read_capacity(self) -> int:
         """Read capacity from header."""
-        _, capacity, _ = self._read_header()
-        return capacity
+        return struct.unpack_from('I', self.memory.data, self.offset + 4)[0]
 
     def _read_elem_size(self) -> int:
         """Read element size from header."""
-        _, _, elem_size = self._read_header()
-        return elem_size
+        return struct.unpack_from('I', self.memory.data, self.offset + 8)[0]
 
     def _read_ready(self, index: int) -> int:
         """Read the ready flag for a slot."""
@@ -204,7 +202,7 @@ class Stack(Generic[T]):
         if top_idx < 0:
             return None
 
-        for spins in range(10000):
+        for _ in range(10000):
             if self._read_ready(top_idx) == _SLOT_READY:
                 return self.data[top_idx].copy()
             current_top, _, _ = self._read_header()

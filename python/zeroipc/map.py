@@ -325,14 +325,13 @@ class Map(Generic[K, V]):
             if current_state == self.OCCUPIED:
                 existing_key = self._read_entry_key(idx)
                 if self._keys_equal(existing_key, key):
-                    # Update value
-                    value_offset = self._get_entry_offset(idx) + 4 + self.key_size
-                    if self.value_dtype.kind in 'iuf':
-                        struct.pack_into(f'<{self.value_dtype.char}', self.buffer, value_offset, value)
-                    else:
-                        value_array = np.array([value], dtype=self.value_dtype)
-                        self.buffer[value_offset:value_offset + self.value_size] = value_array.tobytes()
-                    return True
+                    # CAS OCCUPIED -> INSERTING for exclusive update access
+                    if self._cas_entry_state(idx, self.OCCUPIED, self.INSERTING):
+                        self._write_entry_key_value(idx, key, value)
+                        self._store_entry_state(idx, self.OCCUPIED)
+                        return True
+                    # CAS failed — slot was erased or another updater won; retry from this slot
+                    continue
 
             # Try deleted slots too: DELETED -> INSERTING
             if self._cas_entry_state(idx, self.DELETED, self.INSERTING):
@@ -427,12 +426,8 @@ class Map(Generic[K, V]):
                 if self._keys_equal(existing_key, key):
                     # CAS from OCCUPIED to DELETED; only the winner decrements size
                     if self._cas_entry_state(idx, self.OCCUPIED, self.DELETED):
-                        # Decrement size
                         size_atomic = AtomicInt(self.buffer, 0)
-                        current_size = size_atomic.load()
-                        while current_size > 0:
-                            if size_atomic.compare_exchange_weak(current_size, current_size - 1):
-                                break
+                        size_atomic.fetch_add(-1)
                         return True
                     # CAS failed: another thread already erased this slot
                     # Re-read to see if it's now DELETED

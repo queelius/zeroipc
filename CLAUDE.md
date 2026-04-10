@@ -90,7 +90,6 @@ go run ./cmd/interop       # Run Go cross-language interop
 cd interop
 ./test_interop.sh          # C++ writes, Python reads
 ./test_reverse_interop.sh  # Python writes, C++ reads
-./test_three_way_interop.sh  # C++/Python/Go three-way
 ./test_go_cpp_interop.sh   # Go/C++ specific interop
 ```
 

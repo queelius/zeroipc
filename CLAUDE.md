@@ -257,14 +257,17 @@ Include `cpp/tests/test_config.h` and use `zeroipc::test::TestTiming::` constant
 
 ### Performance Profiling
 ```bash
-cd cpp/build
-./benchmarks/benchmark_queue --benchmark_repetitions=10
-./benchmarks/benchmark_array
+cd build/cpp/benchmarks
+./benchmark_queue
+./benchmark_stack
+./benchmark_array
 ```
+
+These are hand-rolled `iostream` benchmarks, not Google Benchmark. They have no flag interface and run once per invocation. Wrap in a shell loop if you need repetitions.
 
 ## Key Gotchas
 
-1. **Table Entry Limits**: Default 64 entries fills quickly in tests. Use larger table types when needed.
+1. **Table Entry Limits**: Default 64 entries fills quickly in tests. Pass a larger `max_entries` to `Memory(name, size, max_entries=...)` (see Lock-Free Algorithms / Table Configuration above).
 
 2. **String Names**: Limited to 31 characters (32 with null terminator). Longer names throw `std::invalid_argument`.
 

@@ -11,9 +11,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Parallel Language Implementations
 - `cpp/` - Modern C++23 header-only template library (primary development focus)
 - `go/` - Go 1.21+ implementation with generics and CLI tool
-- `python/` - Pure Python implementation using mmap and numpy
-- `c/` - Pure C99 implementation with static library
+- `python/` - Pure Python implementation using mmap and numpy, with optional C FFI backend
+- `c/` - Pure C99 implementation: static library `libzeroipc.a` plus shared library `libzeroipc_ffi.so` (FFI for Python)
 - `interop/` - Cross-language integration tests (C++/Python/Go)
+- `docs/` - MkDocs site sources (Single Machine Thesis, Design Philosophy)
+- `.papermill/` - Paper project (state, prior art survey, outline)
 - `SPECIFICATION.md` - Binary format all implementations must follow
 
 ### Core Design Principles
@@ -38,34 +40,35 @@ cmake -B build .
 # Build everything
 cmake --build build
 
-# Run tests - optimized test suite with categorization
-cd build && ctest --output-on-failure           # Default: fast + medium (~2 min)
+# Run tests. Test registration is in cpp/CMakeLists.txt, not the top-level CMake
+cd build/cpp && ctest --output-on-failure       # Default: fast + medium (~2 min)
 cmake --build build --target test_fast          # Fast tests only (~30 sec)
 cmake --build build --target test_default       # Same as default (fast + medium)
 cmake --build build --target test_ci            # CI mode: all except stress (~10 min)
 cmake --build build --target test_all           # Full suite including stress (~30 min)
 
-# Run specific test categories using CTest labels
-ctest -L fast --output-on-failure               # FAST: <100ms, core functionality
-ctest -L medium --output-on-failure             # MEDIUM: <5s, multi-threaded
-ctest -L slow --output-on-failure               # SLOW: >5s, full sync tests
-ctest -L stress --output-on-failure             # STRESS: >30s, exhaustive (disabled by default)
-ctest -L lockfree --output-on-failure           # All lock-free structure tests
-ctest -L sync --output-on-failure               # All synchronization primitive tests
-ctest -L unit --output-on-failure               # Unit tests only
-ctest -L integration --output-on-failure        # Integration tests only
+# Run specific test categories using CTest labels (must be from build/cpp/)
+cd build/cpp && ctest -L fast --output-on-failure       # FAST: <100ms, core functionality
+cd build/cpp && ctest -L medium --output-on-failure     # MEDIUM: <5s, multi-threaded
+cd build/cpp && ctest -L slow --output-on-failure       # SLOW: >5s, full sync tests
+cd build/cpp && ctest -L stress --output-on-failure     # STRESS: >30s, exhaustive
+cd build/cpp && ctest -L lockfree --output-on-failure   # All lock-free structure tests
+cd build/cpp && ctest -L sync --output-on-failure       # All synchronization primitive tests
 
 # Run specific test by name
-cd build && ctest -R "QueueTest" --output-on-failure
+cd build/cpp && ctest -R "queue_test" --output-on-failure
 ```
 
 ### C
 ```bash
 cd c
-make            # Build static library
-make test       # Run tests  
+make            # Build both libzeroipc.a (static) and libzeroipc_ffi.so (FFI shared)
+make shared     # Build only libzeroipc_ffi.so
+make test       # Run tests
 make clean      # Clean artifacts
 ```
+
+The shared library `libzeroipc_ffi.so` is a thin, stateless C11 atomics layer for Python's `_cffi.py` module. It compiles from a single file (`c/src/ffi.c`) with no dependencies beyond `stdatomic.h` and `string.h`. Self-contained by design so Python can use real cross-process atomics without the C library having any other linkage.
 
 ### Python
 ```bash
@@ -76,6 +79,16 @@ make test-cov     # Run with coverage report
 make lint         # Run linting (ruff, mypy)
 make format       # Format code (black, isort)
 ```
+
+**C FFI backend (v2.3.0+).** When `libzeroipc_ffi.so` is found, Python's Queue and Stack delegate `push`/`pop`/`top`/`size` to C11 atomic operations via ctypes, giving true cross-process MPMC safety. Without it, Python falls back to pure-Python `struct.pack_into` (SPSC-only across processes, MPMC-only within one interpreter via `threading.Lock`). The fallback is graceful: same API, different guarantees.
+
+Library search order in `_cffi.py`:
+1. `ZEROIPC_FFI_LIB` env var (set to `none` to disable, set to a path to use that library)
+2. `python/zeroipc/libzeroipc_ffi.so` (bundled install)
+3. `c/libzeroipc_ffi.so` (in-tree development)
+4. System `find_library("zeroipc_ffi")`
+
+Verify FFI is loaded: `python -c "from zeroipc import _cffi; print(_cffi.AVAILABLE)"`. The MPMC integration tests in `python/tests/test_cffi.py` use `multiprocessing` to spawn real producer/consumer processes and assert no lost or duplicated items.
 
 ### Go
 ```bash
@@ -91,36 +104,53 @@ cd interop
 ./test_interop.sh          # C++ writes, Python reads
 ./test_reverse_interop.sh  # Python writes, C++ reads
 ./test_go_cpp_interop.sh   # Go/C++ specific interop
+./test_queue_interop.sh    # Cross-language queue exercises
+./test_data_types.sh       # Type matrix interop
 ```
 
-## C++ Implementation Details
+(`test_three_way_interop.sh` was removed in v2.3.0 because it depended on the deleted C core API.)
 
-### Lock-Free Implementation
+### Documentation Site
+```bash
+mkdocs build               # Generate static site to ./site/
+mkdocs serve               # Live preview at http://localhost:8000
+mkdocs gh-deploy           # Push to GitHub Pages
+```
 
-All concurrent structures (Queue, Stack) use compare-and-swap (CAS) loops:
+The site is intentionally minimal: 3 pages (landing, Single Machine Thesis, Design Philosophy). Material theme with light/dark toggle. Source files live in `docs/`.
+
+## Lock-Free Algorithms
+
+Two primary algorithms are used across all four language implementations:
+
+### Vyukov bounded MPMC queue (Queue)
+
+Per-slot sequence numbers, monotonically increasing head/tail (NOT modular indices), one CAS per push or pop. Reference: `cpp/include/zeroipc/queue.h` and `c/src/queue.c`. Key invariants:
+
+- `seq[i]` is initialized to `i`
+- Push CAS-advances `tail`, then writes data, then publishes `seq[slot] = tail + 1`
+- Pop CAS-advances `head`, then reads data, then recycles `seq[slot] = head + capacity`
+- Slot diff `(int32_t)(seq - tail)` uses signed arithmetic to handle uint32 wraparound
+
+### 4-state CAS stack (Stack)
+
+Per-slot state machine: `EMPTY(0) -> WRITING(1) -> READY(2) -> READING(3) -> EMPTY(0)`. Reference: `cpp/include/zeroipc/stack.h`. Key invariants:
+
+- Top reservation (CAS on the top index) is decoupled from slot ownership (CAS on per-slot state)
+- This decoupling eliminates the ABA vulnerability the older single-CAS design had
+- `top()` (peek) uses bounded spin (10000 iterations) plus a top-changed bail-out, so a crashed pusher never causes infinite hang
+
+When changing either algorithm, the change must be applied consistently across all four languages AND `c/src/ffi.c` (which has its own copies for the FFI Python uses).
+
+### Table / Memory Configuration
+
+The C++ `Memory` class takes `max_entries` as a runtime parameter (default 64). Construct larger tables explicitly when tests need many structures:
 
 ```cpp
-// CORRECT lock-free enqueue pattern
-do {
-    current_tail = tail.load(std::memory_order_relaxed);
-    next_tail = (current_tail + 1) % capacity;
-    if (queue_full) return false;
-} while (!tail.compare_exchange_weak(current_tail, next_tail,
-                                     std::memory_order_relaxed,
-                                     std::memory_order_relaxed));
-// Write data with proper fence
-data[current_tail] = value;
-std::atomic_thread_fence(std::memory_order_release);
+zeroipc::Memory mem("/test", size, /*max_entries=*/256);
 ```
 
-### Table Size Configuration
-
-Predefined sizes: `table1` through `table4096` (default `table` = `table64`). Use `table_impl<name_size, max_entries>` for custom configuration.
-
-**Important**: Tests creating many structures need larger tables:
-```cpp
-zeroipc::memory<table256> shm("/test", size);  // For tests with >64 structures
-```
+The Table layout is fixed: 32-byte header (`magic`, `version`, `entry_count`, `max_entries`, `memory_size`, `next_offset`) followed by 48-byte entries (`name[32]`, `offset:u64`, `size:u64`).
 
 ## Data Structures
 
@@ -192,9 +222,10 @@ temps, _ := zeroipc.OpenArray[float32](mem, "temperatures")
 - **STRESS** (>30s): exhaustive, 32+ threads — manual only
 
 ### Test Frameworks
-- GoogleTest for C++ (`cpp/tests/test_*.cpp`) — 26 test files
-- pytest for Python (`python/tests/test_*.py`)
+- GoogleTest for C++ (`cpp/tests/test_*.cpp`), 26 test files
+- pytest for Python (`python/tests/test_*.py`), including `test_cffi.py` for the C FFI backend with multi-process MPMC tests
 - `go test` for Go (`go/zeroipc/`)
+- C unit tests (`c/tests/test_*.c`) via `make test`
 
 ### Test Isolation
 Tests use unique shared memory names (often with PID) to avoid conflicts:
@@ -248,13 +279,15 @@ cd cpp/build
 
 ## Recent Changes
 
-### v2.2.0 - Go Implementation & Concurrency Fixes (March 2026)
-- **Go Implementation**: Full Go 1.21+ implementation with generics in `go/zeroipc/`
-  - CLI tool (`go/cmd/zeroipc/`) and cross-language interop tool (`go/cmd/interop/`)
-- **Critical Lock-Free Fixes**: Queue head/tail confusion, Stack ABA vulnerability, proper fence placement
-- **Documentation Overhaul**: Consolidated README, removed stale docs
+### v2.3.0 (April 2026)
+- **C FFI backend for Python**: `c/src/ffi.c` plus `python/zeroipc/_cffi.py`. Python Queue and Stack delegate atomic operations to C11 via ctypes when `libzeroipc_ffi.so` is loaded. True cross-process MPMC. Pure-Python fallback (SPSC) when the .so is absent.
+- **Cross-language concurrency fixes**: Vyukov queue and 4-state stack consistent across all four languages. Map insert uses `CAS(OCCUPIED -> INSERTING)` for exclusive update access. Future/Channel waiter-count CAS leak fixed.
+- **C core API removed**: `c/src/core.c` (750 lines) deleted; standalone `queue.c`/`stack.c` are the single source. Avoids the parallel-implementation drift bug class.
+- **Spec corrections**: Queue/Stack headers documented as `uint32_t` (matching all impls). Table header field renamed `reserved` to `max_entries`, all four languages now write the actual value.
+- **Repo cleanup**: 18,000+ lines removed (bloated docs site, stale venue submissions, packaging files, tracked binaries). MkDocs site rebuilt minimally with thesis + design philosophy.
 
 ### Previous Releases
-- **v2.1**: Added Mutex, Once, Event, Monitor, RWLock, Signal<T> sync primitives (C++ and Python)
-- **v2.0**: 200x test speedup, test categorization (FAST/MEDIUM/SLOW/STRESS), CLI feature parity for all 16 structures
-- **v1.0**: Minimal metadata design, lock-free foundations, initial sync primitives (Semaphore, Barrier, Latch), codata structures
+- **v2.2**: Full Go implementation with generics, CLI tool, cross-language interop. Critical lock-free fixes (queue head/tail, stack ABA).
+- **v2.1**: Added Mutex, Once, Event, Monitor, RWLock, Signal<T> sync primitives (C++ and Python).
+- **v2.0**: 200x test speedup, test categorization (FAST/MEDIUM/SLOW/STRESS), CLI feature parity for all 16 structures.
+- **v1.0**: Minimal metadata design, lock-free foundations, initial sync primitives, codata structures.

@@ -336,10 +336,7 @@ class Future:
 
         finally:
             # Decrement waiter count (we incremented it, so guaranteed >= 1)
-            while True:
-                current_waiters = waiters_atomic.load()
-                if waiters_atomic.compare_exchange_weak(current_waiters, current_waiters - 1):
-                    break
+            waiters_atomic.fetch_add(-1)
 
     def is_ready(self) -> bool:
         """Check if the future is ready (has value or error)."""

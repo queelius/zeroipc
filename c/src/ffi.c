@@ -11,7 +11,6 @@
 #include "zeroipc_ffi.h"
 #include <stdatomic.h>
 #include <string.h>
-#include <stdbool.h>
 
 /* Return codes */
 #define FFI_OK       0

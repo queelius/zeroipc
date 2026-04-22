@@ -228,11 +228,6 @@ class Map(Generic[K, V]):
             value_bytes = self.buffer[offset:offset + self.value_size]
             return np.frombuffer(value_bytes, dtype=self.value_dtype)[0]
 
-    def _write_entry(self, index: int, state: int, key: K, value: V):
-        """Write complete entry at given index."""
-        self._store_entry_state(index, state)
-        self._write_entry_key_value(index, key, value)
-
     def _write_entry_key_value(self, index: int, key: K, value: V):
         """Write key and value at given index without touching state."""
         offset = self._get_entry_offset(index)

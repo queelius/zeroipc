@@ -307,11 +307,10 @@ class Map(Generic[K, V]):
             if self._cas_entry_state(idx, self.EMPTY, self.INSERTING):
                 # We exclusively own this slot; write key and value
                 self._write_entry_key_value(idx, key, value)
-                # Publish the entry: INSERTING -> OCCUPIED
+                # Increment size BEFORE publishing OCCUPIED, so any concurrent
+                # erase that observes OCCUPIED sees size >= 1 (avoids underflow)
+                AtomicInt(self.buffer, 0).fetch_add(1)
                 self._store_entry_state(idx, self.OCCUPIED)
-                # Increment size
-                size_atomic = AtomicInt(self.buffer, 0)
-                size_atomic.fetch_add(1)
                 return True
 
             # Check if it's our key (update case)
@@ -331,10 +330,9 @@ class Map(Generic[K, V]):
             # Try deleted slots too: DELETED -> INSERTING
             if self._cas_entry_state(idx, self.DELETED, self.INSERTING):
                 self._write_entry_key_value(idx, key, value)
-                # Publish the entry: INSERTING -> OCCUPIED
+                # Same ordering invariant as above: bump size before publish
+                AtomicInt(self.buffer, 0).fetch_add(1)
                 self._store_entry_state(idx, self.OCCUPIED)
-                size_atomic = AtomicInt(self.buffer, 0)
-                size_atomic.fetch_add(1)
                 return True
 
         return False  # Map is full

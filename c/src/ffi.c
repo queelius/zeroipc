@@ -257,17 +257,23 @@ int zeroipc_raw_stack_top(void* base, size_t offset,
     _Atomic uint32_t* state = s_state(h);
     void* data = s_data(h);
 
-    int32_t top = atomic_load_explicit(&h->top, memory_order_acquire);
-    if (top < 0) return FFI_EMPTY;
-
-    /* Bounded spin waiting for READY */
+    /* A peek cannot passively read the slot: between observing READY and the
+     * memcpy, a concurrent pop could recycle the slot and a new push begin
+     * overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
+     * the same state machine pop uses (READY -> READING), copy, then restore
+     * it to READY. The bounded spin preserves crash-safety. */
     for (int spins = 0; spins < 10000; ++spins) {
-        if (atomic_load_explicit(&state[top], memory_order_acquire) == SLOT_READY) {
+        int32_t top = atomic_load_explicit(&h->top, memory_order_acquire);
+        if (top < 0) return FFI_EMPTY;
+
+        uint32_t expected = SLOT_READY;
+        if (atomic_compare_exchange_strong_explicit(
+                &state[top], &expected, SLOT_READING,
+                memory_order_acq_rel, memory_order_relaxed)) {
             memcpy(value_out, (char*)data + top * elem_size, elem_size);
+            atomic_store_explicit(&state[top], SLOT_READY, memory_order_release);
             return FFI_OK;
         }
-        if (atomic_load_explicit(&h->top, memory_order_acquire) != top)
-            return FFI_EMPTY;
     }
     return FFI_EMPTY;
 }

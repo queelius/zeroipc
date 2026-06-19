@@ -211,22 +211,24 @@ func (s *Stack[T]) Pop() (T, bool) {
 // Returns the value and true if successful, or zero value and false if empty.
 func (s *Stack[T]) Top() (T, bool) {
 	var zero T
-	currentTop := atomic.LoadInt32(s.topPtr())
 
-	if currentTop < 0 {
-		return zero, false
-	}
-
-	// Wait for the slot to be READY, but bail if top changes
-	statePtr := s.slotStatePtr(currentTop)
+	// A peek cannot passively read the slot: between observing READY and the
+	// read, a concurrent pop could recycle the slot and a new push begin
+	// overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
+	// the same state machine pop uses (READY -> READING), copy, then restore it
+	// to READY. The bounded spin preserves crash-safety.
 	for spins := 0; spins < 10000; spins++ {
-		if atomic.LoadUint32(statePtr) == slotReady {
+		currentTop := atomic.LoadInt32(s.topPtr())
+		if currentTop < 0 {
+			return zero, false
+		}
+
+		statePtr := s.slotStatePtr(currentTop)
+		if atomic.CompareAndSwapUint32(statePtr, slotReady, slotReading) {
 			dataOffset := s.offset + StackHeaderSize + int(currentTop)*int(s.elemSize)
 			value := *(*T)(unsafe.Pointer(&s.memory.Data()[dataOffset]))
+			atomic.StoreUint32(statePtr, slotReady)
 			return value, true
-		}
-		if atomic.LoadInt32(s.topPtr()) != currentTop {
-			return zero, false
 		}
 		runtime.Gosched()
 	}

@@ -198,18 +198,26 @@ class Stack(Generic[T]):
                 return None
             return np.frombuffer(raw, dtype=self.dtype)[0].copy()
 
-        top_idx, _, _ = self._read_header()
-        if top_idx < 0:
-            return None
-
-        for _ in range(10000):
-            if self._read_ready(top_idx) == _SLOT_READY:
-                return self.data[top_idx].copy()
-            current_top, _, _ = self._read_header()
-            if current_top != top_idx:
+        # Mirror pop: claim the slot exclusively (READY -> READING), copy, then
+        # restore READY, so the copy never races a concurrent push recycling the
+        # slot. Hold the lock for the same within-interpreter mutual exclusion
+        # push/pop use.
+        with self._lock:
+            top_idx, _, _ = self._read_header()
+            if top_idx < 0:
                 return None
-            time.sleep(0)
-        return None
+
+            for _ in range(10000):
+                if self._read_ready(top_idx) == _SLOT_READY:
+                    self._write_ready(top_idx, _SLOT_READING)
+                    value = self.data[top_idx].copy()
+                    self._write_ready(top_idx, _SLOT_READY)
+                    return value
+                current_top, _, _ = self._read_header()
+                if current_top != top_idx:
+                    return None
+                time.sleep(0)
+            return None
 
     def empty(self) -> bool:
         """Check if stack is empty."""

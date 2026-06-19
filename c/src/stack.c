@@ -187,19 +187,23 @@ int zeroipc_stack_pop(zeroipc_stack_t* stack, void* value) {
 int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
     if (!stack || !value) return ZEROIPC_ERROR_SIZE;
 
-    int32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
-    if (top < 0) return ZEROIPC_ERROR_NOT_FOUND;
-
-    /* Wait for data to be ready, but bail if top changes (slot was popped) */
+    /* A peek cannot passively read the slot: between observing READY and the
+     * memcpy, a concurrent pop could recycle the slot and a new push begin
+     * overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
+     * the same state machine pop uses (READY -> READING), copy, then restore
+     * it to READY. The bounded spin preserves crash-safety. */
     for (int spins = 0; spins < 10000; ++spins) {
-        if (atomic_load_explicit(&stack->state[top], memory_order_acquire) == SLOT_READY) {
+        int32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
+        if (top < 0) return ZEROIPC_ERROR_NOT_FOUND;
+
+        uint32_t expected = SLOT_READY;
+        if (atomic_compare_exchange_strong_explicit(
+                &stack->state[top], &expected, SLOT_READING,
+                memory_order_acq_rel, memory_order_relaxed)) {
             void* slot = (char*)stack->data + top * stack->header->elem_size;
             memcpy(value, slot, stack->header->elem_size);
+            atomic_store_explicit(&stack->state[top], SLOT_READY, memory_order_release);
             return ZEROIPC_OK;
-        }
-        /* Re-check that top hasn't changed */
-        if (atomic_load_explicit(&stack->header->top, memory_order_acquire) != top) {
-            return ZEROIPC_ERROR_NOT_FOUND;
         }
     }
     return ZEROIPC_ERROR_NOT_FOUND;  /* Timed out */

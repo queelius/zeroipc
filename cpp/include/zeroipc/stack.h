@@ -158,20 +158,35 @@ public:
         return value;
     }
 
-    // Peek at top without removing
+    // Peek at top without removing.
+    //
+    // A peek cannot passively read the slot: between observing READY and
+    // reading the payload, a concurrent pop could recycle the slot and a new
+    // push begin overwriting it, racing the read (a TOCTOU data race). So we
+    // claim the slot exclusively through the same state machine pop uses
+    // (READY -> READING), copy the value, then restore it to READY. The copy
+    // therefore happens under exclusive ownership and never races push/pop.
+    // The bounded spin preserves crash-safety: a peer that died mid-write
+    // (slot stuck WRITING/READING) cannot hang the peek indefinitely.
     std::optional<T> top() const {
-        int32_t current_top = header_->top.load(std::memory_order_acquire);
-        if (current_top < 0) {
-            return std::nullopt;
-        }
-        // Wait for the slot to have data, but bail if top changes
         for (int spins = 0; spins < 10000; ++spins) {
-            if (state_[current_top].load(std::memory_order_acquire) == SLOT_READY) {
-                return data_[current_top];
-            }
-            if (header_->top.load(std::memory_order_acquire) != current_top) {
+            int32_t current_top = header_->top.load(std::memory_order_acquire);
+            if (current_top < 0) {
                 return std::nullopt;
             }
+            // Try to claim the top slot exclusively for reading.
+            uint32_t expected = SLOT_READY;
+            if (state_[current_top].compare_exchange_strong(
+                    expected, SLOT_READING,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
+                T value = data_[current_top];          // exclusive ownership
+                state_[current_top].store(SLOT_READY,  // hand the slot back
+                                          std::memory_order_release);
+                return value;
+            }
+            // Slot busy (push writing, pop reading, or already consumed):
+            // retry until it settles or the top moves on.
             std::this_thread::yield();
         }
         return std::nullopt;

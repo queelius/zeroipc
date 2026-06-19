@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Verify the Go package compiles on every supported OS. The shared-memory
+  # backend is Linux-only, but non-Linux targets must still build (they return
+  # a runtime "not supported" error). This guards against a regression of #1
+  # without needing a local Windows or macOS machine.
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: go/go.sum
+      - run: go build ./...
+
+  # Vet and run the Go unit tests with the race detector on Linux, where the
+  # real /dev/shm backend is exercised.
+  test:
+    name: test (linux)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: go/go.sum
+      - run: go vet ./...
+      - run: go test ./zeroipc/... -race

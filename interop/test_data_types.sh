@@ -435,5 +435,7 @@ gcc -I../c/include c_matrix_reader.c ../c/libzeroipc.a -lrt -lpthread -lm -o c_m
 echo ""
 echo -e "${GREEN}=== All Data Type Interop Tests Complete ===${NC}"
 
-# Clean up
-rm -f cpp_dtype_writer cpp_alignment_writer c_struct_writer c_matrix_reader *.cpp *.c
+# Clean up only the temp files this script generates (NOT *.cpp/*.c, which would
+# also delete tracked interop sources like cpp_writer.cpp / cpp_reader.cpp).
+rm -f cpp_dtype_writer cpp_alignment_writer c_struct_writer c_matrix_reader \
+      cpp_dtype_writer.cpp cpp_alignment_writer.cpp c_struct_writer.c c_matrix_reader.c

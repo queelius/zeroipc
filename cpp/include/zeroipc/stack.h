@@ -12,11 +12,14 @@ class Stack {
 public:
     static_assert(std::is_trivially_copyable_v<T>,
                   "T must be trivially copyable for shared memory");
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
 
     struct Header {
         std::atomic<int32_t> top;  // -1 when empty
         uint32_t capacity;
         uint32_t elem_size;
+        uint32_t reserved;  // pads header to 16 bytes so the data array is 8-aligned
     };
 
     // Per-slot states for the 4-state CAS protocol:
@@ -32,9 +35,11 @@ public:
     Stack(Memory& memory, std::string_view name, size_t capacity)
         : memory_(memory), name_(name) {
 
-        // Layout: [Header][data: T * capacity][state: atomic<uint32_t> * capacity]
+        // Layout: [Header(16)][data: T*capacity][pad][state: atomic<uint32_t>*capacity]
+        // The state array is 8-aligned so its atomics are always naturally aligned.
+        size_t state_off = align_up(sizeof(T) * capacity, 8);
         size_t total_size = sizeof(Header)
-                          + sizeof(T) * capacity
+                          + state_off
                           + sizeof(std::atomic<uint32_t>) * capacity;
         size_t offset = memory.allocate(name, total_size);
 
@@ -44,12 +49,13 @@ public:
         header_->top.store(-1, std::memory_order_relaxed);
         header_->capacity = capacity;
         header_->elem_size = sizeof(T);
+        header_->reserved = 0;
 
         data_ = reinterpret_cast<T*>(
             reinterpret_cast<char*>(header_) + sizeof(Header));
 
         state_ = reinterpret_cast<std::atomic<uint32_t>*>(
-            reinterpret_cast<char*>(data_) + sizeof(T) * capacity);
+            reinterpret_cast<char*>(data_) + state_off);
 
         // Initialize all slot states to EMPTY
         for (size_t i = 0; i < capacity; ++i) {
@@ -77,7 +83,7 @@ public:
             reinterpret_cast<char*>(header_) + sizeof(Header));
 
         state_ = reinterpret_cast<std::atomic<uint32_t>*>(
-            reinterpret_cast<char*>(data_) + sizeof(T) * header_->capacity);
+            reinterpret_cast<char*>(data_) + align_up(sizeof(T) * header_->capacity, 8));
     }
 
     // Push (lock-free with per-slot CAS)

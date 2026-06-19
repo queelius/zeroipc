@@ -10,9 +10,11 @@ namespace zeroipc {
 template<typename T>
 class Ring {
 public:
-    static_assert(std::is_trivially_copyable_v<T>, 
+    static_assert(std::is_trivially_copyable_v<T>,
                   "T must be trivially copyable for shared memory");
-    
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
+
     struct Header {
         std::atomic<uint64_t> write_pos;   // Total bytes written
         std::atomic<uint64_t> read_pos;    // Total bytes read

@@ -16,7 +16,9 @@ public:
                   "Value type must be trivially copyable for shared memory");
     static_assert(sizeof(V) <= 8,
                   "Value type must be <= 8 bytes for lock-free atomic updates");
-    
+    static_assert(alignof(K) <= MAX_ELEM_ALIGN && alignof(V) <= MAX_ELEM_ALIGN,
+                  "Key/Value alignment exceeds the 8-byte guarantee of shared memory layout");
+
     struct Entry {
         std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted, 3=inserting
         K key;

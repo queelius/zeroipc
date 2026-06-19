@@ -1,4 +1,4 @@
-# ZeroIPC Shared Memory Format Specification v1.2
+# ZeroIPC Shared Memory Format Specification v2.0
 
 ## Overview
 
@@ -35,7 +35,7 @@ ZeroIPC defines a binary format for data structures in shared memory that can be
 ```c
 struct TableHeader {
     uint32_t magic;         // 0x00: Magic number 0x5A49504D ('ZIPM')
-    uint32_t version;       // 0x04: Format version (currently 1)
+    uint32_t version;       // 0x04: Format version (currently 2)
     uint32_t entry_count;   // 0x08: Number of active entries
     uint32_t max_entries;   // 0x0C: Maximum table entries (0 = implementation default)
     uint64_t memory_size;   // 0x10: Total size of shared memory segment
@@ -78,8 +78,10 @@ struct QueueHeader {
     uint32_t elem_size;         // 0x0C: Element size in bytes
 };
 // Followed by: capacity * elem_size bytes of data
+// Followed by: padding to the next 8-byte boundary (format v2)
 // Followed by: capacity * 4 bytes of per-slot sequence numbers (atomic_uint32_t)
-// Total size: 16 + capacity * (elem_size + 4)
+// Sequence array offset (from header): 16 + align8(capacity * elem_size)
+// Total size: 16 + align8(capacity * elem_size) + capacity * 4
 ```
 
 ### Stack Structure (4-State CAS Lock-free)
@@ -88,11 +90,14 @@ struct StackHeader {
     atomic_int32_t top;         // 0x00: Top index (-1 when empty)
     uint32_t capacity;          // 0x04: Number of slots
     uint32_t elem_size;         // 0x08: Element size in bytes
+    uint32_t reserved;          // 0x0C: Padding so the data array is 8-aligned (format v2)
 };
 // Followed by: capacity * elem_size bytes of data
+// Followed by: padding to the next 8-byte boundary (format v2)
 // Followed by: capacity * 4 bytes of per-slot state (atomic_uint32_t)
 //   States: EMPTY(0) -> WRITING(1) -> READY(2) -> READING(3) -> EMPTY(0)
-// Total size: 12 + capacity * (elem_size + 4)
+// State array offset (from header): 16 + align8(capacity * elem_size)
+// Total size: 16 + align8(capacity * elem_size) + capacity * 4
 ```
 
 ### Semaphore Structure (Lock-free)
@@ -342,10 +347,25 @@ struct SignalState {
 - T must be trivially copyable
 - Common types: int, double, fixed-size structs
 
-## Alignment Requirements
+## Alignment Requirements (format v2)
 
-- All structures must be aligned to 8-byte boundaries
-- The next_offset in TableHeader includes any padding needed for alignment
+- Each structure base is allocated on an 8-byte boundary; `next_offset` in the
+  Table Header includes any padding needed for this.
+- **Every section within a structure starts on an 8-byte boundary.** Headers are
+  sized to a multiple of 8 (Stack/Set carry a trailing `reserved` uint32), and an
+  atomic side-array that follows a data block is placed at
+  `align8(header_size + elem_size * capacity)`, where
+  `align8(n) = (n + 7) & ~7`. This guarantees that data elements and the
+  `atomic_uint32_t` side-arrays (queue sequence numbers, stack slot states) are
+  naturally aligned regardless of element size. This is required for correct
+  atomic operations and to avoid undefined behavior on strict-alignment targets.
+- **Element alignment is guaranteed up to 8 bytes only.** Element types whose
+  alignment exceeds 8 (e.g. `alignas(16)`/`alignas(64)` SIMD or cache-line types)
+  are not supported, because the allocator 8-aligns structure bases and the
+  minimal metadata stores no per-type alignment. C++ enforces this with a
+  `static_assert(alignof(T) <= 8)`.
+- All implementations (C++, C, Go, Python) compute identical offsets with the
+  same rule, so the layout stays binary-compatible across languages.
 
 ## Usage Contract
 
@@ -358,7 +378,7 @@ struct SignalState {
 
 ```text
 Offset   Size    Content
-0x0000   32      Table Header (magic=0x5A49504D, version=1, entries=2, max=64, mem_size=0x10000, next=0x1000)
+0x0000   32      Table Header (magic=0x5A49504D, version=2, entries=2, max=64, mem_size=0x10000, next=0x1000)
 0x0020   48      Entry 0: name="sensor_data", offset=0x1000, size=0x2008
 0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0330
 ...
@@ -371,6 +391,13 @@ Offset   Size    Content
 
 ## Version History
 
+- v2.0: 8-byte section alignment. Every section within a structure (header, data
+  array, atomic side-array) now starts on an 8-byte boundary. The Stack header
+  gains a trailing `reserved` uint32 (12 to 16 bytes) so its data array is
+  8-aligned, and queue sequence / stack state arrays are placed at
+  `align8(header_size + elem_size * capacity)`. Element alignment is supported up
+  to 8 bytes. Table format `version` is bumped from 1 to 2; v1 structures are not
+  layout-compatible with v2 readers.
 - v1.2: Updated Table Header to 32 bytes (added max_entries, memory_size; widened next_offset to uint64), Table Entry to 48 bytes (widened offset/size to uint64), Once to 3-state protocol (pending/executing/done)
 - v1.1: Extended synchronization primitives (Mutex, Once, Event, RWLock, Monitor, Signal)
 - v1.0: Initial release with minimal metadata design, runtime configurable table

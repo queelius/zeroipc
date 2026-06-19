@@ -6,14 +6,20 @@
 #include <stdint.h>
 
 /*
- * Stack binary layout (matches C++/Go/Python):
- *   [top:i32][capacity:u32][elem_size:u32]  (12 bytes)
+ * Stack binary layout (matches C++/Go/Python, format v2):
+ *   [top:i32][capacity:u32][elem_size:u32][reserved:u32]  (16 bytes)
  *   [data[0]][data[1]]...[data[cap-1]]
+ *   [pad to 8-byte boundary]
  *   [state[0]:u32][state[1]:u32]...[state[cap-1]:u32]
  *
  * top is signed int32: -1 = empty, otherwise index of top element.
  * Per-slot 4-state CAS protocol: EMPTY(0) -> WRITING(1) -> READY(2) -> READING(3) -> EMPTY(0)
+ * The 16-byte header makes the data array 8-aligned; the state array is placed
+ * on the next 8-byte boundary so its atomics are always naturally aligned.
  */
+
+/* Round n up to the next multiple of 8 (8-byte section alignment, format v2). */
+#define ZIPC_ALIGN8(n) (((n) + 7u) & ~(size_t)7u)
 
 /* Per-slot states */
 #define SLOT_EMPTY   0
@@ -26,6 +32,7 @@ typedef struct {
     _Atomic int32_t top;       /* index of top element, -1 when empty */
     uint32_t capacity;
     uint32_t elem_size;
+    uint32_t reserved;         /* pads header to 16 bytes so the data array is 8-aligned */
 } stack_header_t;
 
 /* Stack structure (process-local handle) */
@@ -50,13 +57,14 @@ zeroipc_stack_t* zeroipc_stack_create(zeroipc_memory_t* mem, const char* name,
     stack->memory = mem;
     strncpy(stack->name, name, sizeof(stack->name) - 1);
 
-    /* Layout: [header][data: elem_size * capacity][state: uint32 * capacity] */
+    /* Layout: [header(16)][data: elem_size*capacity][pad][state: uint32*capacity] */
     size_t state_array_size = sizeof(uint32_t) * capacity;
     if (capacity > (SIZE_MAX - sizeof(stack_header_t) - state_array_size) / elem_size) {
         free(stack);
         return NULL;
     }
-    size_t total_size = sizeof(stack_header_t) + elem_size * capacity + state_array_size;
+    size_t state_off = ZIPC_ALIGN8(elem_size * capacity);
+    size_t total_size = sizeof(stack_header_t) + state_off + state_array_size;
 
     size_t offset;
     int result = zeroipc_table_add(mem, name, total_size, &offset);
@@ -67,12 +75,13 @@ zeroipc_stack_t* zeroipc_stack_create(zeroipc_memory_t* mem, const char* name,
 
     stack->header = (stack_header_t*)((char*)zeroipc_memory_base(mem) + offset);
     stack->data = (char*)stack->header + sizeof(stack_header_t);
-    stack->state = (_Atomic uint32_t*)((char*)stack->data + elem_size * capacity);
+    stack->state = (_Atomic uint32_t*)((char*)stack->data + state_off);
 
     /* Initialize header (top = -1 means empty) */
     atomic_store(&stack->header->top, -1);
     stack->header->capacity = capacity;
     stack->header->elem_size = elem_size;
+    stack->header->reserved = 0;
 
     /* Initialize per-slot states to EMPTY */
     for (uint32_t i = 0; i < capacity; ++i) {
@@ -103,8 +112,8 @@ zeroipc_stack_t* zeroipc_stack_open(zeroipc_memory_t* mem, const char* name) {
     }
 
     stack->data = (char*)stack->header + sizeof(stack_header_t);
-    stack->state = (_Atomic uint32_t*)(
-        (char*)stack->data + stack->header->elem_size * stack->header->capacity);
+    stack->state = (_Atomic uint32_t*)((char*)stack->data + ZIPC_ALIGN8(
+        (size_t)stack->header->elem_size * stack->header->capacity));
 
     return stack;
 }

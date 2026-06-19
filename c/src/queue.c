@@ -6,13 +6,19 @@
 #include <stdint.h>
 
 /*
- * Queue binary layout (matches C++/Go/Python):
+ * Queue binary layout (matches C++/Go/Python, format v2):
  *   [head:u32][tail:u32][capacity:u32][elem_size:u32]  (16 bytes)
  *   [data[0]][data[1]]...[data[cap-1]]
+ *   [pad to 8-byte boundary]
  *   [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]
  *
  * Uses Vyukov bounded MPMC queue algorithm with per-slot sequence numbers.
+ * The sequence array is placed on an 8-byte boundary so its atomics are
+ * always naturally aligned regardless of element size.
  */
+
+/* Round n up to the next multiple of 8 (8-byte section alignment, format v2). */
+#define ZIPC_ALIGN8(n) (((n) + 7u) & ~(size_t)7u)
 
 /* Queue header in shared memory — matches C++ Queue::Header */
 typedef struct {
@@ -44,13 +50,14 @@ zeroipc_queue_t* zeroipc_queue_create(zeroipc_memory_t* mem, const char* name,
     queue->memory = mem;
     strncpy(queue->name, name, sizeof(queue->name) - 1);
 
-    /* Layout: [header][data: elem_size * capacity][seq: uint32 * capacity] */
+    /* Layout: [header(16)][data: elem_size*capacity][pad][seq: uint32*capacity] */
     size_t seq_array_size = sizeof(uint32_t) * capacity;
     if (capacity > (SIZE_MAX - sizeof(queue_header_t) - seq_array_size) / elem_size) {
         free(queue);
         return NULL;
     }
-    size_t total_size = sizeof(queue_header_t) + elem_size * capacity + seq_array_size;
+    size_t seq_off = ZIPC_ALIGN8(elem_size * capacity);
+    size_t total_size = sizeof(queue_header_t) + seq_off + seq_array_size;
 
     size_t offset;
     int result = zeroipc_table_add(mem, name, total_size, &offset);
@@ -61,7 +68,7 @@ zeroipc_queue_t* zeroipc_queue_create(zeroipc_memory_t* mem, const char* name,
 
     queue->header = (queue_header_t*)((char*)zeroipc_memory_base(mem) + offset);
     queue->data = (char*)queue->header + sizeof(queue_header_t);
-    queue->seq = (_Atomic uint32_t*)((char*)queue->data + elem_size * capacity);
+    queue->seq = (_Atomic uint32_t*)((char*)queue->data + seq_off);
 
     /* Initialize header */
     atomic_store(&queue->header->head, 0);
@@ -98,8 +105,8 @@ zeroipc_queue_t* zeroipc_queue_open(zeroipc_memory_t* mem, const char* name) {
     }
 
     queue->data = (char*)queue->header + sizeof(queue_header_t);
-    queue->seq = (_Atomic uint32_t*)(
-        (char*)queue->data + queue->header->elem_size * queue->header->capacity);
+    queue->seq = (_Atomic uint32_t*)((char*)queue->data + ZIPC_ALIGN8(
+        (size_t)queue->header->elem_size * queue->header->capacity));
 
     return queue;
 }

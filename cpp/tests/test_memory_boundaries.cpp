@@ -279,34 +279,27 @@ TEST_F(MemoryBoundaryTest, RapidAllocationDeallocation) {
 
 TEST_F(MemoryBoundaryTest, AlignmentBoundaries) {
     Memory mem("/test_boundary", 10 * 1024 * 1024);
-    
-    // Test various alignments
-    struct Aligned16 {
-        alignas(16) char data[16];
+
+    // The library guarantees 8-byte section alignment. Element types whose
+    // alignment is <= 8 are placed on natural boundaries; over-aligned types
+    // (alignof > 8, e.g. alignas(16)/alignas(64)) are rejected at compile time
+    // by the static_assert(alignof(T) <= MAX_ELEM_ALIGN) in each container, so
+    // they cannot be instantiated here.
+    struct Aligned8 {
+        alignas(8) char data[8];
     };
-    
-    struct Aligned64 {
-        alignas(64) char data[64];
-    };
-    
-    struct Aligned128 {
-        alignas(128) char data[128];
-    };
-    
-    Array<Aligned16> arr16(mem, "align16", 100);
-    Array<Aligned64> arr64(mem, "align64", 100);
-    Array<Aligned128> arr128(mem, "align128", 100);
-    
-    // Verify alignment - our allocator only guarantees 8-byte alignment
-    // The arrays themselves are 8-byte aligned, but not necessarily to larger boundaries
-    auto ptr16 = &arr16[0];
-    auto ptr64 = &arr64[0];
-    auto ptr128 = &arr128[0];
-    
-    // All should be at least 8-byte aligned
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr16) % 8, 0);
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr64) % 8, 0);
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr128) % 8, 0);
+
+    Array<Aligned8> arr8(mem, "align8", 100);
+    Array<double>   arrd(mem, "alignd", 100);
+    Array<uint64_t> arru(mem, "alignu", 100);
+
+    // Every 8-aligned element must be naturally aligned for its full width.
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&arr8[0]) % alignof(Aligned8), 0);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&arrd[0]) % alignof(double), 0);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&arru[0]) % alignof(uint64_t), 0);
+
+    // Interior elements stay aligned across the whole array.
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&arrd[37]) % alignof(double), 0);
 }
 
 // ========== CONCURRENT BOUNDARY TESTS ==========

@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #define ZEROIPC_MAGIC 0x5A49504D  /* 'ZIPM' */
-#define ZEROIPC_VERSION 1
+#define ZEROIPC_VERSION 2  /* v2: 8-byte section alignment (see SPECIFICATION.md) */
 #define MAX_NAME_SIZE 32
 #define DEFAULT_ENTRIES 64
 

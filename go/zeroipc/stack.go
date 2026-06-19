@@ -10,8 +10,13 @@ import (
 )
 
 // StackHeaderSize is the size of the stack header in bytes.
-// Layout: top(4) + capacity(4) + elem_size(4) = 12 bytes
-const StackHeaderSize = 12
+// Layout: top(4) + capacity(4) + elem_size(4) + reserved(4) = 16 bytes
+const StackHeaderSize = 16
+
+// align8 rounds n up to the next multiple of 8 (8-byte section alignment,
+// format v2). Atomic side-arrays start on an 8-byte boundary so their atomics
+// are always naturally aligned regardless of element size.
+func align8(n int) int { return (n + 7) &^ 7 }
 
 // Per-slot states for the 4-state CAS protocol (matching C++):
 //
@@ -60,8 +65,8 @@ func NewStack[T Numeric](memory *Memory, name string, capacity int) (*Stack[T], 
 		return nil, fmt.Errorf("stack '%s' already exists", name)
 	}
 
-	// Layout: [Header][data: T * capacity][state: uint32 * capacity]
-	totalSize := StackHeaderSize + capacity*elemSize + capacity*4
+	// Layout: [Header(16)][data: T*capacity][pad][state: uint32*capacity]
+	totalSize := StackHeaderSize + align8(capacity*elemSize) + capacity*4
 	offset, err := memory.Allocate(name, totalSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate: %w", err)
@@ -73,10 +78,11 @@ func NewStack[T Numeric](memory *Memory, name string, capacity int) (*Stack[T], 
 	binary.LittleEndian.PutUint32(data[offset:], 0xFFFFFFFF)          // top = -1
 	binary.LittleEndian.PutUint32(data[offset+4:], uint32(capacity))  // capacity
 	binary.LittleEndian.PutUint32(data[offset+8:], uint32(elemSize))  // elem_size
+	binary.LittleEndian.PutUint32(data[offset+12:], 0)               // reserved
 
-	// Zero-initialize data and state areas (state[i] = EMPTY = 0)
+	// Zero-initialize data, padding, and state areas (state[i] = EMPTY = 0)
 	start := offset + StackHeaderSize
-	end := start + capacity*elemSize + capacity*4
+	end := start + align8(capacity*elemSize) + capacity*4
 	for i := start; i < end; i++ {
 		data[i] = 0
 	}
@@ -128,7 +134,7 @@ func (s *Stack[T]) topPtr() *int32 {
 // slotStatePtr returns a pointer to the atomic state for slot i.
 // State array lives after the data array.
 func (s *Stack[T]) slotStatePtr(i int32) *uint32 {
-	stateOffset := s.offset + StackHeaderSize + int(s.capacity)*int(s.elemSize) + int(i)*4
+	stateOffset := s.offset + StackHeaderSize + align8(int(s.capacity)*int(s.elemSize)) + int(i)*4
 	return (*uint32)(unsafe.Pointer(&s.memory.Data()[stateOffset]))
 }
 

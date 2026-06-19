@@ -19,11 +19,17 @@
 #define FFI_MISMATCH -2
 #define FFI_INVALID  -3
 
+/* Round n up to the next multiple of 8 (8-byte section alignment, format v2).
+ * The atomic side-arrays (queue sequence, stack state) are placed on 8-byte
+ * boundaries so their atomics are always naturally aligned. */
+#define ZIPC_ALIGN8(n) (((n) + 7u) & ~(size_t)7u)
+
 /* ============================================================================
- * Queue layout (Vyukov bounded MPMC)
+ * Queue layout (Vyukov bounded MPMC), format v2
  * Header: [head:u32][tail:u32][capacity:u32][elem_size:u32] = 16 bytes
  * Data:   capacity * elem_size bytes
- * Seqs:   capacity * 4 bytes (per-slot sequence numbers)
+ * Pad:    to next 8-byte boundary
+ * Seqs:   capacity * 4 bytes (per-slot sequence numbers, 8-aligned)
  * ============================================================================ */
 
 typedef struct {
@@ -50,7 +56,8 @@ static inline void* q_data(ffi_queue_header_t* h) {
 }
 
 static inline _Atomic uint32_t* q_seqs(ffi_queue_header_t* h) {
-    return (_Atomic uint32_t*)((char*)q_data(h) + h->capacity * h->elem_size);
+    return (_Atomic uint32_t*)((char*)q_data(h)
+                              + ZIPC_ALIGN8((size_t)h->capacity * h->elem_size));
 }
 
 int zeroipc_raw_queue_push(void* base, size_t offset,
@@ -141,19 +148,21 @@ int zeroipc_raw_queue_full(void* base, size_t offset) {
 }
 
 /* ============================================================================
- * Stack layout (4-state CAS)
- * Header: [top:i32][capacity:u32][elem_size:u32] = 12 bytes
+ * Stack layout (4-state CAS), format v2
+ * Header: [top:i32][capacity:u32][elem_size:u32][reserved:u32] = 16 bytes
  * Data:   capacity * elem_size bytes
- * State:  capacity * 4 bytes (per-slot state: EMPTY/WRITING/READY/READING)
+ * Pad:    to next 8-byte boundary
+ * State:  capacity * 4 bytes (per-slot state: EMPTY/WRITING/READY/READING, 8-aligned)
  * ============================================================================ */
 
 typedef struct {
     _Atomic int32_t top;
     uint32_t capacity;
     uint32_t elem_size;
+    uint32_t reserved;  /* pads header to 16 bytes so the data array is 8-aligned */
 } ffi_stack_header_t;
 
-_Static_assert(sizeof(ffi_stack_header_t) == 12, "Stack header must be 12 bytes");
+_Static_assert(sizeof(ffi_stack_header_t) == 16, "Stack header must be 16 bytes");
 
 static inline int s_validate(ffi_stack_header_t* h, uint32_t elem_size) {
     if (h->capacity == 0 || h->elem_size == 0) return FFI_INVALID;
@@ -175,7 +184,8 @@ static inline void* s_data(ffi_stack_header_t* h) {
 }
 
 static inline _Atomic uint32_t* s_state(ffi_stack_header_t* h) {
-    return (_Atomic uint32_t*)((char*)s_data(h) + h->capacity * h->elem_size);
+    return (_Atomic uint32_t*)((char*)s_data(h)
+                              + ZIPC_ALIGN8((size_t)h->capacity * h->elem_size));
 }
 
 int zeroipc_raw_stack_push(void* base, size_t offset,

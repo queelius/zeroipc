@@ -229,5 +229,7 @@ EOF
 echo ""
 echo -e "${GREEN}=== All Queue Interop Tests Complete ===${NC}"
 
-# Clean up
-rm -f cpp_queue_writer cpp_queue_add c_queue_reader c_queue_create *.cpp *.c
+# Clean up only the temp files this script generates (NOT *.cpp/*.c, which would
+# also delete tracked interop sources like cpp_writer.cpp / cpp_reader.cpp).
+rm -f cpp_queue_writer cpp_queue_add c_queue_reader c_queue_create \
+      cpp_queue_writer.cpp cpp_queue_add.cpp c_queue_reader.c c_queue_create.c

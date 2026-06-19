@@ -11,6 +11,8 @@ class Pool {
 public:
     static_assert(std::is_trivially_copyable_v<T>,
                   "T must be trivially copyable for shared memory");
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
 
     struct Node {
         T data;

@@ -48,8 +48,8 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 		return nil, fmt.Errorf("queue '%s' already exists", name)
 	}
 
-	// Layout: [Header][data: T * capacity][sequence: uint32 * capacity]
-	totalSize := QueueHeaderSize + capacity*elemSize + capacity*4
+	// Layout: [Header(16)][data: T*capacity][pad][sequence: uint32*capacity]
+	totalSize := QueueHeaderSize + align8(capacity*elemSize) + capacity*4
 	offset, err := memory.Allocate(name, totalSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate: %w", err)
@@ -70,8 +70,8 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 		data[i] = 0
 	}
 
-	// Initialize per-slot sequence numbers: sequence[i] = i
-	seqStart := dataEnd
+	// Initialize per-slot sequence numbers: sequence[i] = i (8-aligned start)
+	seqStart := dataStart + align8(capacity*elemSize)
 	for i := 0; i < capacity; i++ {
 		seqOffset := seqStart + i*4
 		binary.LittleEndian.PutUint32(data[seqOffset:], uint32(i))
@@ -129,7 +129,7 @@ func (q *Queue[T]) tailPtr() *uint32 {
 // seqPtr returns a pointer to the sequence number for slot i.
 // Sequence array lives after the data array.
 func (q *Queue[T]) seqPtr(slot uint32) *uint32 {
-	seqOffset := q.offset + QueueHeaderSize + int(q.capacity)*int(q.elemSize) + int(slot)*4
+	seqOffset := q.offset + QueueHeaderSize + align8(int(q.capacity)*int(q.elemSize)) + int(slot)*4
 	return (*uint32)(unsafe.Pointer(&q.memory.Data()[seqOffset]))
 }
 

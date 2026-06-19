@@ -29,6 +29,11 @@ _STATE_FORMAT = 'I'
 _STATE_SIZE = struct.calcsize(_STATE_FORMAT)
 
 
+def _align8(n: int) -> int:
+    """Round n up to the next multiple of 8 (8-byte section alignment, format v2)."""
+    return (n + 7) & ~7
+
+
 class Stack(Generic[T]):
     """Lock-free stack in shared memory.
 
@@ -38,8 +43,12 @@ class Stack(Generic[T]):
     writing the element.
     """
 
-    HEADER_FORMAT = 'iII'  # top (signed), capacity, elem_size
-    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+    # top (signed), capacity, elem_size, + 4 pad bytes (reserved). The trailing
+    # pad makes the on-disk header 16 bytes so the data array is 8-aligned
+    # (format v2). struct ignores the pad bytes on unpack and zeroes them on pack,
+    # so header readers/writers still see three fields.
+    HEADER_FORMAT = 'iII4x'
+    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 16
 
     def __init__(self, memory: Memory, name: str,
                  capacity: Optional[int] = None,
@@ -71,9 +80,9 @@ class Stack(Generic[T]):
                 raise ValueError("capacity required to create new stack")
 
             self.capacity = capacity
-            # Layout: [Header][data: T * capacity][ready: uint32 * capacity]
+            # Layout: [Header(16)][data: T*capacity][pad][state: uint32*capacity]
             total_size = (self.HEADER_SIZE
-                          + self.elem_size * capacity
+                          + _align8(self.elem_size * capacity)
                           + _STATE_SIZE * capacity)
 
             # Allocate in shared memory
@@ -86,8 +95,8 @@ class Stack(Generic[T]):
                                     self.elem_size)
             memory.data[self.offset:self.offset + self.HEADER_SIZE] = header_data
 
-            # Initialize all ready flags to 0
-            ready_base = self.offset + self.HEADER_SIZE + self.elem_size * capacity
+            # Initialize all ready flags to 0 (state array starts 8-aligned)
+            ready_base = self.offset + self.HEADER_SIZE + _align8(self.elem_size * capacity)
             for i in range(capacity):
                 off = ready_base + i * _STATE_SIZE
                 struct.pack_into(_STATE_FORMAT, memory.data, off, 0)
@@ -112,8 +121,8 @@ class Stack(Generic[T]):
             offset=data_offset
         )
 
-        # Base offset for the ready flags array in shared memory
-        self._ready_base = self.offset + self.HEADER_SIZE + self.elem_size * self.capacity
+        # Base offset for the ready flags array in shared memory (8-aligned)
+        self._ready_base = self.offset + self.HEADER_SIZE + _align8(self.elem_size * self.capacity)
 
         # Lock for atomic operations
         self._lock = threading.Lock()

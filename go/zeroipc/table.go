@@ -12,7 +12,8 @@ const (
 	TableMagic uint32 = 0x5A49504D
 
 	// TableVersion is the current format version
-	TableVersion uint32 = 1
+	// v2: 8-byte section alignment (see SPECIFICATION.md)
+	TableVersion uint32 = 2
 
 	// HeaderSize is the size of the table header in bytes
 	HeaderSize = 32

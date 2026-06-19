@@ -3,10 +3,11 @@
 Uses Vyukov bounded MPMC queue binary layout with per-slot sequence numbers,
 matching the C++/Go/C format for cross-language interoperability.
 
-Binary layout:
+Binary layout (format v2):
   [head:u32][tail:u32][capacity:u32][elem_size:u32]  (16 bytes header)
   [data[0]][data[1]]...[data[cap-1]]                 (elem_size * capacity bytes)
-  [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]        (4 * capacity bytes)
+  [pad to 8-byte boundary]
+  [seq[0]:u32][seq[1]:u32]...[seq[cap-1]:u32]        (4 * capacity bytes, 8-aligned)
 
 When libzeroipc_ffi.so is available, push/pop use C11 atomics via ctypes
 for true cross-process MPMC safety. Otherwise falls back to struct.pack_into
@@ -26,6 +27,11 @@ T = TypeVar('T')
 # Sequence number format (uint32)
 _SEQ_FORMAT = 'I'
 _SEQ_SIZE = struct.calcsize(_SEQ_FORMAT)
+
+
+def _align8(n: int) -> int:
+    """Round n up to the next multiple of 8 (8-byte section alignment, format v2)."""
+    return (n + 7) & ~7
 
 
 class Queue(Generic[T]):
@@ -74,9 +80,9 @@ class Queue(Generic[T]):
                 raise ValueError("capacity must be at least 1")
 
             self.capacity = capacity
-            # Layout: [Header][data: T * capacity][seq: uint32 * capacity]
+            # Layout: [Header(16)][data: T*capacity][pad][seq: uint32*capacity]
             total_size = (self.HEADER_SIZE
-                          + self.elem_size * capacity
+                          + _align8(self.elem_size * capacity)
                           + _SEQ_SIZE * capacity)
 
             # Allocate in shared memory
@@ -90,8 +96,8 @@ class Queue(Generic[T]):
                                     self.elem_size)
             memory.data[self.offset:self.offset + self.HEADER_SIZE] = header_data
 
-            # Initialize per-slot sequence numbers: seq[i] = i
-            seq_base = self.offset + self.HEADER_SIZE + self.elem_size * capacity
+            # Initialize per-slot sequence numbers: seq[i] = i (8-aligned start)
+            seq_base = self.offset + self.HEADER_SIZE + _align8(self.elem_size * capacity)
             for i in range(capacity):
                 off = seq_base + i * _SEQ_SIZE
                 struct.pack_into(_SEQ_FORMAT, memory.data, off, i)
@@ -116,8 +122,8 @@ class Queue(Generic[T]):
             offset=data_offset
         )
 
-        # Base offset for the sequence array
-        self._seq_base = self.offset + self.HEADER_SIZE + self.elem_size * self.capacity
+        # Base offset for the sequence array (8-aligned)
+        self._seq_base = self.offset + self.HEADER_SIZE + _align8(self.elem_size * self.capacity)
 
         # Offsets for head/tail in shared memory
         self._head_off = self.offset

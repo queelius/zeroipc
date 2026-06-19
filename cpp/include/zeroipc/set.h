@@ -9,18 +9,21 @@ namespace zeroipc {
 template<typename T>
 class Set {
 public:
-    static_assert(std::is_trivially_copyable_v<T>, 
+    static_assert(std::is_trivially_copyable_v<T>,
                   "T must be trivially copyable for shared memory");
-    
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
+
     struct Entry {
         std::atomic<uint32_t> state;  // 0=empty, 1=occupied, 2=deleted, 3=inserting
         T value;
     };
-    
+
     struct Header {
         std::atomic<uint32_t> size;       // Current number of elements
         uint32_t capacity;                 // Total capacity
         uint32_t elem_size;
+        uint32_t reserved;                 // pads header to 16 bytes so Entry array is 8-aligned
     };
     
     // State values for entries
@@ -51,7 +54,8 @@ public:
         header_->size.store(0, std::memory_order_relaxed);
         header_->capacity = capacity;
         header_->elem_size = sizeof(T);
-        
+        header_->reserved = 0;
+
         entries_ = reinterpret_cast<Entry*>(
             reinterpret_cast<char*>(header_) + sizeof(Header));
         

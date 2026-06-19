@@ -8,7 +8,22 @@
 namespace zeroipc {
 
 constexpr uint32_t TABLE_MAGIC = 0x5A49504D; // 'ZIPM'
-constexpr uint32_t TABLE_VERSION = 1;
+constexpr uint32_t TABLE_VERSION = 2;  // v2: 8-byte section alignment (see SPECIFICATION.md)
+
+/**
+ * Round n up to the next multiple of a (a must be a power of two).
+ *
+ * All structures place their sections (header, data array, atomic side-array)
+ * on 8-byte boundaries so that element and atomic accesses are naturally
+ * aligned regardless of element size. Every language computes offsets with the
+ * same rule, so the layout stays binary-compatible across implementations.
+ */
+constexpr size_t align_up(size_t n, size_t a) { return (n + a - 1) & ~(a - 1); }
+
+// The library guarantees 8-byte section alignment only; element types with a
+// stronger requirement cannot be placed correctly (the allocator 8-aligns each
+// structure base and stores no per-type alignment in the minimal metadata).
+constexpr size_t MAX_ELEM_ALIGN = 8;
 
 /**
  * Runtime-configurable table for managing named structures in shared memory.

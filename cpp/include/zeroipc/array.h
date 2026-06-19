@@ -18,8 +18,10 @@ namespace zeroipc {
  */
 template<typename T>
 class Array {
-    static_assert(std::is_trivially_copyable_v<T>, 
+    static_assert(std::is_trivially_copyable_v<T>,
                   "Array elements must be trivially copyable");
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
     
 public:
     struct Header {

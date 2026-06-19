@@ -7,7 +7,7 @@ from typing import Optional, NamedTuple
 
 # Constants matching C++ implementation
 TABLE_MAGIC = 0x5A49504D  # 'ZIPM'
-TABLE_VERSION = 1
+TABLE_VERSION = 2  # v2: 8-byte section alignment (see SPECIFICATION.md)
 
 
 class TableEntry(NamedTuple):

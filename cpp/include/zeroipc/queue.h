@@ -11,6 +11,8 @@ class Queue {
 public:
     static_assert(std::is_trivially_copyable_v<T>,
                   "T must be trivially copyable for shared memory");
+    static_assert(alignof(T) <= MAX_ELEM_ALIGN,
+                  "T alignment exceeds the 8-byte guarantee of shared memory layout");
 
     struct Header {
         std::atomic<uint32_t> head;
@@ -33,7 +35,9 @@ public:
             throw std::overflow_error("Queue capacity too large");
         }
 
-        size_t total_size = sizeof(Header) + sizeof(T) * capacity + seq_array_size;
+        // The sequence array is 8-aligned so its atomics are naturally aligned.
+        size_t seq_off = align_up(sizeof(T) * capacity, 8);
+        size_t total_size = sizeof(Header) + seq_off + seq_array_size;
         size_t offset = memory.allocate(name, total_size);
 
         header_ = memory.ptr_at<Header>(offset);
@@ -47,9 +51,9 @@ public:
         data_ = reinterpret_cast<T*>(
             reinterpret_cast<char*>(header_) + sizeof(Header));
 
-        // Sequence array lives after the data array
+        // Sequence array lives after the data array (8-aligned)
         sequence_ = reinterpret_cast<std::atomic<uint32_t>*>(
-            reinterpret_cast<char*>(data_) + sizeof(T) * capacity);
+            reinterpret_cast<char*>(data_) + seq_off);
 
         // Initialize per-slot sequence numbers: sequence[i] = i
         for (size_t i = 0; i < capacity; i++) {
@@ -75,9 +79,9 @@ public:
         data_ = reinterpret_cast<T*>(
             reinterpret_cast<char*>(header_) + sizeof(Header));
 
-        // Sequence array lives after the data array
+        // Sequence array lives after the data array (8-aligned)
         sequence_ = reinterpret_cast<std::atomic<uint32_t>*>(
-            reinterpret_cast<char*>(data_) + sizeof(T) * header_->capacity);
+            reinterpret_cast<char*>(data_) + align_up(sizeof(T) * header_->capacity, 8));
     }
 
     // Enqueue (lock-free MPMC, Vyukov-style bounded queue)

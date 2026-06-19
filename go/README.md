@@ -7,6 +7,24 @@ Go implementation of ZeroIPC - high-performance cross-language shared memory IPC
 - Go 1.21 or later (for generics support)
 - Linux (uses `/dev/shm` for POSIX shared memory)
 
+## Platform support
+
+The shared-memory backend is **Linux only** (names are mapped under `/dev/shm`).
+The package compiles on every `GOOS`, but on non-Linux targets `NewMemory` and
+`OpenMemory` return a clear error instead of failing the build:
+
+```
+zeroipc: shared memory requires Linux (POSIX shared memory via /dev/shm);
+GOOS "windows" is not supported (contributions welcome)
+```
+
+Adding a backend for another OS means implementing the small set of methods in
+`memory_linux.go` (`create`, `open`, `Close`, `Unlink`, `UnlinkName`) in a
+build-tagged file such as `memory_windows.go`; that file already documents the
+Win32 file-mapping approach. Note that *cross-language* interop additionally
+requires the C++/C/Python implementations to use the same OS shared-memory
+scheme, so a Go-only backend would be Go-to-Go on that platform.
+
 ## Installation
 
 ```bash

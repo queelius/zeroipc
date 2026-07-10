@@ -28,6 +28,12 @@ _SLOT_READING = 3
 _STATE_FORMAT = 'I'
 _STATE_SIZE = struct.calcsize(_STATE_FORMAT)
 
+# Bound on every slot-state wait loop (matching C++/C/Go MAX_SPINS). A peer
+# in another process that crashed mid-operation leaves its slot permanently
+# claimed; bailing out (with an undo of the top reservation) makes push/pop/
+# top best-effort instead of hanging.
+_MAX_SPINS = 10000
+
 
 def _align8(n: int) -> int:
     """Round n up to the next multiple of 8 (8-byte section alignment, format v2)."""
@@ -170,8 +176,16 @@ class Stack(Generic[T]):
             new_top = top + 1
             self._write_header(new_top, capacity, elem_size)
 
-            while self._read_ready(new_top) != _SLOT_EMPTY:
+            # Bounded wait: a peer in another process that crashed
+            # mid-operation can leave the slot permanently claimed. Undo the
+            # reservation and fail rather than hang.
+            for _ in range(_MAX_SPINS):
+                if self._read_ready(new_top) == _SLOT_EMPTY:
+                    break
                 time.sleep(0)
+            else:
+                self._write_header(top, capacity, elem_size)
+                return False
             self._write_ready(new_top, _SLOT_WRITING)
             self.data[new_top] = value
             self._write_ready(new_top, _SLOT_READY)
@@ -192,8 +206,16 @@ class Stack(Generic[T]):
 
             self._write_header(top - 1, capacity, elem_size)
 
-            while self._read_ready(top) != _SLOT_READY:
+            # Bounded wait: a pusher in another process that crashed
+            # mid-write leaves the slot stuck in WRITING forever. Undo the
+            # reservation (so the item is not silently dropped) and fail.
+            for _ in range(_MAX_SPINS):
+                if self._read_ready(top) == _SLOT_READY:
+                    break
                 time.sleep(0)
+            else:
+                self._write_header(top, capacity, elem_size)
+                return None
             self._write_ready(top, _SLOT_READING)
             value = self.data[top].copy()
             self._write_ready(top, _SLOT_EMPTY)
@@ -222,7 +244,7 @@ class Stack(Generic[T]):
             if top_idx < 0:
                 return None
 
-            for _ in range(10000):
+            for _ in range(_MAX_SPINS):
                 if self._read_ready(top_idx) == _SLOT_READY:
                     self._write_ready(top_idx, _SLOT_READING)
                     value = self.data[top_idx].copy()

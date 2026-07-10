@@ -31,6 +31,14 @@ public:
     static constexpr uint32_t SLOT_READY   = 2;
     static constexpr uint32_t SLOT_READING = 3;
 
+    // Bound on every slot-state spin loop. A peer that crashes mid-operation
+    // leaves its slot permanently claimed; an unbounded spin would then hang
+    // every later operation that lands on that slot. Bailing out makes
+    // push/pop/top best-effort: they may fail spuriously if a peer died (or
+    // under pathological contention), but they never hang. On bail-out the
+    // operation undoes its top reservation when possible and returns failure.
+    static constexpr int MAX_SPINS = 10000;
+
     // Create new stack
     Stack(Memory& memory, std::string_view name, size_t capacity)
         : memory_(memory), name_(name) {
@@ -105,15 +113,32 @@ public:
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed));
 
-        // Step 2: Exclusively claim the slot for writing: CAS(EMPTY -> WRITING)
-        // If another push/pop is still using this slot, spin until EMPTY.
+        // Step 2: Exclusively claim the slot for writing: CAS(EMPTY -> WRITING).
+        // Bounded spin (see MAX_SPINS): a crashed peer can leave the slot
+        // permanently claimed.
         uint32_t expected = SLOT_EMPTY;
-        while (!state_[new_top].compare_exchange_weak(
+        bool claimed = false;
+        for (int spins = 0; spins < MAX_SPINS; ++spins) {
+            if (state_[new_top].compare_exchange_weak(
                     expected, SLOT_WRITING,
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
+                claimed = true;
+                break;
+            }
             expected = SLOT_EMPTY;
             std::this_thread::yield();
+        }
+        if (!claimed) {
+            // Best-effort undo of the reservation. If another push already
+            // built on top of ours, the CAS fails and top stays advanced
+            // over the stuck slot; operations landing on that slot also
+            // fail bounded rather than hang.
+            int32_t reserved = new_top;
+            header_->top.compare_exchange_strong(
+                reserved, current_top,
+                std::memory_order_acq_rel, std::memory_order_relaxed);
+            return false;
         }
 
         // Step 3: Write data (we have exclusive ownership)
@@ -144,15 +169,32 @@ public:
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed));
 
-        // Step 2: Exclusively claim the slot for reading: CAS(READY -> READING)
-        // If the push hasn't finished writing yet, spin until READY.
+        // Step 2: Exclusively claim the slot for reading: CAS(READY -> READING).
+        // Bounded spin (see MAX_SPINS): normally this only waits for the
+        // owning push to finish writing, but a pusher that crashed mid-write
+        // would leave the slot stuck in WRITING forever.
         uint32_t expected = SLOT_READY;
-        while (!state_[current_top].compare_exchange_weak(
+        bool claimed = false;
+        for (int spins = 0; spins < MAX_SPINS; ++spins) {
+            if (state_[current_top].compare_exchange_weak(
                     expected, SLOT_READING,
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
+                claimed = true;
+                break;
+            }
             expected = SLOT_READY;
             std::this_thread::yield();
+        }
+        if (!claimed) {
+            // Best-effort undo: put the item back under top so it is not
+            // silently dropped. If another operation moved top meanwhile,
+            // the CAS fails and the stuck slot stays orphaned.
+            int32_t reserved = new_top;
+            header_->top.compare_exchange_strong(
+                reserved, current_top,
+                std::memory_order_acq_rel, std::memory_order_relaxed);
+            return std::nullopt;
         }
 
         // Step 3: Read the value (we have exclusive ownership)
@@ -175,7 +217,7 @@ public:
     // The bounded spin preserves crash-safety: a peer that died mid-write
     // (slot stuck WRITING/READING) cannot hang the peek indefinitely.
     std::optional<T> top() const {
-        for (int spins = 0; spins < 10000; ++spins) {
+        for (int spins = 0; spins < MAX_SPINS; ++spins) {
             int32_t current_top = header_->top.load(std::memory_order_acquire);
             if (current_top < 0) {
                 return std::nullopt;

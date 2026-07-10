@@ -103,6 +103,9 @@ target_link_libraries(test_memory_boundaries gtest_main Threads::Threads rt)
 add_executable(test_failure_recovery tests/test_failure_recovery.cpp)
 target_link_libraries(test_failure_recovery gtest_main Threads::Threads rt)
 
+add_executable(test_crash_safety tests/test_crash_safety.cpp)
+target_link_libraries(test_crash_safety gtest_main Threads::Threads rt)
+
 add_executable(test_new_structures tests/test_new_structures.cpp)
 target_link_libraries(test_new_structures gtest_main Threads::Threads rt)
 
@@ -199,6 +202,11 @@ add_test(NAME failure_recovery_test COMMAND test_failure_recovery)
 set_tests_properties(failure_recovery_test PROPERTIES
     LABELS "medium;integration"
     TIMEOUT 15)
+
+add_test(NAME crash_safety_test COMMAND test_crash_safety)
+set_tests_properties(crash_safety_test PROPERTIES
+    LABELS "fast;unit;lockfree"
+    TIMEOUT 10)
 
 add_test(NAME codata_test COMMAND test_codata)
 set_tests_properties(codata_test PROPERTIES

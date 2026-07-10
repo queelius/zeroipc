@@ -487,12 +487,67 @@ void test_section_alignment() {
     printf("  ✓ Section alignment layout passed\n");
 }
 
+/* Crash-safety: a peer that dies mid-operation leaves its slot state
+ * permanently claimed. Simulate the ghost by poking the state array, then
+ * assert push/pop fail bounded (ZEROIPC_ERROR_TIMEOUT, no hang), undo their
+ * top reservation, and the stack recovers once the slot is repaired. */
+void test_crashed_peer() {
+    printf("Testing crash-safety (bounded spin, stuck slot)...\n");
+
+    zeroipc_memory_t* mem = zeroipc_memory_create("/test_qs_crash", 1024*1024, 64);
+    assert(mem != NULL);
+
+    zeroipc_stack_t* s = zeroipc_stack_create(mem, "s", sizeof(int), 8);
+    assert(s != NULL);
+
+    int v = 1;
+    assert(zeroipc_stack_push(s, &v) == ZEROIPC_OK);
+    v = 2;
+    assert(zeroipc_stack_push(s, &v) == ZEROIPC_OK);
+
+    /* State array offset per the spec formula (elem_size 4, cap 8). */
+    size_t offset = 0, size = 0;
+    assert(zeroipc_table_find(mem, "s", &offset, &size) == ZEROIPC_OK);
+    size_t side_off = 16 + TEST_ALIGN8(4 * 8);
+    _Atomic uint32_t* state =
+        (_Atomic uint32_t*)((char*)zeroipc_memory_base(mem) + offset + side_off);
+
+    /* Ghost pusher died mid-write: slot 1 stuck in WRITING(1). */
+    atomic_store(&state[1], 1u);
+    assert(zeroipc_stack_pop(s, &v) == ZEROIPC_ERROR_TIMEOUT);
+    assert(zeroipc_stack_size(s) == 2);  /* undo restored top; nothing lost */
+
+    /* Repair; pop drains both values. */
+    atomic_store(&state[1], 2u);  /* READY */
+    assert(zeroipc_stack_pop(s, &v) == ZEROIPC_OK && v == 2);
+    assert(zeroipc_stack_pop(s, &v) == ZEROIPC_OK && v == 1);
+
+    /* Ghost popper holding slot above top: push fails bounded, top restored. */
+    v = 1;
+    assert(zeroipc_stack_push(s, &v) == ZEROIPC_OK);
+    atomic_store(&state[1], 3u);  /* READING */
+    v = 2;
+    assert(zeroipc_stack_push(s, &v) == ZEROIPC_ERROR_TIMEOUT);
+    assert(zeroipc_stack_size(s) == 1);
+
+    atomic_store(&state[1], 0u);  /* EMPTY */
+    assert(zeroipc_stack_push(s, &v) == ZEROIPC_OK);
+    assert(zeroipc_stack_size(s) == 2);
+
+    zeroipc_stack_close(s);
+    zeroipc_memory_close(mem);
+    zeroipc_memory_unlink("/test_qs_crash");
+
+    printf("  ✓ Crash-safety passed\n");
+}
+
 int main() {
     printf("=== ZeroIPC C Queue/Stack Tests ===\n\n");
 
     test_queue_basic();
     test_stack_basic();
     test_section_alignment();
+    test_crashed_peer();
     test_queue_concurrent();
     test_queue_mpmc();
     test_stack_mpmc();

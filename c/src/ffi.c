@@ -9,6 +9,7 @@
  */
 
 #include "zeroipc_ffi.h"
+#include <sched.h>
 #include <stdatomic.h>
 #include <string.h>
 
@@ -175,6 +176,14 @@ static inline int s_validate(ffi_stack_header_t* h, uint32_t elem_size) {
 #define SLOT_READY   2
 #define SLOT_READING 3
 
+/* Bound on every slot-state spin loop. A crashed peer leaves its slot
+ * permanently claimed; bailing out (with a best-effort undo of the top
+ * reservation) makes push/pop/top best-effort instead of hanging. Each
+ * iteration yields so a live-but-descheduled peer gets CPU time to finish;
+ * without the yield the whole bound elapses in microseconds and merely
+ * descheduled writers would trigger spurious bail-outs. */
+#define FFI_MAX_SPINS 10000
+
 static inline ffi_stack_header_t* s_header(void* base, size_t offset) {
     return (ffi_stack_header_t*)((char*)base + offset);
 }
@@ -208,12 +217,28 @@ int zeroipc_raw_stack_push(void* base, size_t offset,
                 &h->top, &current_top, new_top,
                 memory_order_acq_rel, memory_order_relaxed));
 
-    /* Step 2: CAS slot EMPTY -> WRITING */
+    /* Step 2: CAS slot EMPTY -> WRITING. Bounded spin: a crashed peer can
+     * leave the slot permanently claimed; bail out rather than hang. */
     uint32_t expected = SLOT_EMPTY;
-    while (!atomic_compare_exchange_weak_explicit(
+    int claimed = 0;
+    for (int spins = 0; spins < FFI_MAX_SPINS; ++spins) {
+        if (atomic_compare_exchange_weak_explicit(
                 &state[new_top], &expected, SLOT_WRITING,
-                memory_order_acq_rel, memory_order_relaxed))
+                memory_order_acq_rel, memory_order_relaxed)) {
+            claimed = 1;
+            break;
+        }
         expected = SLOT_EMPTY;
+        sched_yield();
+    }
+    if (!claimed) {
+        /* Best-effort undo of the top reservation. */
+        int32_t reserved = new_top;
+        atomic_compare_exchange_strong_explicit(
+            &h->top, &reserved, current_top,
+            memory_order_acq_rel, memory_order_relaxed);
+        return FFI_FULL;
+    }
 
     /* Step 3: Write data */
     memcpy((char*)data + new_top * elem_size, value, elem_size);
@@ -243,12 +268,29 @@ int zeroipc_raw_stack_pop(void* base, size_t offset,
                 &h->top, &current_top, new_top,
                 memory_order_acq_rel, memory_order_relaxed));
 
-    /* Step 2: CAS slot READY -> READING */
+    /* Step 2: CAS slot READY -> READING. Bounded spin: a pusher that crashed
+     * mid-write leaves the slot stuck in WRITING forever. */
     uint32_t expected = SLOT_READY;
-    while (!atomic_compare_exchange_weak_explicit(
+    int claimed = 0;
+    for (int spins = 0; spins < FFI_MAX_SPINS; ++spins) {
+        if (atomic_compare_exchange_weak_explicit(
                 &state[current_top], &expected, SLOT_READING,
-                memory_order_acq_rel, memory_order_relaxed))
+                memory_order_acq_rel, memory_order_relaxed)) {
+            claimed = 1;
+            break;
+        }
         expected = SLOT_READY;
+        sched_yield();
+    }
+    if (!claimed) {
+        /* Best-effort undo: put the item back under top so it is not
+         * silently dropped. */
+        int32_t reserved = new_top;
+        atomic_compare_exchange_strong_explicit(
+            &h->top, &reserved, current_top,
+            memory_order_acq_rel, memory_order_relaxed);
+        return FFI_EMPTY;
+    }
 
     /* Step 3: Read data */
     memcpy(value_out, (char*)data + current_top * elem_size, elem_size);
@@ -276,7 +318,7 @@ int zeroipc_raw_stack_top(void* base, size_t offset,
      * overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
      * the same state machine pop uses (READY -> READING), copy, then restore
      * it to READY. The bounded spin preserves crash-safety. */
-    for (int spins = 0; spins < 10000; ++spins) {
+    for (int spins = 0; spins < FFI_MAX_SPINS; ++spins) {
         int32_t top = atomic_load_explicit(&h->top, memory_order_acquire);
         if (top < 0) return FFI_EMPTY;
 
@@ -288,6 +330,7 @@ int zeroipc_raw_stack_top(void* base, size_t offset,
             atomic_store_explicit(&state[top], SLOT_READY, memory_order_release);
             return FFI_OK;
         }
+        sched_yield();
     }
     return FFI_EMPTY;
 }

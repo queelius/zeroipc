@@ -1,5 +1,7 @@
+#define _GNU_SOURCE
 #include "zeroipc.h"
 #include "zeroipc_stack.h"
+#include <sched.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <stdlib.h>
@@ -26,6 +28,11 @@
 #define SLOT_WRITING 1
 #define SLOT_READY   2
 #define SLOT_READING 3
+
+/* Bound on every slot-state spin loop. A crashed peer leaves its slot
+ * permanently claimed; bailing out (with a best-effort undo of the top
+ * reservation) makes push/pop/top best-effort instead of hanging. */
+#define ZIPC_MAX_SPINS 10000
 
 /* Stack header in shared memory — matches C++ Stack::Header */
 typedef struct {
@@ -139,12 +146,28 @@ int zeroipc_stack_push(zeroipc_stack_t* stack, const void* value) {
                 &stack->header->top, &current_top, new_top,
                 memory_order_acq_rel, memory_order_relaxed));
 
-    /* Step 2: CAS slot EMPTY -> WRITING */
+    /* Step 2: CAS slot EMPTY -> WRITING. Bounded spin: a crashed peer can
+     * leave the slot permanently claimed; bail out rather than hang. */
     uint32_t expected = SLOT_EMPTY;
-    while (!atomic_compare_exchange_weak_explicit(
+    int claimed = 0;
+    for (int spins = 0; spins < ZIPC_MAX_SPINS; ++spins) {
+        if (atomic_compare_exchange_weak_explicit(
                 &stack->state[new_top], &expected, SLOT_WRITING,
                 memory_order_acq_rel, memory_order_relaxed)) {
+            claimed = 1;
+            break;
+        }
         expected = SLOT_EMPTY;
+        sched_yield();
+    }
+    if (!claimed) {
+        /* Best-effort undo of the top reservation; if another push already
+         * built on top of ours the CAS fails and the slot stays orphaned. */
+        int32_t reserved = new_top;
+        atomic_compare_exchange_strong_explicit(
+            &stack->header->top, &reserved, current_top,
+            memory_order_acq_rel, memory_order_relaxed);
+        return ZEROIPC_ERROR_TIMEOUT;
     }
 
     /* Step 3: Write data */
@@ -174,12 +197,29 @@ int zeroipc_stack_pop(zeroipc_stack_t* stack, void* value) {
                 &stack->header->top, &current_top, new_top,
                 memory_order_acq_rel, memory_order_relaxed));
 
-    /* Step 2: CAS slot READY -> READING */
+    /* Step 2: CAS slot READY -> READING. Bounded spin: normally this only
+     * waits for the owning push to finish writing, but a pusher that crashed
+     * mid-write leaves the slot stuck in WRITING forever. */
     uint32_t expected = SLOT_READY;
-    while (!atomic_compare_exchange_weak_explicit(
+    int claimed = 0;
+    for (int spins = 0; spins < ZIPC_MAX_SPINS; ++spins) {
+        if (atomic_compare_exchange_weak_explicit(
                 &stack->state[current_top], &expected, SLOT_READING,
                 memory_order_acq_rel, memory_order_relaxed)) {
+            claimed = 1;
+            break;
+        }
         expected = SLOT_READY;
+        sched_yield();
+    }
+    if (!claimed) {
+        /* Best-effort undo: put the item back under top so it is not
+         * silently dropped. */
+        int32_t reserved = new_top;
+        atomic_compare_exchange_strong_explicit(
+            &stack->header->top, &reserved, current_top,
+            memory_order_acq_rel, memory_order_relaxed);
+        return ZEROIPC_ERROR_TIMEOUT;
     }
 
     /* Step 3: Read data */
@@ -206,7 +246,7 @@ int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
      * overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
      * the same state machine pop uses (READY -> READING), copy, then restore
      * it to READY. The bounded spin preserves crash-safety. */
-    for (int spins = 0; spins < 10000; ++spins) {
+    for (int spins = 0; spins < ZIPC_MAX_SPINS; ++spins) {
         int32_t top = atomic_load_explicit(&stack->header->top, memory_order_acquire);
         if (top < 0) return ZEROIPC_ERROR_NOT_FOUND;
 
@@ -219,6 +259,7 @@ int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
             atomic_store_explicit(&stack->state[top], SLOT_READY, memory_order_release);
             return ZEROIPC_OK;
         }
+        sched_yield();
     }
     return ZEROIPC_ERROR_NOT_FOUND;  /* Timed out */
 }

@@ -20,7 +20,8 @@ typedef enum {
     ZEROIPC_ERROR_NAME_TOO_LONG = -6,
     ZEROIPC_ERROR_INVALID_MAGIC = -7,
     ZEROIPC_ERROR_VERSION_MISMATCH = -8,
-    ZEROIPC_ERROR_ALREADY_EXISTS = -9
+    ZEROIPC_ERROR_ALREADY_EXISTS = -9,
+    ZEROIPC_ERROR_TIMEOUT = -10  /* bounded spin exhausted (crashed peer or pathological contention) */
 } zeroipc_error_t;
 
 /* Forward declarations */

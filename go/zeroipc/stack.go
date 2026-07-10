@@ -31,14 +31,23 @@ const (
 	slotReading uint32 = 3
 )
 
+// maxSpins bounds every slot-state spin loop. A peer that crashes
+// mid-operation leaves its slot permanently claimed; an unbounded spin would
+// then hang every later operation that lands on that slot. Bailing out makes
+// Push/Pop/Top best-effort: they may fail spuriously if a peer died (or under
+// pathological contention), but they never hang. On bail-out the operation
+// undoes its top reservation when possible and returns failure.
+const maxSpins = 10000
+
 // Stack is a lock-free LIFO stack in shared memory.
 //
-// Binary layout (matching C++):
+// Binary layout (matching C++, format v2):
 //   - top: int32 (atomic, offset 0) - index of top element, -1 when empty
 //   - capacity: uint32 (offset 4)
 //   - elem_size: uint32 (offset 8)
-//   - data: capacity * elem_size bytes (offset 12)
-//   - state: capacity * 4 bytes (after data) - per-slot atomic state
+//   - reserved: uint32 (offset 12) - pads header to 16 bytes
+//   - data: capacity * elem_size bytes (offset 16)
+//   - state: capacity * 4 bytes (at align8(16 + elem_size*capacity)) - per-slot atomic state
 type Stack[T Numeric] struct {
 	memory   *Memory
 	name     string
@@ -75,9 +84,9 @@ func NewStack[T Numeric](memory *Memory, name string, capacity int) (*Stack[T], 
 	data := memory.Data()
 
 	// Write header (top = -1 means empty)
-	binary.LittleEndian.PutUint32(data[offset:], 0xFFFFFFFF)          // top = -1
-	binary.LittleEndian.PutUint32(data[offset+4:], uint32(capacity))  // capacity
-	binary.LittleEndian.PutUint32(data[offset+8:], uint32(elemSize))  // elem_size
+	binary.LittleEndian.PutUint32(data[offset:], 0xFFFFFFFF)         // top = -1
+	binary.LittleEndian.PutUint32(data[offset+4:], uint32(capacity)) // capacity
+	binary.LittleEndian.PutUint32(data[offset+8:], uint32(elemSize)) // elem_size
 	binary.LittleEndian.PutUint32(data[offset+12:], 0)               // reserved
 
 	// Zero-initialize data, padding, and state areas (state[i] = EMPTY = 0)
@@ -156,14 +165,23 @@ func (s *Stack[T]) Push(value T) bool {
 		}
 	}
 
-	// Step 2: CAS the slot state EMPTY -> WRITING
+	// Step 2: CAS the slot state EMPTY -> WRITING. Bounded spin (see
+	// maxSpins): a crashed peer can leave the slot permanently claimed.
 	statePtr := s.slotStatePtr(newTop)
-	for {
-		expected := slotEmpty
-		if atomic.CompareAndSwapUint32(statePtr, expected, slotWriting) {
+	claimed := false
+	for spins := 0; spins < maxSpins; spins++ {
+		if atomic.CompareAndSwapUint32(statePtr, slotEmpty, slotWriting) {
+			claimed = true
 			break
 		}
 		runtime.Gosched()
+	}
+	if !claimed {
+		// Best-effort undo of the top reservation. If another push already
+		// built on top of ours, the CAS fails and the slot stays orphaned;
+		// operations landing on it also fail bounded rather than hang.
+		atomic.CompareAndSwapInt32(topPtr, newTop, currentTop)
+		return false
 	}
 
 	// Step 3: Write data (we have exclusive ownership)
@@ -194,14 +212,24 @@ func (s *Stack[T]) Pop() (T, bool) {
 		}
 	}
 
-	// Step 2: CAS the slot state READY -> READING
+	// Step 2: CAS the slot state READY -> READING. Bounded spin (see
+	// maxSpins): normally this only waits for the owning push to finish
+	// writing, but a pusher that crashed mid-write leaves the slot stuck
+	// in WRITING forever.
 	statePtr := s.slotStatePtr(currentTop)
-	for {
-		expected := slotReady
-		if atomic.CompareAndSwapUint32(statePtr, expected, slotReading) {
+	claimed := false
+	for spins := 0; spins < maxSpins; spins++ {
+		if atomic.CompareAndSwapUint32(statePtr, slotReady, slotReading) {
+			claimed = true
 			break
 		}
 		runtime.Gosched()
+	}
+	if !claimed {
+		// Best-effort undo: put the item back under top so it is not
+		// silently dropped.
+		atomic.CompareAndSwapInt32(topPtr, newTop, currentTop)
+		return zero, false
 	}
 
 	// Step 3: Read data (we have exclusive ownership)
@@ -228,7 +256,7 @@ func (s *Stack[T]) Top() (T, bool) {
 	// overwriting it, racing the read (TOCTOU). Claim the slot exclusively via
 	// the same state machine pop uses (READY -> READING), copy, then restore it
 	// to READY. The bounded spin preserves crash-safety.
-	for spins := 0; spins < 10000; spins++ {
+	for spins := 0; spins < maxSpins; spins++ {
 		currentTop := atomic.LoadInt32(s.topPtr())
 		if currentTop < 0 {
 			return zero, false

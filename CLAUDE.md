@@ -68,7 +68,7 @@ make test       # Run tests
 make clean      # Clean artifacts
 ```
 
-The shared library `libzeroipc_ffi.so` is a thin, stateless C11 atomics layer for Python's `_cffi.py` module. It compiles from a single file (`c/src/ffi.c`) with no dependencies beyond `stdatomic.h` and `string.h`. Self-contained by design so Python can use real cross-process atomics without the C library having any other linkage.
+The shared library `libzeroipc_ffi.so` is a thin, stateless C11 atomics layer for Python's `_cffi.py` module. It compiles from a single file (`c/src/ffi.c`) with no dependencies beyond `stdatomic.h`, `string.h`, and `sched.h` (`sched_yield` in the bounded spin loops). Self-contained by design so Python can use real cross-process atomics without the C library having any other linkage.
 
 ### Python
 ```bash
@@ -138,7 +138,7 @@ Per-slot state machine: `EMPTY(0) -> WRITING(1) -> READY(2) -> READING(3) -> EMP
 
 - Top reservation (CAS on the top index) is decoupled from slot ownership (CAS on per-slot state)
 - This decoupling eliminates the ABA vulnerability the older single-CAS design had
-- `top()` (peek) uses bounded spin (10000 iterations) plus a top-changed bail-out, so a crashed pusher never causes infinite hang
+- ALL slot-state spin loops are bounded (MAX_SPINS = 10000, yielding each iteration): `push`, `pop`, and `top` bail out instead of hanging when a crashed peer leaves a slot stuck. On bail-out, push/pop best-effort-undo their top reservation (single CAS on the top index) so no item is silently dropped, then return failure. All three operations are therefore best-effort: they can fail spuriously if a peer died mid-operation. Deterministic tests simulate the ghost by poking the state array: `cpp/tests/test_crash_safety.cpp`, `test_crashed_peer` in `c/tests/test_queue_stack.c`, `go/zeroipc/crash_test.go`, `python/tests/test_crash_safety.py`
 
 When changing either algorithm, the change must be applied consistently across all four languages AND `c/src/ffi.c` (which has its own copies for the FFI Python uses).
 

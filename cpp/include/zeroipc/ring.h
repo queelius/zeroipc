@@ -7,6 +7,12 @@
 
 namespace zeroipc {
 
+// Ring buffer for streaming (single-producer / single-consumer ONLY).
+// write() and read() update write_pos/read_pos with plain load/store, not
+// CAS: exactly one producer and one consumer at a time. Concurrent
+// producers (or consumers) race on the position fields and corrupt data.
+// The header capacity field stores BYTES (a multiple of elem_size); this
+// is the canonical layout the Python implementation mirrors.
 template<typename T>
 class Ring {
 public:

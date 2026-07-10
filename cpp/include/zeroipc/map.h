@@ -4,6 +4,7 @@
 #include "detail/hash.h"
 #include <atomic>
 #include <optional>
+#include <thread>
 
 namespace zeroipc {
 
@@ -37,6 +38,10 @@ public:
     static constexpr uint32_t OCCUPIED = 1;
     static constexpr uint32_t DELETED = 2;
     static constexpr uint32_t INSERTING = 3;
+
+    // Bound on waiting for a slot stuck in INSERTING (a crashed peer can
+    // leave it that way forever). Matches Stack/Queue MAX_SPINS.
+    static constexpr int MAX_SPINS = 10000;
     
     // Create new map
     Map(Memory& memory, std::string_view name, size_t capacity)
@@ -95,53 +100,77 @@ public:
         size_t hash = hash_key(key);
         size_t capacity = header_->capacity;
 
-        // Linear probing
-        for (size_t i = 0; i < capacity; ++i) {
-            size_t idx = (hash + i) % capacity;
-            Entry& entry = entries_[idx];
+        // Two-phase insert. Phase 1 scans the whole probe chain for the
+        // key (updating in place if found), remembering the first
+        // reusable DELETED slot; the chain ends at the first EMPTY slot.
+        // Phase 2 claims the remembered slot. Claiming a slot before the
+        // chain is fully scanned would duplicate a key that lives past a
+        // DELETED slot, and advancing past a slot whose CAS we lost would
+        // duplicate a key a concurrent insert is writing to it — both
+        // paths must re-examine, never skip.
+        for (;;) {
+            Entry* deleted_target = nullptr;  // first reusable slot
+            Entry* empty_target = nullptr;    // chain-terminating slot
 
-            // Try to claim an empty slot: EMPTY -> INSERTING
-            uint32_t expected = EMPTY;
-            if (entry.state.compare_exchange_strong(expected, INSERTING,
-                                                   std::memory_order_acquire,
-                                                   std::memory_order_relaxed)) {
-                // We exclusively own this slot; write key and value
-                entry.key = key;
-                entry.value = value;
-                // Publish the entry: INSERTING -> OCCUPIED (release so readers see data)
-                entry.state.store(OCCUPIED, std::memory_order_release);
-                header_->size.fetch_add(1, std::memory_order_relaxed);
-                return true;
-            }
+            for (size_t i = 0; i < capacity && !empty_target; ++i) {
+                Entry& entry = entries_[(hash + i) % capacity];
 
-            // Check if it's our key (update case)
-            // Skip INSERTING slots (another thread is writing, treat as not-our-key)
-            if (expected == OCCUPIED && keys_equal(entry.key, key)) {
-                // CAS OCCUPIED -> INSERTING for exclusive update access
-                expected = OCCUPIED;
-                if (entry.state.compare_exchange_strong(expected, INSERTING,
-                                                        std::memory_order_acquire,
-                                                        std::memory_order_relaxed)) {
-                    entry.value = value;
-                    entry.state.store(OCCUPIED, std::memory_order_release);
-                    return true;
+                int spins = 0;
+                for (;;) {
+                    uint32_t state = entry.state.load(std::memory_order_acquire);
+
+                    if (state == INSERTING) {
+                        // Mid-write by another thread; it may be writing
+                        // this key. Wait bounded (a crashed peer can leave
+                        // the slot stuck forever), then skip the slot.
+                        if (++spins >= MAX_SPINS) break;
+                        std::this_thread::yield();
+                        continue;
+                    }
+
+                    if (state == OCCUPIED) {
+                        if (!keys_equal(entry.key, key)) break;  // next slot
+
+                        // Update: CAS OCCUPIED -> INSERTING for exclusive access
+                        uint32_t expected = OCCUPIED;
+                        if (entry.state.compare_exchange_strong(expected, INSERTING,
+                                                                std::memory_order_acquire,
+                                                                std::memory_order_relaxed)) {
+                            entry.value = value;
+                            entry.state.store(OCCUPIED, std::memory_order_release);
+                            return true;
+                        }
+                        continue;  // erased or another updater won; re-examine
+                    }
+
+                    if (state == DELETED) {
+                        if (!deleted_target) deleted_target = &entry;
+                        break;  // keep scanning: the key may live further on
+                    }
+
+                    // EMPTY: the probe chain ends here; the key is absent
+                    empty_target = &entry;
+                    break;
                 }
-                // CAS failed — slot was erased or another updater won; retry from this slot
-                continue;
             }
 
-            // Try deleted slots too: DELETED -> INSERTING
-            expected = DELETED;
-            if (entry.state.compare_exchange_strong(expected, INSERTING,
-                                                   std::memory_order_acquire,
-                                                   std::memory_order_relaxed)) {
-                entry.key = key;
-                entry.value = value;
-                // Publish the entry: INSERTING -> OCCUPIED
-                entry.state.store(OCCUPIED, std::memory_order_release);
+            Entry* target = deleted_target ? deleted_target : empty_target;
+            if (!target) break;  // map is full
+
+            uint32_t expected = deleted_target ? DELETED : EMPTY;
+            if (target->state.compare_exchange_strong(expected, INSERTING,
+                                                      std::memory_order_acquire,
+                                                      std::memory_order_relaxed)) {
+                // We exclusively own this slot; write key and value
+                target->key = key;
+                target->value = value;
+                // Publish the entry: INSERTING -> OCCUPIED (release so readers see data)
+                target->state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
+            // The slot changed under us — a competing operation completed
+            // (possibly inserting this very key). Rescan from the top.
         }
 
         return false;  // Map is full
@@ -156,18 +185,29 @@ public:
             size_t idx = (hash + i) % capacity;
             const Entry& entry = entries_[idx];
 
-            uint32_t state = entry.state.load(std::memory_order_acquire);
+            int spins = 0;
+            for (;;) {
+                uint32_t state = entry.state.load(std::memory_order_acquire);
 
-            if (state == EMPTY) {
-                return std::nullopt;  // Key not found
+                if (state == EMPTY) {
+                    return std::nullopt;  // chain ends; key not found
+                }
+
+                if (state == INSERTING) {
+                    // Mid-write; an in-place update of THIS key also holds
+                    // INSERTING, so skipping would spuriously miss an
+                    // existing key. Wait bounded (crashed peers), then skip.
+                    if (++spins >= MAX_SPINS) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+
+                if (state == OCCUPIED && keys_equal(entry.key, key)) {
+                    return entry.value;
+                }
+
+                break;  // DELETED or different key: next slot
             }
-
-            if (state == OCCUPIED && keys_equal(entry.key, key)) {
-                return entry.value;
-            }
-
-            // Continue searching through DELETED and INSERTING entries
-            // INSERTING slots are being written by another thread; skip them
         }
 
         return std::nullopt;
@@ -182,30 +222,41 @@ public:
             size_t idx = (hash + i) % capacity;
             Entry& entry = entries_[idx];
 
-            uint32_t state = entry.state.load(std::memory_order_acquire);
+            int spins = 0;
+            for (;;) {
+                uint32_t state = entry.state.load(std::memory_order_acquire);
 
-            if (state == EMPTY) {
-                return false;  // Key not found
-            }
-
-            if (state == OCCUPIED && keys_equal(entry.key, key)) {
-                // CAS from OCCUPIED to DELETED; only the winner decrements size
-                uint32_t expected = OCCUPIED;
-                if (entry.state.compare_exchange_strong(expected, DELETED,
-                                                       std::memory_order_release,
-                                                       std::memory_order_relaxed)) {
-                    header_->size.fetch_sub(1, std::memory_order_relaxed);
-                    return true;
+                if (state == EMPTY) {
+                    return false;  // chain ends; key not found
                 }
-                // CAS failed: another thread already erased or is modifying this slot
-                // If it was changed to DELETED by another thread, the key is gone
-                if (expected == DELETED) {
-                    return false;
-                }
-                // Otherwise (e.g., INSERTING), continue probing
-            }
 
-            // Continue searching through DELETED and INSERTING entries
+                if (state == INSERTING) {
+                    // Mid-write; an in-place update of THIS key also holds
+                    // INSERTING, so skipping would spuriously miss an
+                    // existing key. Wait bounded (crashed peers), then skip.
+                    if (++spins >= MAX_SPINS) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+
+                if (state == OCCUPIED && keys_equal(entry.key, key)) {
+                    // CAS from OCCUPIED to DELETED; only the winner decrements size
+                    uint32_t expected = OCCUPIED;
+                    if (entry.state.compare_exchange_strong(expected, DELETED,
+                                                           std::memory_order_release,
+                                                           std::memory_order_relaxed)) {
+                        header_->size.fetch_sub(1, std::memory_order_relaxed);
+                        return true;
+                    }
+                    // Lost the CAS: an eraser won (slot now DELETED, next
+                    // iteration falls through and probing ends at EMPTY) or
+                    // an updater holds INSERTING (wait and erase the
+                    // updated entry). Re-examine this slot either way.
+                    continue;
+                }
+
+                break;  // DELETED or different key: next slot
+            }
         }
 
         return false;

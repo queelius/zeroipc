@@ -33,6 +33,11 @@ namespace zeroipc {
  * In our shared memory context, we implement both:
  * - Unbuffered channels: Pure synchronous rendezvous
  * - Buffered channels: Asynchronous up to buffer capacity
+ *
+ * @warning The unbuffered rendezvous supports exactly ONE sender and ONE
+ * receiver at a time. The slot claim uses plain flag reads, so concurrent
+ * senders can overwrite each other's value and concurrent receivers can
+ * both take the same value. Buffered channels (queue-backed) are MPMC-safe.
  * 
  * @example
  * ```cpp
@@ -229,7 +234,11 @@ public:
     }
     
     /**
-     * @brief Receive value (blocks until available)
+     * @brief Receive value.
+     *
+     * Buffered channels: NON-blocking; returns nullopt when the buffer is
+     * empty (use recv_timeout for a bounded wait). Unbuffered channels:
+     * blocks in the rendezvous until a sender arrives.
      */
     [[nodiscard]] std::optional<T> recv() {
         if (capacity_ > 0 && buffer_) {

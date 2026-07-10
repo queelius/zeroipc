@@ -6,11 +6,16 @@ with lock-free operations using linear probing and atomic state management.
 """
 
 import struct
+import time
 from typing import Optional, TypeVar, Generic, Any, Union
 import numpy as np
 
 from .memory import Memory
 from .atomic import AtomicInt
+
+# Bound on waiting for a slot stuck in INSERTING (a crashed peer can leave
+# it that way forever). Matches the C++ Map/Set/Stack MAX_SPINS.
+_MAX_SPINS = 10000
 
 K = TypeVar('K')
 V = TypeVar('V')
@@ -299,43 +304,72 @@ class Map(Generic[K, V]):
         """
         hash_val = self._hash_key(key)
 
-        # Linear probing
-        for i in range(self.capacity):
-            idx = (hash_val + i) % self.capacity
+        # Two-phase insert, mirroring the C++ implementation. Phase 1 scans
+        # the whole probe chain for the key (updating in place if found),
+        # remembering the first reusable DELETED slot; the chain ends at
+        # the first EMPTY slot. Phase 2 claims the remembered slot.
+        # Claiming before the chain is fully scanned would duplicate a key
+        # that lives past a DELETED slot, and advancing past a slot whose
+        # CAS we lost would duplicate a key a concurrent insert is writing
+        # to it. Both paths must re-examine, never skip.
+        while True:
+            deleted_target = None  # first reusable slot index
+            empty_target = None    # chain-terminating slot index
 
-            # Try to claim an empty slot: EMPTY -> INSERTING
-            if self._cas_entry_state(idx, self.EMPTY, self.INSERTING):
+            for i in range(self.capacity):
+                idx = (hash_val + i) % self.capacity
+
+                spins = 0
+                while True:
+                    state = self._read_entry_state(idx)
+
+                    if state == self.INSERTING:
+                        # Mid-write by another thread; it may be writing
+                        # this key. Wait bounded (a crashed peer can leave
+                        # the slot stuck forever), then skip the slot.
+                        spins += 1
+                        if spins >= _MAX_SPINS:
+                            break
+                        time.sleep(0)
+                        continue
+
+                    if state == self.OCCUPIED:
+                        if not self._keys_equal(self._read_entry_key(idx), key):
+                            break  # different key: next slot
+                        # Update: CAS OCCUPIED -> INSERTING for exclusive access
+                        if self._cas_entry_state(idx, self.OCCUPIED, self.INSERTING):
+                            self._write_entry_key_value(idx, key, value)
+                            self._store_entry_state(idx, self.OCCUPIED)
+                            return True
+                        continue  # erased or another updater won; re-examine
+
+                    if state == self.DELETED:
+                        if deleted_target is None:
+                            deleted_target = idx
+                        break  # keep scanning: the key may live further on
+
+                    # EMPTY: the probe chain ends here; the key is absent
+                    empty_target = idx
+                    break
+
+                if empty_target is not None:
+                    break
+
+            target = deleted_target if deleted_target is not None else empty_target
+            if target is None:
+                return False  # Map is full
+
+            expected = self.DELETED if deleted_target is not None else self.EMPTY
+            if self._cas_entry_state(target, expected, self.INSERTING):
                 # We exclusively own this slot; write key and value
-                self._write_entry_key_value(idx, key, value)
+                self._write_entry_key_value(target, key, value)
                 # Increment size BEFORE publishing OCCUPIED, so any concurrent
                 # erase that observes OCCUPIED sees size >= 1 (avoids underflow)
                 AtomicInt(self.buffer, 0).fetch_add(1)
-                self._store_entry_state(idx, self.OCCUPIED)
+                self._store_entry_state(target, self.OCCUPIED)
                 return True
-
-            # Check if it's our key (update case)
-            # Skip INSERTING slots (another thread is writing)
-            current_state = self._read_entry_state(idx)
-            if current_state == self.OCCUPIED:
-                existing_key = self._read_entry_key(idx)
-                if self._keys_equal(existing_key, key):
-                    # CAS OCCUPIED -> INSERTING for exclusive update access
-                    if self._cas_entry_state(idx, self.OCCUPIED, self.INSERTING):
-                        self._write_entry_key_value(idx, key, value)
-                        self._store_entry_state(idx, self.OCCUPIED)
-                        return True
-                    # CAS failed — slot was erased or another updater won; retry from this slot
-                    continue
-
-            # Try deleted slots too: DELETED -> INSERTING
-            if self._cas_entry_state(idx, self.DELETED, self.INSERTING):
-                self._write_entry_key_value(idx, key, value)
-                # Same ordering invariant as above: bump size before publish
-                AtomicInt(self.buffer, 0).fetch_add(1)
-                self._store_entry_state(idx, self.OCCUPIED)
-                return True
-
-        return False  # Map is full
+            # The slot changed under us (a competing operation completed,
+            # possibly inserting this very key). Rescan from the top.
 
     def get(self, key: K) -> Optional[V]:
         """
@@ -364,18 +398,30 @@ class Map(Generic[K, V]):
         # Linear probing
         for i in range(self.capacity):
             idx = (hash_val + i) % self.capacity
-            state = self._read_entry_state(idx)
 
-            if state == self.EMPTY:
-                return None  # Key not found
+            spins = 0
+            while True:
+                state = self._read_entry_state(idx)
 
-            if state == self.OCCUPIED:
-                existing_key = self._read_entry_key(idx)
-                if self._keys_equal(existing_key, key):
-                    return self._read_entry_value(idx)
+                if state == self.EMPTY:
+                    return None  # chain ends; key not found
 
-            # Continue searching through DELETED and INSERTING entries
-            # INSERTING slots are being written by another thread; skip them
+                if state == self.INSERTING:
+                    # Mid-write; an in-place update of THIS key also holds
+                    # INSERTING, so skipping would spuriously miss an
+                    # existing key. Wait bounded (crashed peers), then skip.
+                    spins += 1
+                    if spins >= _MAX_SPINS:
+                        break
+                    time.sleep(0)
+                    continue
+
+                if state == self.OCCUPIED:
+                    existing_key = self._read_entry_key(idx)
+                    if self._keys_equal(existing_key, key):
+                        return self._read_entry_value(idx)
+
+                break  # DELETED or different key: next slot
 
         return None  # Key not found
 
@@ -409,27 +455,36 @@ class Map(Generic[K, V]):
         # Linear probing
         for i in range(self.capacity):
             idx = (hash_val + i) % self.capacity
-            state = self._read_entry_state(idx)
 
-            if state == self.EMPTY:
-                return False  # Key not found
+            spins = 0
+            while True:
+                state = self._read_entry_state(idx)
 
-            if state == self.OCCUPIED:
-                existing_key = self._read_entry_key(idx)
-                if self._keys_equal(existing_key, key):
-                    # CAS from OCCUPIED to DELETED; only the winner decrements size
-                    if self._cas_entry_state(idx, self.OCCUPIED, self.DELETED):
-                        size_atomic = AtomicInt(self.buffer, 0)
-                        size_atomic.fetch_add(-1)
-                        return True
-                    # CAS failed: another thread already erased this slot
-                    # Re-read to see if it's now DELETED
-                    new_state = self._read_entry_state(idx)
-                    if new_state == self.DELETED:
-                        return False
-                    # Otherwise continue probing (e.g., INSERTING)
+                if state == self.EMPTY:
+                    return False  # chain ends; key not found
 
-            # Continue searching through DELETED and INSERTING entries
+                if state == self.INSERTING:
+                    # Mid-write; an in-place update of THIS key also holds
+                    # INSERTING, so skipping would spuriously miss an
+                    # existing key. Wait bounded (crashed peers), then skip.
+                    spins += 1
+                    if spins >= _MAX_SPINS:
+                        break
+                    time.sleep(0)
+                    continue
+
+                if state == self.OCCUPIED:
+                    existing_key = self._read_entry_key(idx)
+                    if self._keys_equal(existing_key, key):
+                        # CAS OCCUPIED -> DELETED; only the winner decrements size
+                        if self._cas_entry_state(idx, self.OCCUPIED, self.DELETED):
+                            AtomicInt(self.buffer, 0).fetch_add(-1)
+                            return True
+                        # Lost the CAS: an eraser won or an updater holds
+                        # INSERTING. Re-examine this slot either way.
+                        continue
+
+                break  # DELETED or different key: next slot
 
         return False  # Key not found
 

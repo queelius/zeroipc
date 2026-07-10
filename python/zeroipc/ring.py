@@ -10,18 +10,20 @@ from typing import Optional, TypeVar, Union, List
 import numpy as np
 
 from .memory import Memory
-from .atomic import AtomicInt64
 
 T = TypeVar('T')
 
 
 class Ring:
     """
-    Lock-free ring buffer in shared memory.
+    Ring buffer in shared memory (single-producer / single-consumer).
 
-    This implementation uses atomic write and read positions to provide
-    lock-free continuous data streaming. Data is stored in a circular buffer
-    where new writes can overwrite old data if the buffer fills up.
+    Matches the C++ Ring: 64-bit write/read positions, and the header
+    capacity field stores the buffer size in BYTES (a multiple of
+    elem_size). The SPSC contract mirrors the C++ implementation: exactly
+    one producer calls write/push and exactly one consumer calls read/pop
+    at a time. Concurrent producers (or consumers) race on the position
+    fields and will corrupt data.
     """
 
     def __init__(self, memory: Memory, name: str,
@@ -87,11 +89,13 @@ class Ring:
         # Get memory view
         self.buffer = self.memory.at(self.offset)
 
-        # Initialize header - store element capacity and element size
+        # Initialize header. The capacity field stores BYTES, matching the
+        # C++ implementation (which is the canonical layout); the Python
+        # API surfaces capacity in elements via self.capacity.
         struct.pack_into('<QQII', self.buffer, 0,
                         0,  # write_pos
                         0,  # read_pos
-                        self.capacity,  # capacity in elements
+                        self.byte_capacity,  # capacity in BYTES
                         self.elem_size)
 
         # Zero out data area
@@ -110,8 +114,12 @@ class Ring:
         if elem_size != self.elem_size:
             raise RuntimeError(f"Type size mismatch: expected {self.elem_size}, got {elem_size}")
 
-        self.capacity = capacity  # Elements
-        self.byte_capacity = capacity * self.elem_size  # Bytes
+        # The header capacity field stores BYTES (C++ canonical layout).
+        if capacity % self.elem_size != 0:
+            raise RuntimeError(
+                f"Ring byte capacity {capacity} is not a multiple of elem_size {self.elem_size}")
+        self.byte_capacity = capacity  # Bytes
+        self.capacity = capacity // self.elem_size  # Elements
 
     def _get_data_offset(self, position: int) -> int:
         """Get byte offset in data area for given position."""
@@ -154,18 +162,17 @@ class Ring:
         if bytes_to_write == 0:
             return 0
 
-        # Check if we have enough space (bounded buffer behavior)
-        available_space = self.available_write()
-        if bytes_to_write > available_space:
+        # SPSC: the single producer owns write_pos. Copy the payload
+        # FIRST, then publish the new position (matching C++). Publishing
+        # before copying would let the consumer read unwritten bytes.
+        write_pos = struct.unpack_from('<Q', self.buffer, 0)[0]
+        read_pos = struct.unpack_from('<Q', self.buffer, 8)[0]
+        if bytes_to_write > self.byte_capacity - (write_pos - read_pos):
             return 0  # Not enough space
-
-        # Atomically reserve space for writing
-        write_pos_atomic = AtomicInt64(self.buffer, 0)
-        start_pos = write_pos_atomic.fetch_add(bytes_to_write)
 
         # Write data in chunks if it wraps around
         bytes_written = 0
-        current_pos = start_pos
+        current_pos = write_pos
 
         while bytes_written < bytes_to_write:
             # Calculate how much we can write before wrapping
@@ -181,6 +188,8 @@ class Ring:
             bytes_written += chunk_size
             current_pos += chunk_size
 
+        # Publish: consumer may read up to the new position
+        struct.pack_into('<Q', self.buffer, 0, write_pos + bytes_to_write)
         return bytes_to_write
 
     def pop(self) -> Optional[T]:
@@ -205,11 +214,12 @@ class Ring:
         Returns:
             Numpy array of read data, or None if no data available
         """
-        write_pos_atomic = AtomicInt64(self.buffer, 0)
-        read_pos_atomic = AtomicInt64(self.buffer, 8)
-
-        write_pos = write_pos_atomic.load()
-        read_pos = read_pos_atomic.load()
+        # SPSC: the single consumer owns read_pos. Copy the data FIRST,
+        # then publish the advanced position (matching C++). Publishing
+        # before copying would let the producer overwrite bytes still
+        # being read.
+        write_pos = struct.unpack_from('<Q', self.buffer, 0)[0]
+        read_pos = struct.unpack_from('<Q', self.buffer, 8)[0]
 
         # Calculate available data
         available = write_pos - read_pos
@@ -228,13 +238,10 @@ class Ring:
 
         bytes_to_read = elements_available * self.elem_size
 
-        # Atomically reserve data for reading
-        actual_read_pos = read_pos_atomic.fetch_add(bytes_to_read)
-
         # Read data, handling wrapping
         data_bytes = bytearray(bytes_to_read)
         bytes_read = 0
-        current_pos = actual_read_pos
+        current_pos = read_pos
 
         while bytes_read < bytes_to_read:
             # Calculate how much we can read before wrapping
@@ -250,6 +257,9 @@ class Ring:
             bytes_read += chunk_size
             current_pos += chunk_size
 
+        # Publish: producer may reuse the space behind the new position
+        struct.pack_into('<Q', self.buffer, 8, read_pos + bytes_to_read)
+
         # Convert to numpy array
         return np.frombuffer(data_bytes, dtype=self.dtype)
 
@@ -263,11 +273,8 @@ class Ring:
         Returns:
             Numpy array of data, or None if no data available
         """
-        write_pos_atomic = AtomicInt64(self.buffer, 0)
-        read_pos_atomic = AtomicInt64(self.buffer, 8)
-
-        write_pos = write_pos_atomic.load()
-        read_pos = read_pos_atomic.load()
+        write_pos = struct.unpack_from('<Q', self.buffer, 0)[0]
+        read_pos = struct.unpack_from('<Q', self.buffer, 8)[0]
 
         # Calculate available data
         available = write_pos - read_pos
@@ -331,11 +338,8 @@ class Ring:
         Returns:
             Back element, or None if empty
         """
-        write_pos_atomic = AtomicInt64(self.buffer, 0)
-        read_pos_atomic = AtomicInt64(self.buffer, 8)
-
-        write_pos = write_pos_atomic.load()
-        read_pos = read_pos_atomic.load()
+        write_pos = struct.unpack_from('<Q', self.buffer, 0)[0]
+        read_pos = struct.unpack_from('<Q', self.buffer, 8)[0]
 
         available = write_pos - read_pos
         if available < self.elem_size:

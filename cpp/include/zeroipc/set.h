@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "detail/hash.h"
 #include <atomic>
+#include <thread>
 
 namespace zeroipc {
 
@@ -31,6 +32,10 @@ public:
     static constexpr uint32_t OCCUPIED = 1;
     static constexpr uint32_t DELETED = 2;
     static constexpr uint32_t INSERTING = 3;
+
+    // Bound on waiting for a slot stuck in INSERTING (a crashed peer can
+    // leave it that way forever). Matches Stack/Queue/Map MAX_SPINS.
+    static constexpr int MAX_SPINS = 10000;
     
     // Create new set
     Set(Memory& memory, std::string_view name, size_t capacity)
@@ -89,41 +94,68 @@ public:
         size_t hash = hash_value(value);
         size_t capacity = header_->capacity;
 
-        // Linear probing
-        for (size_t i = 0; i < capacity; ++i) {
-            size_t idx = (hash + i) % capacity;
-            Entry& entry = entries_[idx];
+        // Two-phase insert. Phase 1 scans the whole probe chain for the
+        // value (returning false if present), remembering the first
+        // reusable DELETED slot; the chain ends at the first EMPTY slot.
+        // Phase 2 claims the remembered slot. Claiming before the chain
+        // is fully scanned would duplicate a value that lives past a
+        // DELETED slot, and advancing past a slot whose CAS we lost would
+        // duplicate a value a concurrent insert is writing to it — both
+        // paths must re-examine, never skip.
+        for (;;) {
+            Entry* deleted_target = nullptr;  // first reusable slot
+            Entry* empty_target = nullptr;    // chain-terminating slot
 
-            // Check if already exists (only check OCCUPIED, skip INSERTING)
-            uint32_t state = entry.state.load(std::memory_order_acquire);
-            if (state == OCCUPIED && values_equal(entry.value, value)) {
-                return false;  // Already exists
+            for (size_t i = 0; i < capacity && !empty_target; ++i) {
+                Entry& entry = entries_[(hash + i) % capacity];
+
+                int spins = 0;
+                for (;;) {
+                    uint32_t state = entry.state.load(std::memory_order_acquire);
+
+                    if (state == INSERTING) {
+                        // Mid-write by another thread; it may be writing
+                        // this value. Wait bounded (a crashed peer can
+                        // leave the slot stuck forever), then skip it.
+                        if (++spins >= MAX_SPINS) break;
+                        std::this_thread::yield();
+                        continue;
+                    }
+
+                    if (state == OCCUPIED) {
+                        if (values_equal(entry.value, value)) {
+                            return false;  // Already exists
+                        }
+                        break;  // different value: next slot
+                    }
+
+                    if (state == DELETED) {
+                        if (!deleted_target) deleted_target = &entry;
+                        break;  // keep scanning: the value may live further on
+                    }
+
+                    // EMPTY: the probe chain ends here; the value is absent
+                    empty_target = &entry;
+                    break;
+                }
             }
 
-            // Try to claim an empty slot: EMPTY -> INSERTING
-            uint32_t expected = EMPTY;
-            if (entry.state.compare_exchange_strong(expected, INSERTING,
-                                                   std::memory_order_acquire,
-                                                   std::memory_order_relaxed)) {
+            Entry* target = deleted_target ? deleted_target : empty_target;
+            if (!target) break;  // set is full
+
+            uint32_t expected = deleted_target ? DELETED : EMPTY;
+            if (target->state.compare_exchange_strong(expected, INSERTING,
+                                                      std::memory_order_acquire,
+                                                      std::memory_order_relaxed)) {
                 // We exclusively own this slot; write the value
-                entry.value = value;
+                target->value = value;
                 // Publish the entry: INSERTING -> OCCUPIED (release so readers see data)
-                entry.state.store(OCCUPIED, std::memory_order_release);
+                target->state.store(OCCUPIED, std::memory_order_release);
                 header_->size.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
-
-            // Try deleted slots: DELETED -> INSERTING
-            expected = DELETED;
-            if (entry.state.compare_exchange_strong(expected, INSERTING,
-                                                   std::memory_order_acquire,
-                                                   std::memory_order_relaxed)) {
-                entry.value = value;
-                // Publish the entry: INSERTING -> OCCUPIED
-                entry.state.store(OCCUPIED, std::memory_order_release);
-                header_->size.fetch_add(1, std::memory_order_relaxed);
-                return true;
-            }
+            // The slot changed under us — a competing operation completed
+            // (possibly inserting this very value). Rescan from the top.
         }
 
         return false;  // Set is full

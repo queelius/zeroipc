@@ -498,3 +498,44 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+// Regression: insert must scan the whole probe chain before claiming a
+// reusable DELETED slot. With the multiplicative hash and capacity 8, keys
+// k and k+8 share a home slot, so (insert k1, insert k2, erase k1,
+// re-insert k2) used to duplicate k2: the re-insert claimed k1's DELETED
+// slot instead of updating k2 in place further down the chain.
+TEST_F(NewStructuresTest, MapNoDuplicateAfterDeletedSlotReuse) {
+    Memory mem(shm_name_, 1024 * 1024);
+    Map<int, int> map(mem, "dup_map", 8);
+
+    ASSERT_TRUE(map.insert(1, 100));   // home slot
+    ASSERT_TRUE(map.insert(9, 200));   // collides, displaced past key 1
+    ASSERT_TRUE(map.erase(1));         // leaves a DELETED slot in 9's chain
+
+    ASSERT_TRUE(map.insert(9, 300));   // must UPDATE, not claim the hole
+    EXPECT_EQ(map.size(), 1u);
+
+    auto v = map.find(9);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(*v, 300);
+
+    ASSERT_TRUE(map.erase(9));
+    EXPECT_FALSE(map.find(9).has_value()) << "stale duplicate entry survived erase";
+    EXPECT_FALSE(map.erase(9));
+    EXPECT_EQ(map.size(), 0u);
+}
+
+TEST_F(NewStructuresTest, SetNoDuplicateAfterDeletedSlotReuse) {
+    Memory mem(shm_name_, 1024 * 1024);
+    Set<int> set(mem, "dup_set", 8);
+
+    ASSERT_TRUE(set.insert(1));
+    ASSERT_TRUE(set.insert(9));        // collides, displaced past 1
+    ASSERT_TRUE(set.erase(1));         // DELETED slot in 9's chain
+
+    EXPECT_FALSE(set.insert(9)) << "re-insert of an existing value must fail";
+    EXPECT_EQ(set.size(), 1u);
+
+    ASSERT_TRUE(set.erase(9));
+    EXPECT_FALSE(set.contains(9)) << "stale duplicate entry survived erase";
+    EXPECT_EQ(set.size(), 0u);
+}

@@ -490,3 +490,42 @@ class TestMapEdgeCases:
 
         finally:
             Memory.unlink(shm_name)
+
+def test_no_duplicate_after_deleted_slot_reuse():
+    """Regression: insert must scan the whole probe chain before claiming a
+    reusable DELETED slot. (insert k1, insert colliding k2, erase k1,
+    re-insert k2) used to duplicate k2 by claiming k1's DELETED slot instead
+    of updating k2 in place further down the chain."""
+    import os
+
+    import numpy as np
+
+    from zeroipc import Map, Memory
+
+    name = f"/test_map_dup_{os.getpid()}"
+    mem = Memory(name, 1024 * 1024)
+    try:
+        m = Map(mem, "dup_map", capacity=8,
+                key_dtype=np.int32, value_dtype=np.int32)
+
+        # Brute-force two keys sharing a home slot under the map's hash.
+        k1 = 1
+        home = m._hash_key(k1) % m.capacity
+        k2 = next(k for k in range(2, 10000)
+                  if m._hash_key(k) % m.capacity == home)
+
+        assert m.insert(k1, 100)   # home slot
+        assert m.insert(k2, 200)   # collides, displaced past k1
+        assert m.erase(k1)         # leaves a DELETED slot in k2's chain
+
+        assert m.insert(k2, 300)   # must UPDATE, not claim the hole
+        assert m.size() == 1
+        assert m.get(k2) == 300
+
+        assert m.erase(k2)
+        assert m.get(k2) is None, "stale duplicate entry survived erase"
+        assert not m.erase(k2)
+        assert m.size() == 0
+    finally:
+        mem.close()
+        mem.unlink()

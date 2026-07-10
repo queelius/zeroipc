@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 #include <string_view>
 #include <stdexcept>
 #include "memory.h"
@@ -152,7 +153,9 @@ public:
      * @brief Release read lock
      */
     void reader_unlock() {
-        state_->readers.fetch_sub(1, std::memory_order_release);
+        [[maybe_unused]] int32_t prev =
+            state_->readers.fetch_sub(1, std::memory_order_release);
+        assert(prev > 0 && "reader_unlock without a matching reader_lock");
     }
 
     /**
@@ -164,8 +167,14 @@ public:
     void writer_lock() {
         writer_mutex_->lock();
 
-        // Mark writer as active
+        // Mark writer as active UNDER reader_mutex_. Readers check
+        // writer_active and increment readers while holding reader_mutex_;
+        // setting the flag under the same mutex closes the race where a
+        // reader passes its writer check while the writer simultaneously
+        // passes its readers check, letting both hold the lock at once.
+        reader_mutex_->lock();
         state_->writer_active.store(1, std::memory_order_release);
+        reader_mutex_->unlock();
 
         // Wait for all readers to finish
         while (state_->readers.load(std::memory_order_acquire) > 0) {
@@ -182,13 +191,22 @@ public:
             return false;
         }
 
-        // Check if any readers are active
+        // Readers only transition 0 -> 1 while holding reader_mutex_, so
+        // checking readers and setting writer_active under it is atomic
+        // with respect to new readers (see writer_lock).
+        if (!reader_mutex_->try_lock()) {
+            writer_mutex_->unlock();
+            return false;
+        }
+
         if (state_->readers.load(std::memory_order_acquire) > 0) {
+            reader_mutex_->unlock();
             writer_mutex_->unlock();
             return false;
         }
 
         state_->writer_active.store(1, std::memory_order_release);
+        reader_mutex_->unlock();
         return true;
     }
 

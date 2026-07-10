@@ -1,9 +1,16 @@
 """
-Atomic operations for shared memory using memory-mapped buffers.
+Best-effort atomic operations for shared memory (pure-Python fallback).
 
-This module provides atomic operations that work across process boundaries
-using memory-mapped shared memory. It implements Compare-And-Swap (CAS)
-operations that are necessary for lock-free data structures.
+IMPORTANT LIMITATIONS: these operations are NOT truly atomic. Each
+AtomicInt/AtomicInt64 instance guards its read-modify-write with a
+per-instance threading.Lock, so two instances addressing the same
+shared-memory word (the common pattern at call sites) do not exclude
+each other, and threading.Lock has no effect across processes at all.
+The structures built on this module (Map, Set, Pool, Ring in their
+pure-Python form) are therefore safe for a single process with a single
+writer per structure, and best-effort beyond that. True cross-process
+atomicity requires the C FFI backend (see _cffi.py), which currently
+covers Queue and Stack only.
 """
 
 import struct

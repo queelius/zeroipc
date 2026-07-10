@@ -241,9 +241,12 @@ class Monitor:
 
         NOTE: Should be called while holding the lock for proper semantics.
         """
-        # Always release - semaphore queues the signal if no waiters
-        # The predicate check in wait() handles spurious wakeups
-        self._cond_sem.release()
+        # Only release when a waiter is registered, matching the C++
+        # implementation. Releasing unconditionally accumulates permits in
+        # the unbounded semaphore, making a later bare wait() (no
+        # predicate) return spuriously.
+        if self._load_waiting_count() > 0:
+            self._cond_sem.release()
 
     def notify_all(self):
         """

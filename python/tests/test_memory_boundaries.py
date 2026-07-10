@@ -72,8 +72,10 @@ class TestMemoryBoundaries:
         bytes_per_slot = dtype.itemsize + 4  # data + uint32 sequence number
         max_capacity = (mem_size - overhead) // bytes_per_slot
 
-        # Create queue with near-maximum capacity
-        test_capacity = max_capacity - 100
+        # Create queue with the largest power-of-two capacity that fits
+        # (queue capacities round up to powers of two, so rounding down
+        # here keeps the allocation within the segment)
+        test_capacity = 1 << ((max_capacity - 100).bit_length() - 1)
         queue = Queue(mem, "maxq", capacity=test_capacity, dtype=dtype)
         
         # Fill to capacity
@@ -269,8 +271,8 @@ class TestMemoryBoundaries:
         mem = Memory("/test_boundary", size=10*1024*1024)
         queue = Queue(mem, "concurrent", capacity=100, dtype=np.int32)
 
-        # Fill to near capacity (Vyukov uses all 100 slots)
-        for i in range(99):
+        # Fill to one below actual capacity (requested 100 rounds up to 128)
+        for i in range(queue.capacity - 1):
             assert queue.push(i)
 
         # Multiple threads compete for last slot

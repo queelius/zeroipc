@@ -201,8 +201,17 @@ class RWLock:
         if not self._writer_mutex.lock(timeout=timeout):
             return False
 
-        # Mark writer as active
+        # Mark writer as active UNDER the reader mutex. Readers check
+        # writer_active and increment readers while holding the reader
+        # mutex; setting the flag under the same mutex closes the race
+        # where a reader passes its writer check while the writer
+        # simultaneously passes its readers check, letting a reader and
+        # a writer hold the lock at once.
+        if not self._reader_mutex.lock(timeout=timeout):
+            self._writer_mutex.unlock()
+            return False
         self._store_writer_active(1)
+        self._reader_mutex.unlock()
 
         # Wait for all readers to finish
         start_time = time.time() if timeout is not None else None

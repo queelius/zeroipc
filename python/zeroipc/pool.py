@@ -114,10 +114,14 @@ class Pool:
                 self.capacity = capacity
                 self.block_count = capacity  # For compatibility
 
-            # Node size: data + next_index(4)
-            # Align to 8 bytes
-            node_size = self.elem_size + 4
-            self.node_size = (node_size + 7) & ~7
+            # Node layout matches C++ struct Node { T data; atomic<uint32_t> next; }:
+            # next at round_up(elem_size, 4); node size rounded up to the
+            # node alignment max(alignof(T), 4). Using elem_size directly
+            # here mis-places next for elem sizes not a multiple of 4 and
+            # silently corrupts cross-language free lists.
+            self.next_offset = (self.elem_size + 3) & ~3
+            node_align = max(self.dtype.alignment, 4)
+            self.node_size = (self.next_offset + 4 + node_align - 1) & ~(node_align - 1)
 
             # Create new pool
             self._create_new()
@@ -151,11 +155,11 @@ class Pool:
             node_offset = header_size + i * self.node_size
             next_index = i + 1
             # Write next index at the end of each node
-            struct.pack_into('<I', self.buffer, node_offset + self.elem_size, next_index)
+            struct.pack_into('<I', self.buffer, node_offset + self.next_offset, next_index)
 
         # Last node points to NULL_INDEX
         last_node_offset = header_size + (self.capacity - 1) * self.node_size
-        struct.pack_into('<I', self.buffer, last_node_offset + self.elem_size, self.NULL_INDEX)
+        struct.pack_into('<I', self.buffer, last_node_offset + self.next_offset, self.NULL_INDEX)
 
     def _open_existing_init(self, entry):
         """Open an existing pool from shared memory."""
@@ -172,10 +176,10 @@ class Pool:
         self.block_count = capacity
         self.dtype = np.dtype('uint8')  # Treat as raw bytes when opening
 
-        # Node size: data + next_index(4)
-        # Align to 8 bytes
-        node_size = self.elem_size + 4
-        self.node_size = (node_size + 7) & ~7
+        # Node layout matches C++ struct Node (see _create_new)
+        self.next_offset = (self.elem_size + 3) & ~3
+        node_align = max(self.dtype.alignment, 4)
+        self.node_size = (self.next_offset + 4 + node_align - 1) & ~(node_align - 1)
 
     def _get_node_offset(self, index: int) -> int:
         """Get byte offset of node at given index."""
@@ -183,12 +187,12 @@ class Pool:
 
     def _read_node_next(self, index: int) -> int:
         """Read next index from node."""
-        offset = self._get_node_offset(index) + self.elem_size
+        offset = self._get_node_offset(index) + self.next_offset
         return struct.unpack_from('<I', self.buffer, offset)[0]
 
     def _write_node_next(self, index: int, next_index: int):
         """Write next index to node."""
-        offset = self._get_node_offset(index) + self.elem_size
+        offset = self._get_node_offset(index) + self.next_offset
         struct.pack_into('<I', self.buffer, offset, next_index)
 
     def _read_node_data(self, index: int) -> T:
@@ -390,11 +394,11 @@ class Pool:
             node_offset = header_size + i * self.node_size
             next_index = i + 1
             # Write next index at the end of each node
-            struct.pack_into('<I', self.buffer, node_offset + self.elem_size, next_index)
+            struct.pack_into('<I', self.buffer, node_offset + self.next_offset, next_index)
 
         # Last node points to NULL_INDEX
         last_node_offset = header_size + (self.capacity - 1) * self.node_size
-        struct.pack_into('<I', self.buffer, last_node_offset + self.elem_size, self.NULL_INDEX)
+        struct.pack_into('<I', self.buffer, last_node_offset + self.next_offset, self.NULL_INDEX)
 
     def __len__(self) -> int:
         """Get number of allocated objects."""

@@ -283,6 +283,13 @@ These are hand-rolled `iostream` benchmarks, not Google Benchmark. They have no 
 
 ## Recent Changes
 
+### v2.4.0 (July 2026)
+- **Format v2**: 8-byte section alignment (Stack/Set headers 12 to 16 bytes with reserved field; queue seq / stack state arrays at `align8(header + elem_size * capacity)`); table version 2, v1 segments rejected. Queue capacity MUST be a power of two (rounded up at create, rejected on open) so the Vyukov slot mapping survives the 2^32 counter wraparound.
+- **Crash-safety**: all Stack slot-state spin loops bounded (MAX_SPINS=10000, yielding); bail-out undoes the top reservation and returns failure. Stack::top() TOCTOU race fixed via claim-restore peek. push/pop/top are best-effort under crashed peers.
+- **Audit fixes**: RWLock reader/writer mutual-exclusion race (writer now sets writer_active under reader_mutex_); Map/Set two-phase insert (no duplicate keys via DELETED-slot reuse or concurrent same-key insert); Python Ring copy-then-publish order and byte-capacity header (C++ canonical); Python Pool node layout matches C++ struct Node; Python Monitor notify_one conditional release.
+- **Go**: builds on every GOOS (Linux backend + windows/unsupported stubs, issue #1 help-wanted); module path fixed to github.com/queelius/zeroipc. GitHub Actions CI: ubuntu/windows/macos build matrix + Linux vet/test -race.
+- **Known limitations** (documented in v2.4.0 release notes): Once/Lazy hang if the initializing peer crashes; RWLock has no timeout variants in C++; unbuffered Channel rendezvous is 1 sender + 1 receiver only; Map/Set find can tear multi-word values against a concurrent update; pure-Python Map/Set/Pool/Ring atomics are not cross-process (FFI covers Queue/Stack only).
+
 ### v2.3.0 (April 2026)
 - **C FFI backend for Python**: `c/src/ffi.c` plus `python/zeroipc/_cffi.py`. Python Queue and Stack delegate atomic operations to C11 via ctypes when `libzeroipc_ffi.so` is loaded. True cross-process MPMC. Pure-Python fallback (SPSC) when the .so is absent.
 - **Cross-language concurrency fixes**: Vyukov queue and 4-state stack consistent across all four languages. Map insert uses `CAS(OCCUPIED -> INSERTING)` for exclusive update access. Future/Channel waiter-count CAS leak fixed.

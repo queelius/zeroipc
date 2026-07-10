@@ -287,3 +287,48 @@ TEST_F(RWLockTest, TryWriterLock) {
     EXPECT_FALSE(rwlock.try_writer_lock());
     rwlock.writer_unlock();
 }
+
+// Regression for the reader/writer mutual-exclusion race: readers checked
+// writer_active under reader_mutex_, but writers set writer_active and
+// sampled readers without it, so a reader and a writer could both acquire
+// the lock. Writers keep an invariant pair equal; readers assert it.
+TEST_F(RWLockTest, ReaderWriterMutualExclusionStress) {
+    zeroipc::Memory mem(shm_name_, 1024 * 1024);
+    zeroipc::RWLock rwlock(mem, "rw_excl");
+    zeroipc::Array<uint64_t> data(mem, "rw_excl_data", 2);
+    data[0] = 0;
+    data[1] = 0;
+
+    std::atomic<bool> stop{false};
+    std::atomic<int> violations{0};
+
+    std::vector<std::thread> threads;
+    for (int r = 0; r < 4; ++r) {
+        threads.emplace_back([&]() {
+            while (!stop.load(std::memory_order_relaxed)) {
+                rwlock.reader_lock();
+                uint64_t a = data[0];
+                uint64_t b = data[1];
+                if (a != b) violations.fetch_add(1);
+                rwlock.reader_unlock();
+            }
+        });
+    }
+    for (int w = 0; w < 2; ++w) {
+        threads.emplace_back([&]() {
+            for (int i = 0; i < 10000; ++i) {
+                rwlock.writer_lock();
+                uint64_t v = data[0] + 1;
+                data[0] = v;
+                std::this_thread::yield();  // widen the exclusion window
+                data[1] = v;
+                rwlock.writer_unlock();
+            }
+            stop.store(true);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    EXPECT_EQ(violations.load(), 0)
+        << "a reader observed a writer's half-completed update";
+}

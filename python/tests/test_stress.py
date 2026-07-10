@@ -45,14 +45,16 @@ def test_queue_basic_correctness():
     assert val == 42
     assert q.empty()
     
-    # Test fill to capacity (Vyukov uses all N slots)
-    for i in range(100):
+    # Test fill to capacity (Vyukov uses all N slots; requested 100 rounds
+    # up to 128 for wrap-safety)
+    cap = q.capacity
+    for i in range(cap):
         assert q.push(i)
     assert q.full()
     assert not q.push(999)  # Should fail when full
 
     # Test drain
-    for i in range(100):
+    for i in range(cap):
         val = q.pop()
         assert val == i
     assert q.empty()

@@ -215,6 +215,11 @@ func (s *Stack[T]) Pop() (T, bool) {
 
 // Top returns the top element without removing it.
 // Returns the value and true if successful, or zero value and false if empty.
+//
+// Top is best-effort: it must win a CAS on the slot state to read safely, so
+// under heavy contention (or a crashed peer holding the slot) it can return
+// false even though the stack is non-empty. Do not treat false as an
+// authoritative emptiness check; use Size for that.
 func (s *Stack[T]) Top() (T, bool) {
 	var zero T
 

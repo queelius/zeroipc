@@ -200,7 +200,13 @@ class Stack(Generic[T]):
             return value
 
     def top(self) -> Optional[T]:
-        """Peek at top value without removing it."""
+        """Peek at top value without removing it.
+
+        Best-effort: the peek must win a CAS on the slot state to read safely,
+        so under heavy contention (or a crashed peer holding the slot) it can
+        return None even though the stack is non-empty. Do not treat None as
+        an authoritative emptiness check; use size() for that.
+        """
         if _cffi.AVAILABLE:
             rc, raw = _cffi.stack_top(self.memory, self.offset, self.elem_size)
             if rc != _cffi.OK:

@@ -189,11 +189,15 @@ go build -o zeroipc ./cmd/zeroipc
 
 The Go implementation is binary-compatible with C++ and Python. All use the same memory layout:
 
-- **Table Header**: 32 bytes (magic, version, count, reserved, size, next_offset)
+- **Table Header**: 32 bytes (magic, version, count, max_entries, size, next_offset)
 - **Table Entry**: 48 bytes (name[32], offset, size)
 - **Array Header**: 8 bytes (capacity)
 - **Queue Header**: 16 bytes (head, tail, capacity, elem_size)
-- **Stack Header**: 12 bytes (top, capacity, elem_size)
+- **Stack Header**: 16 bytes (top, capacity, elem_size, reserved)
+
+Format v2: side arrays (the queue's sequence array, the stack's slot-state
+array) start at `align8(header_size + elem_size * capacity)`. See
+[SPECIFICATION.md](../SPECIFICATION.md) for the authoritative layout.
 
 ## Running Tests
 

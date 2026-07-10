@@ -192,7 +192,12 @@ int zeroipc_stack_pop(zeroipc_stack_t* stack, void* value) {
     return ZEROIPC_OK;
 }
 
-/* Peek at top without removing */
+/* Peek at top without removing.
+ *
+ * Best-effort: the peek must win a CAS on the slot state to read safely, so
+ * under heavy contention (or a crashed peer holding the slot) it can return
+ * ZEROIPC_ERROR_NOT_FOUND even though the stack is non-empty. Do not treat
+ * that as an authoritative emptiness check; use zeroipc_stack_size for that. */
 int zeroipc_stack_top(zeroipc_stack_t* stack, void* value) {
     if (!stack || !value) return ZEROIPC_ERROR_SIZE;
 

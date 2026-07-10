@@ -258,6 +258,10 @@ int zeroipc_raw_stack_pop(void* base, size_t offset,
     return FFI_OK;
 }
 
+/* Best-effort peek: must win a CAS on the slot state to read safely, so under
+ * heavy contention (or a crashed peer holding the slot) it can return
+ * FFI_EMPTY even though the stack is non-empty. Callers should not treat that
+ * as an authoritative emptiness check. */
 int zeroipc_raw_stack_top(void* base, size_t offset,
                           void* value_out, uint32_t elem_size) {
     ffi_stack_header_t* h = s_header(base, offset);

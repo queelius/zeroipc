@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sched.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <time.h>
 #include <pthread.h>
 #include "zeroipc.h"
@@ -403,15 +404,99 @@ void test_stack_mpmc() {
     printf("  ✓ Stack MPMC operations passed\n");
 }
 
+/* Format v2 layout regression: the queue's sequence array and the stack's
+ * slot-state array must start at header(16) + align8(elem_size * capacity).
+ * Recompute that offset from the spec formula and verify, via raw memory
+ * reads at the computed address, that the implementation placed the side
+ * arrays there. */
+#define TEST_ALIGN8(n) (((n) + 7u) & ~(size_t)7u)
+
+static void check_queue_layout(zeroipc_memory_t* mem, const char* name,
+                               size_t elem_size, size_t cap) {
+    zeroipc_queue_t* q = zeroipc_queue_create(mem, name, elem_size, cap);
+    assert(q != NULL);
+
+    size_t offset = 0, size = 0;
+    assert(zeroipc_table_find(mem, name, &offset, &size) == ZEROIPC_OK);
+
+    size_t side_off = 16 + TEST_ALIGN8(elem_size * cap);
+    assert(size == side_off + cap * 4);
+
+    /* Vyukov invariant: seq[i] == i after creation. Finding those values at
+     * the spec-computed offset proves placement. */
+    char* base = (char*)zeroipc_memory_base(mem);
+    for (size_t i = 0; i < cap; ++i) {
+        uint32_t seq;
+        memcpy(&seq, base + offset + side_off + i * 4, 4);
+        assert(seq == (uint32_t)i);
+    }
+
+    zeroipc_queue_close(q);
+}
+
+static void check_stack_layout(zeroipc_memory_t* mem, const char* name,
+                               size_t elem_size, size_t cap) {
+    zeroipc_stack_t* s = zeroipc_stack_create(mem, name, elem_size, cap);
+    assert(s != NULL);
+
+    size_t offset = 0, size = 0;
+    assert(zeroipc_table_find(mem, name, &offset, &size) == ZEROIPC_OK);
+
+    size_t side_off = 16 + TEST_ALIGN8(elem_size * cap);
+    assert(size == side_off + cap * 4);
+
+    /* Push two, then read the slot states (READY=2, EMPTY=0) at the
+     * spec-computed offset. */
+    char buf[8] = {1};
+    assert(zeroipc_stack_push(s, buf) == ZEROIPC_OK);
+    buf[0] = 2;
+    assert(zeroipc_stack_push(s, buf) == ZEROIPC_OK);
+
+    char* base = (char*)zeroipc_memory_base(mem);
+    uint32_t state;
+    memcpy(&state, base + offset + side_off + 0 * 4, 4);
+    assert(state == 2);  /* SLOT_READY */
+    memcpy(&state, base + offset + side_off + 1 * 4, 4);
+    assert(state == 2);  /* SLOT_READY */
+    memcpy(&state, base + offset + side_off + 2 * 4, 4);
+    assert(state == 0);  /* SLOT_EMPTY */
+
+    assert(zeroipc_stack_pop(s, buf) == ZEROIPC_OK);
+    memcpy(&state, base + offset + side_off + 1 * 4, 4);
+    assert(state == 0);  /* popped slot recycled to SLOT_EMPTY */
+
+    zeroipc_stack_close(s);
+}
+
+void test_section_alignment() {
+    printf("Testing format v2 section alignment layout...\n");
+
+    zeroipc_memory_t* mem = zeroipc_memory_create("/test_qs_layout", 1024*1024, 64);
+    assert(mem != NULL);
+
+    check_queue_layout(mem, "q_c1", 1, 5);  /* 5 -> pad to 8 */
+    check_queue_layout(mem, "q_c4", 4, 5);  /* 20 -> pad to 24 */
+    check_queue_layout(mem, "q_c8", 8, 5);  /* 40, no pad */
+    check_stack_layout(mem, "s_c1", 1, 5);
+    check_stack_layout(mem, "s_c4", 4, 5);
+    check_stack_layout(mem, "s_c8", 8, 5);
+
+    zeroipc_memory_close(mem);
+    zeroipc_memory_unlink("/test_qs_layout");
+
+    printf("  ✓ Section alignment layout passed\n");
+}
+
 int main() {
     printf("=== ZeroIPC C Queue/Stack Tests ===\n\n");
-    
+
     test_queue_basic();
     test_stack_basic();
+    test_section_alignment();
     test_queue_concurrent();
     test_queue_mpmc();
     test_stack_mpmc();
-    
+
     printf("\n✓ All Queue/Stack tests passed!\n");
     return 0;
 }

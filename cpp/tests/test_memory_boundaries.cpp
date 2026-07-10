@@ -3,6 +3,7 @@
 #include <zeroipc/queue.h>
 #include <zeroipc/stack.h>
 #include <zeroipc/array.h>
+#include <cstring>
 #include <thread>
 #include <vector>
 #include <limits>
@@ -380,4 +381,82 @@ TEST_F(MemoryBoundaryTest, StressTestMemoryBarriers) {
         s->push(84);
         EXPECT_EQ(*s->pop(), 84);
     }
+}
+// ========== FORMAT V2 SECTION ALIGNMENT (LAYOUT REGRESSION) ==========
+// Format v2 requires the queue's sequence array and the stack's slot-state
+// array to start at header(16) + align8(elem_size * capacity). These tests
+// recompute that offset from the spec formula and verify, via raw memory
+// reads at the computed address, that the implementation actually placed
+// the side arrays there. If the layout rule ever drifts, the raw reads
+// stop matching the structures' observable side-array contents.
+
+namespace {
+
+template<typename T>
+void expect_queue_section_layout(Memory& mem, const std::string& name,
+                                 size_t cap) {
+    Queue<T> q(mem, name, cap);
+
+    size_t offset = 0, size = 0;
+    ASSERT_TRUE(mem.find(name, offset, size));
+
+    // Spec formula, independent of the implementation's internal pointers
+    const size_t side_off = 16 + align_up(sizeof(T) * cap, 8);
+    EXPECT_EQ(size, side_off + cap * sizeof(uint32_t))
+        << "table entry size wrong for elem_size " << sizeof(T);
+
+    // Vyukov invariant: seq[i] == i immediately after creation. Finding
+    // those values at the spec-computed offset proves placement.
+    const char* base = static_cast<const char*>(mem.base());
+    for (size_t i = 0; i < cap; ++i) {
+        uint32_t seq;
+        std::memcpy(&seq, base + offset + side_off + i * 4, 4);
+        EXPECT_EQ(seq, static_cast<uint32_t>(i))
+            << "seq[" << i << "] not at spec offset for elem_size " << sizeof(T);
+    }
+}
+
+template<typename T>
+void expect_stack_section_layout(Memory& mem, const std::string& name,
+                                 size_t cap) {
+    Stack<T> s(mem, name, cap);
+
+    size_t offset = 0, size = 0;
+    ASSERT_TRUE(mem.find(name, offset, size));
+
+    const size_t side_off = 16 + align_up(sizeof(T) * cap, 8);
+    EXPECT_EQ(size, side_off + cap * sizeof(uint32_t))
+        << "table entry size wrong for elem_size " << sizeof(T);
+
+    ASSERT_TRUE(s.push(static_cast<T>(1)));
+    ASSERT_TRUE(s.push(static_cast<T>(2)));
+
+    const char* base = static_cast<const char*>(mem.base());
+    auto state_at = [&](size_t i) {
+        uint32_t v;
+        std::memcpy(&v, base + offset + side_off + i * 4, 4);
+        return v;
+    };
+    EXPECT_EQ(state_at(0), Stack<T>::SLOT_READY);
+    EXPECT_EQ(state_at(1), Stack<T>::SLOT_READY);
+    EXPECT_EQ(state_at(2), Stack<T>::SLOT_EMPTY);
+
+    ASSERT_TRUE(s.pop().has_value());
+    EXPECT_EQ(state_at(1), Stack<T>::SLOT_EMPTY);
+}
+
+} // namespace
+
+TEST_F(MemoryBoundaryTest, QueueSideArrayAt8ByteBoundary) {
+    Memory mem("/test_boundary", 1024 * 1024);
+    expect_queue_section_layout<char>(mem, "q_char", 5);     // 5 -> pad to 8
+    expect_queue_section_layout<uint32_t>(mem, "q_u32", 5);  // 20 -> pad to 24
+    expect_queue_section_layout<double>(mem, "q_f64", 5);    // 40, no pad
+}
+
+TEST_F(MemoryBoundaryTest, StackSideArrayAt8ByteBoundary) {
+    Memory mem("/test_boundary", 1024 * 1024);
+    expect_stack_section_layout<char>(mem, "s_char", 5);
+    expect_stack_section_layout<uint32_t>(mem, "s_u32", 5);
+    expect_stack_section_layout<double>(mem, "s_f64", 5);
 }

@@ -21,8 +21,16 @@ func specAlign8(n int) int { return (n + 7) &^ 7 }
 func checkQueueLayout[T Numeric](t *testing.T, mem *Memory, name string, capacity int) {
 	t.Helper()
 
-	if _, err := NewQueue[T](mem, name, capacity); err != nil {
+	q, err := NewQueue[T](mem, name, capacity)
+	if err != nil {
 		t.Fatalf("NewQueue(%s) failed: %v", name, err)
+	}
+
+	// The queue rounds the requested capacity up to a power of two
+	// (wrap-safety); the layout is computed from the actual capacity.
+	actualCap := q.Capacity()
+	if actualCap < capacity || actualCap&(actualCap-1) != 0 {
+		t.Errorf("capacity %d not rounded to a power of two >= %d", actualCap, capacity)
 	}
 
 	entry := mem.Find(name)
@@ -32,16 +40,16 @@ func checkQueueLayout[T Numeric](t *testing.T, mem *Memory, name string, capacit
 
 	var zero T
 	elemSize := int(unsafe.Sizeof(zero))
-	sideOff := QueueHeaderSize + specAlign8(elemSize*capacity)
+	sideOff := QueueHeaderSize + specAlign8(elemSize*actualCap)
 
-	if got, want := int(entry.Size), sideOff+capacity*4; got != want {
+	if got, want := int(entry.Size), sideOff+actualCap*4; got != want {
 		t.Errorf("elem_size %d: table entry size = %d, want %d", elemSize, got, want)
 	}
 
 	// Vyukov invariant: seq[i] == i after creation. Finding those values at
 	// the spec-computed offset proves placement.
 	data := mem.Data()
-	for i := 0; i < capacity; i++ {
+	for i := 0; i < actualCap; i++ {
 		seq := binary.LittleEndian.Uint32(data[int(entry.Offset)+sideOff+i*4:])
 		if seq != uint32(i) {
 			t.Errorf("elem_size %d: seq[%d] = %d at spec offset, want %d",

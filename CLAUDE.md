@@ -131,6 +131,7 @@ Per-slot sequence numbers, monotonically increasing head/tail (NOT modular indic
 - Push CAS-advances `tail`, then writes data, then publishes `seq[slot] = tail + 1`
 - Pop CAS-advances `head`, then reads data, then recycles `seq[slot] = head + capacity`
 - Slot diff `(int32_t)(seq - tail)` uses signed arithmetic to handle uint32 wraparound
+- Capacity MUST be a power of two (2026-07-10 spec amendment): the slot mapping `counter % capacity` is only continuous across the 2^32 counter wraparound when capacity divides 2^32. Creators round requested capacities up (`Queue(mem, name, 100)` gives `capacity() == 128`); open paths reject non-power-of-two capacities. Wraparound regression tests seed head/tail near UINT32_MAX and stream across the boundary (`WraparoundAt2To32` in each language's queue tests)
 
 ### 4-state CAS stack (Stack)
 

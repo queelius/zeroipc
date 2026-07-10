@@ -69,26 +69,29 @@ class TestQueueFFI:
         assert q.pop() == 2**40
 
     def test_push_full(self, shm):
+        # Request 3, get 4 (power-of-two rounding for wrap-safety)
         q = Queue(shm, "q_full", capacity=3, dtype=np.int32)
+        assert q.capacity == 4
         assert q.push(1)
         assert q.push(2)
         assert q.push(3)
-        assert not q.push(4)  # Full
+        assert q.push(4)
+        assert not q.push(5)  # Full
 
     def test_pop_empty(self, shm):
         q = Queue(shm, "q_empty", capacity=10, dtype=np.int32)
         assert q.pop() is None
 
     def test_size_empty_full(self, shm):
+        # Request 3, get 4 (power-of-two rounding for wrap-safety)
         q = Queue(shm, "q_sef", capacity=3, dtype=np.int32)
         assert q.size() == 0
         assert q.empty()
         assert not q.full()
 
-        q.push(1)
-        q.push(2)
-        q.push(3)
-        assert q.size() == 3
+        for v in range(1, 5):
+            q.push(v)
+        assert q.size() == 4
         assert not q.empty()
         assert q.full()
 

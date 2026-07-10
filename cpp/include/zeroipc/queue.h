@@ -2,6 +2,7 @@
 
 #include "memory.h"
 #include <atomic>
+#include <bit>
 #include <optional>
 
 namespace zeroipc {
@@ -28,6 +29,16 @@ public:
         if (capacity == 0) {
             throw std::invalid_argument("Queue capacity must be greater than 0");
         }
+
+        // The Vyukov slot mapping (counter % capacity on monotonically
+        // increasing uint32 counters) is only correct across the 2^32
+        // counter wraparound when capacity divides 2^32. Round the request
+        // up to the next power of two: callers get at least the capacity
+        // they asked for, and capacity() reports the actual value.
+        if (capacity > (SIZE_MAX >> 1) + 1) {
+            throw std::overflow_error("Queue capacity too large");
+        }
+        capacity = std::bit_ceil(capacity);
 
         // Check for overflow
         size_t seq_array_size = sizeof(std::atomic<uint32_t>) * capacity;
@@ -74,6 +85,15 @@ public:
 
         if (header_->elem_size != sizeof(T)) {
             throw std::runtime_error("Type size mismatch");
+        }
+
+        // Wrap-safety requires a power-of-two capacity (see the create
+        // constructor). A non-power-of-two value means the segment was
+        // written by a pre-amendment implementation; using it risks
+        // corruption at counter wraparound.
+        if ((header_->capacity & (header_->capacity - 1)) != 0) {
+            throw std::runtime_error(
+                "Queue capacity is not a power of two (created by an old implementation?)");
         }
 
         data_ = reinterpret_cast<T*>(

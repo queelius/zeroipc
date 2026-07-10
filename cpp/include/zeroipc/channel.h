@@ -2,6 +2,7 @@
 
 #include "memory.h"
 #include "queue.h"
+#include <bit>
 #include <atomic>
 #include <optional>
 #include <chrono>
@@ -103,7 +104,14 @@ public:
      */
     Channel(Memory& memory, std::string_view name, size_t capacity)
         : memory_(memory), name_(name), capacity_(capacity) {
-        
+
+        // The buffer is a Queue, whose capacity rounds up to a power of two
+        // (wrap-safety). Round here too so capacity() and the buffer agree.
+        if (capacity > 0) {
+            capacity = std::bit_ceil(capacity);
+            capacity_ = capacity;
+        }
+
         size_t header_size = sizeof(Header);
         std::string header_name = std::string(name) + "_header";
         size_t offset = memory.allocate(header_name, header_size);

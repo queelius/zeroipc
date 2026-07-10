@@ -97,25 +97,26 @@ TEST_F(CoverageTest, QueueComprehensive) {
     EXPECT_TRUE(q.empty());
     EXPECT_FALSE(q.full());
     EXPECT_EQ(q.size(), 0);
-    EXPECT_EQ(q.capacity(), 10);
+    EXPECT_EQ(q.capacity(), 16);  // requested 10, rounded up (wrap-safety)
     EXPECT_FALSE(q.pop().has_value());
     
     // Vyukov-style queue uses all N slots (no wasted sentinel slot)
 
-    // Fill queue to full capacity (10 elements for capacity 10)
-    for (int i = 0; i < 10; i++) {
+    // Fill queue to full capacity
+    const int cap = static_cast<int>(q.capacity());
+    for (int i = 0; i < cap; i++) {
         EXPECT_TRUE(q.push(i));
     }
 
     EXPECT_FALSE(q.empty());
     EXPECT_TRUE(q.full());
-    EXPECT_EQ(q.size(), 10);
+    EXPECT_EQ(q.size(), static_cast<size_t>(cap));
 
     // Try to push when full
-    EXPECT_FALSE(q.push(10));
+    EXPECT_FALSE(q.push(cap));
 
-    // Pop all 10 elements and verify order
-    for (int i = 0; i < 10; i++) {
+    // Pop all elements and verify order
+    for (int i = 0; i < cap; i++) {
         auto val = q.pop();
         EXPECT_TRUE(val.has_value());
         EXPECT_EQ(*val, i);

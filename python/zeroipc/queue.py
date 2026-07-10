@@ -79,6 +79,13 @@ class Queue(Generic[T]):
             if capacity < 1:
                 raise ValueError("capacity must be at least 1")
 
+            # The Vyukov slot mapping (counter % capacity on monotonically
+            # increasing uint32 counters) is only correct across the 2^32
+            # counter wraparound when capacity divides 2^32. Round the
+            # request up to the next power of two; .capacity reports the
+            # actual value.
+            capacity = 1 << (capacity - 1).bit_length()
+
             self.capacity = capacity
             # Layout: [Header(16)][data: T*capacity][pad][seq: uint32*capacity]
             total_size = (self.HEADER_SIZE
@@ -103,9 +110,17 @@ class Queue(Generic[T]):
                 struct.pack_into(_SEQ_FORMAT, memory.data, off, i)
 
         else:
-            # Open existing queue
+            # Open existing queue. The stored capacity is authoritative (it
+            # may have been rounded up at creation).
             self.offset = entry.offset
-            self.capacity = capacity if capacity else self._read_capacity()
+            self.capacity = self._read_capacity()
+
+            # Wrap-safety requires a power-of-two capacity (see creation
+            # above). A non-power-of-two value means a pre-amendment writer.
+            if self.capacity & (self.capacity - 1):
+                raise ValueError(
+                    f"Queue capacity {self.capacity} is not a power of two "
+                    "(created by an old implementation?)")
 
             # Verify element size matches
             stored_elem_size = self._read_elem_size()

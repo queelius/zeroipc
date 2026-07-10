@@ -74,7 +74,7 @@ struct ArrayHeader {
 struct QueueHeader {
     atomic_uint32_t head;       // 0x00: Head index (monotonically increasing)
     atomic_uint32_t tail;       // 0x04: Tail index (monotonically increasing)
-    uint32_t capacity;          // 0x08: Number of slots
+    uint32_t capacity;          // 0x08: Number of slots (MUST be a power of two)
     uint32_t elem_size;         // 0x0C: Element size in bytes
 };
 // Followed by: capacity * elem_size bytes of data
@@ -83,6 +83,16 @@ struct QueueHeader {
 // Sequence array offset (from header): 16 + align8(capacity * elem_size)
 // Total size: 16 + align8(capacity * elem_size) + capacity * 4
 ```
+
+**Capacity constraint (v2 amendment, 2026-07-10):** `capacity` MUST be a
+power of two. The head/tail counters increase monotonically and wrap at
+2^32; the slot mapping `counter % capacity` is only continuous across that
+wraparound when capacity divides 2^32. Creators round any requested
+capacity up to the next power of two and store the rounded value; readers
+MUST reject a queue whose stored capacity is not a power of two (it was
+written by a pre-amendment implementation and is unsafe near wraparound).
+The Stack has no such constraint: its `top` field is a bounded index, not
+a modular counter.
 
 ### Stack Structure (4-State CAS Lock-free)
 ```c
@@ -380,17 +390,22 @@ struct SignalState {
 Offset   Size    Content
 0x0000   32      Table Header (magic=0x5A49504D, version=2, entries=2, max=64, mem_size=0x10000, next=0x1000)
 0x0020   48      Entry 0: name="sensor_data", offset=0x1000, size=0x2008
-0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0330
+0x0050   48      Entry 1: name="event_queue", offset=0x3008, size=0x0410
 ...
 0x1000   8       Array Header: capacity=1000
 0x1008   4000    Array Data: 1000 * 4 bytes (float32)
-0x3008   16      Queue Header: head=0, tail=0, capacity=100, elem_size=4
-0x3018   400     Queue Data: 100 * 4 bytes (int32)
-0x31A8   400     Queue Sequences: 100 * 4 bytes (per-slot sequence numbers)
+0x3008   16      Queue Header: head=0, tail=0, capacity=128, elem_size=4
+0x3018   512     Queue Data: 128 * 4 bytes (int32)
+0x3218   512     Queue Sequences: 128 * 4 bytes (per-slot sequence numbers)
 ```
 
 ## Version History
 
+- v2.0 amendment (2026-07-10): queue capacity MUST be a power of two, for
+  correctness of the `counter % capacity` slot mapping across the 2^32
+  head/tail counter wraparound. Creators round requested capacities up and
+  store the rounded value; readers reject non-power-of-two queue capacities.
+  Layout is unchanged, so the `version` field stays 2.
 - v2.0: 8-byte section alignment. Every section within a structure (header, data
   array, atomic side-array) now starts on an 8-byte boundary. The Stack header
   gains a trailing `reserved` uint32 (12 to 16 bytes) so its data array is

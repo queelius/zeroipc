@@ -19,7 +19,8 @@ TEST_F(QueueTest, CreateAndBasicOps) {
     EXPECT_TRUE(queue.empty());
     EXPECT_FALSE(queue.full());
     EXPECT_EQ(queue.size(), 0);
-    EXPECT_EQ(queue.capacity(), 100);
+    // Requested 100, rounded up to the next power of two (wrap-safety)
+    EXPECT_EQ(queue.capacity(), 128);
     
     // Push some values
     EXPECT_TRUE(queue.push(10));
@@ -48,19 +49,83 @@ TEST_F(QueueTest, CreateAndBasicOps) {
 
 TEST_F(QueueTest, FullQueue) {
     Memory mem(shm_name_, 1024*1024);
+    // Request 3, get 4 (power-of-two rounding for wrap-safety)
     Queue<int> queue(mem, "small_queue", 3);
+    EXPECT_EQ(queue.capacity(), 4);
 
     // Vyukov-style queue uses all capacity slots (no wasted slot)
     EXPECT_TRUE(queue.push(1));
     EXPECT_TRUE(queue.push(2));
-    EXPECT_TRUE(queue.push(3));   // All 3 slots usable
-    EXPECT_FALSE(queue.push(4));  // Now full
+    EXPECT_TRUE(queue.push(3));
+    EXPECT_TRUE(queue.push(4));   // All 4 slots usable
+    EXPECT_FALSE(queue.push(5));  // Now full
 
     EXPECT_TRUE(queue.full());
 
     ASSERT_TRUE(queue.pop().has_value());
     EXPECT_FALSE(queue.full());
-    EXPECT_TRUE(queue.push(4));
+    EXPECT_TRUE(queue.push(5));
+}
+
+TEST_F(QueueTest, CapacityRoundsUpToPowerOfTwo) {
+    Memory mem(shm_name_, 1024*1024);
+
+    Queue<int> q1(mem, "q_p2_1", 1);
+    EXPECT_EQ(q1.capacity(), 1);
+    Queue<int> q2(mem, "q_p2_2", 2);
+    EXPECT_EQ(q2.capacity(), 2);
+    Queue<int> q5(mem, "q_p2_5", 5);
+    EXPECT_EQ(q5.capacity(), 8);
+    Queue<int> q1000(mem, "q_p2_1000", 1000);
+    EXPECT_EQ(q1000.capacity(), 1024);
+}
+
+// Regression for the 2^32 counter wraparound. head/tail increase
+// monotonically and wrap; with a power-of-two capacity the slot mapping
+// counter % capacity is continuous across the wrap. Seed the counters just
+// below UINT32_MAX (with matching per-slot sequence numbers, seq[pos % cap]
+// = pos) and stream elements across the boundary in FIFO order.
+TEST_F(QueueTest, WraparoundAt2To32) {
+    Memory mem(shm_name_, 1024*1024);
+    constexpr uint32_t CAP = 8;
+    Queue<uint32_t> queue(mem, "wrap32_queue", CAP);
+    ASSERT_EQ(queue.capacity(), CAP);
+
+    size_t offset = 0, size = 0;
+    ASSERT_TRUE(mem.find("wrap32_queue", offset, size));
+    char* base = static_cast<char*>(mem.base()) + offset;
+    auto* head = reinterpret_cast<std::atomic<uint32_t>*>(base);
+    auto* tail = reinterpret_cast<std::atomic<uint32_t>*>(base + 4);
+    auto* seq = reinterpret_cast<std::atomic<uint32_t>*>(
+        base + 16 + align_up(sizeof(uint32_t) * CAP, 8));
+
+    // Position both counters 4 increments before the wrap.
+    const uint32_t T0 = 0xFFFFFFFCu;
+    head->store(T0);
+    tail->store(T0);
+    for (uint32_t k = 0; k < CAP; ++k) {
+        uint32_t pos = T0 + k;  // wraps through 0
+        seq[pos % CAP].store(pos);
+    }
+
+    // Stream 3 full generations through the queue, crossing the wrap.
+    uint32_t next_in = 0, next_out = 0;
+    for (int round = 0; round < 3; ++round) {
+        for (uint32_t i = 0; i < CAP; ++i) {
+            ASSERT_TRUE(queue.push(next_in)) << "push " << next_in;
+            ++next_in;
+        }
+        EXPECT_TRUE(queue.full());
+        for (uint32_t i = 0; i < CAP; ++i) {
+            auto v = queue.pop();
+            ASSERT_TRUE(v.has_value()) << "pop " << next_out;
+            EXPECT_EQ(*v, next_out) << "FIFO order broken at wrap";
+            ++next_out;
+        }
+        EXPECT_TRUE(queue.empty());
+    }
+    // The counters have wrapped past zero.
+    EXPECT_LT(tail->load(), T0);
 }
 
 TEST_F(QueueTest, CircularWrap) {
@@ -98,7 +163,7 @@ TEST_F(QueueTest, OpenExisting) {
     }
     
     Queue<float> queue2(mem, "float_queue");
-    EXPECT_EQ(queue2.capacity(), 50);
+    EXPECT_EQ(queue2.capacity(), 64);  // 50 rounded up at creation
     EXPECT_EQ(queue2.size(), 2);
     
     auto val = queue2.pop();

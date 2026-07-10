@@ -50,6 +50,14 @@ zeroipc_queue_t* zeroipc_queue_create(zeroipc_memory_t* mem, const char* name,
     queue->memory = mem;
     strncpy(queue->name, name, sizeof(queue->name) - 1);
 
+    /* The Vyukov slot mapping (counter % capacity on monotonically
+     * increasing uint32 counters) is only correct across the 2^32 counter
+     * wraparound when capacity divides 2^32. Round the request up to the
+     * next power of two; zeroipc_queue_capacity reports the actual value. */
+    size_t cap_p2 = 1;
+    while (cap_p2 < capacity) cap_p2 <<= 1;
+    capacity = cap_p2;
+
     /* Layout: [header(16)][data: elem_size*capacity][pad][seq: uint32*capacity] */
     size_t seq_array_size = sizeof(uint32_t) * capacity;
     if (capacity > (SIZE_MAX - sizeof(queue_header_t) - seq_array_size) / elem_size) {
@@ -100,6 +108,12 @@ zeroipc_queue_t* zeroipc_queue_open(zeroipc_memory_t* mem, const char* name) {
 
     queue->header = (queue_header_t*)((char*)zeroipc_memory_base(mem) + offset);
     if (queue->header->capacity == 0 || queue->header->elem_size == 0) {
+        free(queue);
+        return NULL;
+    }
+    /* Wrap-safety requires a power-of-two capacity (see create). A
+     * non-power-of-two value means a pre-amendment writer; reject it. */
+    if ((queue->header->capacity & (queue->header->capacity - 1)) != 0) {
         free(queue);
         return NULL;
     }

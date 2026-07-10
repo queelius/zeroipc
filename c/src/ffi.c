@@ -44,6 +44,10 @@ _Static_assert(sizeof(ffi_queue_header_t) == 16, "Queue header must be 16 bytes"
 
 static inline int q_validate(ffi_queue_header_t* h, uint32_t elem_size) {
     if (h->capacity == 0 || h->elem_size == 0) return FFI_INVALID;
+    /* Wrap-safety requires a power-of-two capacity: the slot mapping
+     * (counter % capacity) is only correct across the 2^32 counter
+     * wraparound when capacity divides 2^32. */
+    if ((h->capacity & (h->capacity - 1)) != 0) return FFI_INVALID;
     if (h->elem_size != elem_size) return FFI_MISMATCH;
     return FFI_OK;
 }

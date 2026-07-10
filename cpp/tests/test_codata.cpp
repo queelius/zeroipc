@@ -252,16 +252,18 @@ TEST_F(CodataTest, ChannelBuffered) {
     Memory mem(shm_name_, 1024 * 1024);
     Channel<int> ch(mem, "buffered", size_t(3));  // Buffered channel with capacity 3
     
-    EXPECT_EQ(ch.capacity(), 3);
+    // Requested 3; the queue-backed buffer rounds to 4 (wrap-safety)
+    EXPECT_EQ(ch.capacity(), 4);
     EXPECT_TRUE(ch.is_buffered());
     
     // Should not block up to capacity
     EXPECT_TRUE(ch.try_send(1));
     EXPECT_TRUE(ch.try_send(2));
     EXPECT_TRUE(ch.try_send(3));
+    EXPECT_TRUE(ch.try_send(4));
     
     // Buffer full, should fail
-    EXPECT_FALSE(ch.try_send(4));
+    EXPECT_FALSE(ch.try_send(5));
     
     // Receive all
     auto val = ch.recv();
@@ -276,12 +278,16 @@ TEST_F(CodataTest, ChannelBuffered) {
     ASSERT_TRUE(val.has_value());
     EXPECT_EQ(*val, 3);
     
-    // Now buffer is empty, can send again
-    EXPECT_TRUE(ch.try_send(4));
-    
     val = ch.recv();
     ASSERT_TRUE(val.has_value());
     EXPECT_EQ(*val, 4);
+    
+    // Now buffer is empty, can send again
+    EXPECT_TRUE(ch.try_send(5));
+    
+    val = ch.recv();
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, 5);
 }
 
 TEST_F(CodataTest, ChannelTimeout) {

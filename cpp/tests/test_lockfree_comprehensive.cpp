@@ -44,15 +44,17 @@ TEST_F(LockFreeTest, QueueBasicCorrectness) {
     EXPECT_EQ(*val, 42);
     EXPECT_TRUE(q.empty());
     
-    // Test fill to capacity (Vyukov queue uses all N slots)
-    for (int i = 0; i < 100; i++) {
+    // Test fill to capacity (Vyukov queue uses all N slots; the requested
+    // 100 rounds up to 128 for wrap-safety)
+    const int qcap = static_cast<int>(q.capacity());
+    for (int i = 0; i < qcap; i++) {
         EXPECT_TRUE(q.push(i));
     }
     EXPECT_TRUE(q.full());
     EXPECT_FALSE(q.push(999));  // Should fail when full
 
     // Test drain
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < qcap; i++) {
         auto v = q.pop();
         ASSERT_TRUE(v.has_value());
         EXPECT_EQ(*v, i);

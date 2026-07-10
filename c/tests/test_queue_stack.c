@@ -23,7 +23,7 @@ void test_queue_basic() {
     assert(queue != NULL);
     assert(zeroipc_queue_empty(queue));
     assert(!zeroipc_queue_full(queue));
-    assert(zeroipc_queue_capacity(queue) == 100);
+    assert(zeroipc_queue_capacity(queue) == 128);  /* 100 rounded up to power of two */
     
     /* Push values */
     int values[] = {10, 20, 30, 40, 50};
@@ -416,16 +416,22 @@ static void check_queue_layout(zeroipc_memory_t* mem, const char* name,
     zeroipc_queue_t* q = zeroipc_queue_create(mem, name, elem_size, cap);
     assert(q != NULL);
 
+    /* The queue rounds the requested capacity up to a power of two
+     * (wrap-safety); the layout is computed from the actual capacity. */
+    size_t actual_cap = zeroipc_queue_capacity(q);
+    assert(actual_cap >= cap);
+    assert((actual_cap & (actual_cap - 1)) == 0);
+
     size_t offset = 0, size = 0;
     assert(zeroipc_table_find(mem, name, &offset, &size) == ZEROIPC_OK);
 
-    size_t side_off = 16 + TEST_ALIGN8(elem_size * cap);
-    assert(size == side_off + cap * 4);
+    size_t side_off = 16 + TEST_ALIGN8(elem_size * actual_cap);
+    assert(size == side_off + actual_cap * 4);
 
     /* Vyukov invariant: seq[i] == i after creation. Finding those values at
      * the spec-computed offset proves placement. */
     char* base = (char*)zeroipc_memory_base(mem);
-    for (size_t i = 0; i < cap; ++i) {
+    for (size_t i = 0; i < actual_cap; ++i) {
         uint32_t seq;
         memcpy(&seq, base + offset + side_off + i * 4, 4);
         assert(seq == (uint32_t)i);
@@ -485,6 +491,64 @@ void test_section_alignment() {
     zeroipc_memory_unlink("/test_qs_layout");
 
     printf("  ✓ Section alignment layout passed\n");
+}
+
+/* Regression for the 2^32 counter wraparound. head/tail increase
+ * monotonically and wrap; with a power-of-two capacity the slot mapping
+ * counter % capacity is continuous across the wrap. Seed the counters just
+ * below UINT32_MAX (with matching per-slot sequence numbers, seq[pos % cap]
+ * = pos) and stream elements across the boundary in FIFO order. */
+void test_queue_wraparound() {
+    printf("Testing queue 2^32 counter wraparound...\n");
+
+    zeroipc_memory_t* mem = zeroipc_memory_create("/test_qs_wrap", 1024*1024, 64);
+    assert(mem != NULL);
+
+    enum { CAP = 8 };
+    zeroipc_queue_t* q = zeroipc_queue_create(mem, "wq", sizeof(uint32_t), CAP);
+    assert(q != NULL);
+    assert(zeroipc_queue_capacity(q) == CAP);
+
+    size_t offset = 0, size = 0;
+    assert(zeroipc_table_find(mem, "wq", &offset, &size) == ZEROIPC_OK);
+    char* base = (char*)zeroipc_memory_base(mem) + offset;
+    _Atomic uint32_t* head = (_Atomic uint32_t*)base;
+    _Atomic uint32_t* tail = (_Atomic uint32_t*)(base + 4);
+    _Atomic uint32_t* seq =
+        (_Atomic uint32_t*)(base + 16 + TEST_ALIGN8(sizeof(uint32_t) * CAP));
+
+    /* Position both counters 4 increments before the wrap. */
+    const uint32_t T0 = 0xFFFFFFFCu;
+    atomic_store(head, T0);
+    atomic_store(tail, T0);
+    for (uint32_t k = 0; k < CAP; ++k) {
+        uint32_t pos = T0 + k;  /* wraps through 0 */
+        atomic_store(&seq[pos % CAP], pos);
+    }
+
+    /* Stream 3 full generations through the queue, crossing the wrap. */
+    uint32_t next_in = 0, next_out = 0;
+    for (int round = 0; round < 3; ++round) {
+        for (uint32_t i = 0; i < CAP; ++i) {
+            assert(zeroipc_queue_push(q, &next_in) == ZEROIPC_OK);
+            ++next_in;
+        }
+        assert(zeroipc_queue_full(q));
+        for (uint32_t i = 0; i < CAP; ++i) {
+            uint32_t v = 0;
+            assert(zeroipc_queue_pop(q, &v) == ZEROIPC_OK);
+            assert(v == next_out);  /* FIFO order across the wrap */
+            ++next_out;
+        }
+        assert(zeroipc_queue_empty(q));
+    }
+    assert(atomic_load(tail) < T0);  /* counters wrapped past zero */
+
+    zeroipc_queue_close(q);
+    zeroipc_memory_close(mem);
+    zeroipc_memory_unlink("/test_qs_wrap");
+
+    printf("  ✓ Queue wraparound passed\n");
 }
 
 /* Crash-safety: a peer that dies mid-operation leaves its slot state
@@ -547,6 +611,7 @@ int main() {
     test_queue_basic();
     test_stack_basic();
     test_section_alignment();
+    test_queue_wraparound();
     test_crashed_peer();
     test_queue_concurrent();
     test_queue_mpmc();

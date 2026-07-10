@@ -54,18 +54,68 @@ class TestQueue:
     def test_full_queue(self):
         """Test behavior when queue is full (Vyukov uses all N slots)."""
         mem = Memory("/test_queue", size=1024*1024)
+        # Request 3, get 4 (power-of-two rounding for wrap-safety)
         queue = Queue(mem, "small_queue", capacity=3, dtype=np.int32)
+        assert queue.capacity == 4
 
         assert queue.push(1)
         assert queue.push(2)
-        assert queue.push(3)  # Vyukov uses all N slots
-        assert not queue.push(4)  # Should fail - queue full
+        assert queue.push(3)
+        assert queue.push(4)  # Vyukov uses all N slots
+        assert not queue.push(5)  # Should fail - queue full
 
         assert queue.full()
 
         queue.pop()
         assert not queue.full()
-        assert queue.push(4)
+        assert queue.push(5)
+
+    def test_capacity_rounds_up_to_power_of_two(self):
+        """Requested capacities round up so the slot mapping survives the
+        2^32 counter wraparound (capacity must divide 2^32)."""
+        mem = Memory("/test_queue", size=1024*1024)
+        assert Queue(mem, "q_p2_1", capacity=1, dtype=np.int32).capacity == 1
+        assert Queue(mem, "q_p2_2", capacity=2, dtype=np.int32).capacity == 2
+        assert Queue(mem, "q_p2_5", capacity=5, dtype=np.int32).capacity == 8
+        assert Queue(mem, "q_p2_1000", capacity=1000, dtype=np.int32).capacity == 1024
+
+    def test_wraparound_at_2_32(self):
+        """Regression for the 2^32 counter wraparound: seed head/tail just
+        below UINT32_MAX (with matching seq[pos % cap] = pos) and stream
+        elements across the boundary in FIFO order."""
+        import struct
+
+        mem = Memory("/test_queue", size=1024*1024)
+        cap = 8
+        queue = Queue(mem, "wrap32_queue", capacity=cap, dtype=np.uint32)
+        assert queue.capacity == cap
+
+        entry = mem.table.find("wrap32_queue")
+        base = entry.offset
+        seq_base = base + 16 + ((4 * cap + 7) & ~7)
+
+        # Position both counters 4 increments before the wrap.
+        t0 = 0xFFFFFFFC
+        struct.pack_into("<I", mem.data, base, t0)      # head
+        struct.pack_into("<I", mem.data, base + 4, t0)  # tail
+        for k in range(cap):
+            pos = (t0 + k) & 0xFFFFFFFF  # wraps through 0
+            struct.pack_into("<I", mem.data, seq_base + (pos % cap) * 4, pos)
+
+        # Stream 3 full generations through the queue, crossing the wrap.
+        next_in = next_out = 0
+        for _ in range(3):
+            for _ in range(cap):
+                assert queue.push(next_in)
+                next_in += 1
+            assert queue.full()
+            for _ in range(cap):
+                assert queue.pop() == next_out, "FIFO order broken at wrap"
+                next_out += 1
+            assert queue.empty()
+
+        tail = struct.unpack_from("<I", mem.data, base + 4)[0]
+        assert tail < t0  # counters wrapped past zero
     
     def test_circular_wrap(self):
         """Test circular buffer wrapping."""

@@ -47,17 +47,23 @@ def test_queue_side_array_at_8_byte_boundary(mem, dtype):
     capacity = 5
     elem_size = np.dtype(dtype).itemsize
     name = f"q_{elem_size}"
-    Queue(mem, name, capacity=capacity, dtype=dtype)
+    queue = Queue(mem, name, capacity=capacity, dtype=dtype)
+
+    # The queue rounds the requested capacity up to a power of two
+    # (wrap-safety); the layout is computed from the actual capacity.
+    actual_cap = queue.capacity
+    assert actual_cap >= capacity
+    assert actual_cap & (actual_cap - 1) == 0
 
     entry = mem.table.find(name)
     assert entry is not None
 
-    side_off = HEADER_SIZE + spec_align8(elem_size * capacity)
-    assert entry.size == side_off + capacity * 4
+    side_off = HEADER_SIZE + spec_align8(elem_size * actual_cap)
+    assert entry.size == side_off + actual_cap * 4
 
     # Vyukov invariant: seq[i] == i after creation. Finding those values at
     # the spec-computed offset proves placement.
-    for i in range(capacity):
+    for i in range(actual_cap):
         seq = struct.unpack_from("<I", mem.data, entry.offset + side_off + i * 4)[0]
         assert seq == i, f"seq[{i}] not at spec offset for elem_size {elem_size}"
 

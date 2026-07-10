@@ -12,16 +12,27 @@ import (
 // Layout: head(4) + tail(4) + capacity(4) + elem_size(4) = 16 bytes
 const QueueHeaderSize = 16
 
+// nextPowerOfTwo rounds n up to the next power of two. Queue capacities must
+// be powers of two so the Vyukov slot mapping (counter % capacity) stays
+// correct across the 2^32 counter wraparound.
+func nextPowerOfTwo(n int) int {
+	p := 1
+	for p < n {
+		p <<= 1
+	}
+	return p
+}
+
 // Queue is a lock-free MPMC (multi-producer multi-consumer) circular buffer
 // using the Vyukov bounded queue algorithm with per-slot sequence numbers.
 //
-// Binary layout (matching C++):
+// Binary layout (matching C++, format v2):
 //   - head: uint32 (atomic, offset 0)
 //   - tail: uint32 (atomic, offset 4)
-//   - capacity: uint32 (offset 8)
+//   - capacity: uint32 (offset 8) - always a power of two
 //   - elem_size: uint32 (offset 12)
 //   - data: capacity * elem_size bytes (offset 16)
-//   - sequence: capacity * 4 bytes (after data) - per-slot sequence numbers
+//   - sequence: capacity * 4 bytes (at align8(16 + elem_size*capacity)) - per-slot sequence numbers
 type Queue[T Numeric] struct {
 	memory   *Memory
 	name     string
@@ -39,6 +50,10 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 	if capacity <= 0 {
 		return nil, errors.New("capacity must be positive")
 	}
+
+	// Round up so the slot mapping stays correct across the 2^32 counter
+	// wraparound (see nextPowerOfTwo). Capacity reports the actual value.
+	capacity = nextPowerOfTwo(capacity)
 
 	var zero T
 	elemSize := int(unsafe.Sizeof(zero))
@@ -58,10 +73,10 @@ func NewQueue[T Numeric](memory *Memory, name string, capacity int) (*Queue[T], 
 	data := memory.Data()
 
 	// Write header
-	binary.LittleEndian.PutUint32(data[offset:], 0)                    // head
-	binary.LittleEndian.PutUint32(data[offset+4:], 0)                  // tail
-	binary.LittleEndian.PutUint32(data[offset+8:], uint32(capacity))   // capacity
-	binary.LittleEndian.PutUint32(data[offset+12:], uint32(elemSize))  // elem_size
+	binary.LittleEndian.PutUint32(data[offset:], 0)                   // head
+	binary.LittleEndian.PutUint32(data[offset+4:], 0)                 // tail
+	binary.LittleEndian.PutUint32(data[offset+8:], uint32(capacity))  // capacity
+	binary.LittleEndian.PutUint32(data[offset+12:], uint32(elemSize)) // elem_size
 
 	// Zero-initialize data area
 	dataStart := offset + QueueHeaderSize
@@ -105,6 +120,12 @@ func OpenQueue[T Numeric](memory *Memory, name string) (*Queue[T], error) {
 
 	if int(storedElemSize) != elemSize {
 		return nil, fmt.Errorf("element size mismatch: stored %d, expected %d", storedElemSize, elemSize)
+	}
+
+	// Wrap-safety requires a power-of-two capacity (see NewQueue). A
+	// non-power-of-two value means a pre-amendment writer; reject it.
+	if capacity&(capacity-1) != 0 {
+		return nil, fmt.Errorf("queue capacity %d is not a power of two (created by an old implementation?)", capacity)
 	}
 
 	return &Queue[T]{

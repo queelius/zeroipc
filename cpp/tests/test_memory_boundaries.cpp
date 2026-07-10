@@ -3,6 +3,7 @@
 #include <zeroipc/queue.h>
 #include <zeroipc/stack.h>
 #include <zeroipc/array.h>
+#include <bit>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -81,8 +82,10 @@ TEST_F(MemoryBoundaryTest, MaximumQueueCapacity) {
     size_t bytes_per_slot = sizeof(TestStruct) + sizeof(std::atomic<uint32_t>);
     size_t max_capacity = (mem_size - overhead) / bytes_per_slot;
 
-    // Create queue with near-maximum capacity
-    size_t test_capacity = max_capacity - 100; // Leave some margin
+    // Create queue with the largest power-of-two capacity that fits
+    // (queue capacities round up to powers of two, so rounding down here
+    // keeps the allocation within the segment)
+    size_t test_capacity = std::bit_floor(max_capacity - 100);
     Queue<TestStruct> queue(mem, "maxq", test_capacity);
     
     TestStruct ts;
@@ -307,10 +310,10 @@ TEST_F(MemoryBoundaryTest, AlignmentBoundaries) {
 
 TEST_F(MemoryBoundaryTest, ConcurrentNearCapacity) {
     Memory mem("/test_boundary", 10 * 1024 * 1024);
-    Queue<int> queue(mem, "concurrent", 100); // Small queue
-    
-    // Fill queue to near capacity (Vyukov queue uses all N slots)
-    for (int i = 0; i < 99; i++) {
+    Queue<int> queue(mem, "concurrent", 100); // Small queue (rounds to 128)
+
+    // Fill queue to one below actual capacity (Vyukov queue uses all N slots)
+    for (int i = 0; i < static_cast<int>(queue.capacity()) - 1; i++) {
         ASSERT_TRUE(queue.push(i));
     }
     
@@ -397,18 +400,24 @@ void expect_queue_section_layout(Memory& mem, const std::string& name,
                                  size_t cap) {
     Queue<T> q(mem, name, cap);
 
+    // The queue rounds the requested capacity up to a power of two
+    // (wrap-safety); the layout is computed from the actual capacity.
+    const size_t actual_cap = q.capacity();
+    EXPECT_GE(actual_cap, cap);
+    EXPECT_EQ(actual_cap & (actual_cap - 1), 0u) << "capacity not a power of two";
+
     size_t offset = 0, size = 0;
     ASSERT_TRUE(mem.find(name, offset, size));
 
     // Spec formula, independent of the implementation's internal pointers
-    const size_t side_off = 16 + align_up(sizeof(T) * cap, 8);
-    EXPECT_EQ(size, side_off + cap * sizeof(uint32_t))
+    const size_t side_off = 16 + align_up(sizeof(T) * actual_cap, 8);
+    EXPECT_EQ(size, side_off + actual_cap * sizeof(uint32_t))
         << "table entry size wrong for elem_size " << sizeof(T);
 
     // Vyukov invariant: seq[i] == i immediately after creation. Finding
     // those values at the spec-computed offset proves placement.
     const char* base = static_cast<const char*>(mem.base());
-    for (size_t i = 0; i < cap; ++i) {
+    for (size_t i = 0; i < actual_cap; ++i) {
         uint32_t seq;
         std::memcpy(&seq, base + offset + side_off + i * 4, 4);
         EXPECT_EQ(seq, static_cast<uint32_t>(i))

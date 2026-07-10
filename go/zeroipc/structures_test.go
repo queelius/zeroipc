@@ -25,6 +25,11 @@ func TestQueueBasic(t *testing.T) {
 		t.Fatalf("NewQueue failed: %v", err)
 	}
 
+	// Requested 10, rounded up to the next power of two (wrap-safety)
+	if q.Capacity() != 16 {
+		t.Errorf("Capacity = %d, want 16", q.Capacity())
+	}
+
 	// Test empty
 	if !q.Empty() {
 		t.Error("New queue should be empty")
@@ -52,7 +57,7 @@ func TestQueueBasic(t *testing.T) {
 	}
 
 	// Fill queue to capacity
-	for i := 0; i < 10; i++ {
+	for i := 0; i < q.Capacity(); i++ {
 		if !q.Push(int32(i)) {
 			t.Errorf("Push %d should succeed", i)
 		}

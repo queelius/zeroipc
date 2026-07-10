@@ -41,17 +41,20 @@ TEST_F(EdgeCaseTest, QueueSingleElement) {
 
 TEST_F(EdgeCaseTest, QueueFullBehavior) {
     Memory mem("/test_edge", 1024*1024);
-    Queue<int> queue(mem, "full", 3); // Vyukov queue: holds 3 elements
+    // Requested 3, rounds to 4 (power-of-two wrap-safety)
+    Queue<int> queue(mem, "full", 3);
+    ASSERT_EQ(queue.capacity(), 4);
 
     EXPECT_TRUE(queue.push(1));
     EXPECT_TRUE(queue.push(2));
-    EXPECT_TRUE(queue.push(3));      // All 3 slots usable
-    EXPECT_FALSE(queue.push(4));     // Should fail when full
+    EXPECT_TRUE(queue.push(3));
+    EXPECT_TRUE(queue.push(4));      // All 4 slots usable
+    EXPECT_FALSE(queue.push(5));     // Should fail when full
 
     // After pop, should be able to push again
     ASSERT_TRUE(queue.pop().has_value());
-    EXPECT_TRUE(queue.push(4));
-    EXPECT_FALSE(queue.push(5));     // Full again
+    EXPECT_TRUE(queue.push(5));
+    EXPECT_FALSE(queue.push(6));     // Full again
 }
 
 TEST_F(EdgeCaseTest, QueueEmptyPop) {
@@ -73,18 +76,19 @@ TEST_F(EdgeCaseTest, QueueEmptyPop) {
 
 TEST_F(EdgeCaseTest, QueueWrapAroundStress) {
     Memory mem("/test_edge", 1024*1024);
-    Queue<int> queue(mem, "wrap", 5); // Small queue to force wrapping
+    Queue<int> queue(mem, "wrap", 5); // Small queue to force wrapping (rounds to 8)
+    const int cap = static_cast<int>(queue.capacity());
 
     // Repeatedly fill and empty to test wrap-around
     for (int round = 0; round < 100; round++) {
-        // Fill to capacity (Vyukov queue uses all 5 slots)
-        for (int i = 0; i < 5; i++) {
+        // Fill to capacity (Vyukov queue uses all slots)
+        for (int i = 0; i < cap; i++) {
             EXPECT_TRUE(queue.push(round * 100 + i));
         }
         EXPECT_TRUE(queue.full());
 
         // Empty completely
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < cap; i++) {
             auto val = queue.pop();
             ASSERT_TRUE(val.has_value());
             EXPECT_EQ(*val, round * 100 + i);

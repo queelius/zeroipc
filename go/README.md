@@ -28,7 +28,7 @@ scheme, so a Go-only backend would be Go-to-Go on that platform.
 ## Installation
 
 ```bash
-go get github.com/spinoza/zeroipc
+go get github.com/queelius/zeroipc
 ```
 
 ## Quick Start
@@ -40,7 +40,7 @@ package main
 
 import (
     "fmt"
-    "github.com/spinoza/zeroipc/zeroipc"
+    "github.com/queelius/zeroipc/zeroipc"
 )
 
 func main() {

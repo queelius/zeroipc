@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/spinoza/zeroipc/zeroipc"
+	"github.com/queelius/zeroipc/zeroipc"
 )
 
 var cppIncludePath string

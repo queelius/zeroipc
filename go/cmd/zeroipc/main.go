@@ -34,7 +34,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/spinoza/zeroipc/zeroipc"
+	"github.com/queelius/zeroipc/zeroipc"
 )
 
 const version = "1.0.0"

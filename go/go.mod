@@ -1,4 +1,4 @@
-module github.com/spinoza/zeroipc
+module github.com/queelius/zeroipc
 
 go 1.21
 

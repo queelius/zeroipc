@@ -36,7 +36,7 @@ TEST_F(StressTest, QueueMillionOperations) {
     // Push million items
     for (uint64_t i = 0; i < ops; i++) {
         while (!queue.push(i)) {
-            queue.pop(); // Make room if needed
+            (void)queue.pop(); // Make room if needed
         }
     }
     
@@ -328,8 +328,8 @@ TEST_F(StressTest, ChaosMonkey) {
                 int value = val_dist(rng);
                 
                 switch(op) {
-                    case 0: queue.push(value); break;
-                    case 1: queue.pop(); break;
+                    case 0: (void)queue.push(value); break;
+                    case 1: (void)queue.pop(); break;
                     case 2: stack.push(value); break;
                     case 3: stack.pop(); break;
                     case 4: array[idx_dist(rng)] = value; break;

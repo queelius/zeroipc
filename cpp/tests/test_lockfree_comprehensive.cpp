@@ -327,10 +327,10 @@ TEST_F(LockFreeTest, PerformanceMetrics) {
     // Single-threaded throughput
     auto start = high_resolution_clock::now();
     for (int i = 0; i < ops; i++) {
-        q.push(i);
+        (void)q.push(i);  // throughput loop: full is acceptable
     }
     for (int i = 0; i < ops; i++) {
-        q.pop();
+        (void)q.pop();    // throughput loop: empty is acceptable
     }
     auto end = high_resolution_clock::now();
     
@@ -416,7 +416,7 @@ TEST_F(LockFreeTest, EdgeCases) {
     for (int i = 0; i < 100; i++) {
         Memory shm("/test_lockfree_rapid", 1 * 1024 * 1024);
         Queue<int> q(shm, "rapid_queue", 100);
-        q.push(i);
+        ASSERT_TRUE(q.push(i));
         auto val = q.pop();
         ASSERT_TRUE(val.has_value());
         EXPECT_EQ(*val, i);

@@ -43,9 +43,9 @@ TEST_F(FailureRecoveryTest, ProcessCrashDuringWrite) {
         Memory child_mem("/test_recovery");
         Queue<int> child_queue(child_mem, "crash_queue");
         
-        // Start adding data
+        // Start adding data (result ignored: child simulates a crash mid-work)
         for (int i = 1000; i < 1050; i++) {
-            child_queue.push(i);
+            (void)child_queue.push(i);
             
             if (i == 1025) {
                 // Simulate crash - immediate exit without cleanup
@@ -272,7 +272,7 @@ TEST_F(FailureRecoveryTest, DeadlockTimeout) {
     
     if (!deadlock_detected) {
         // Make room
-        queue.pop();
+        ASSERT_TRUE(queue.pop().has_value());
     }
     
     pusher.join();
@@ -291,7 +291,7 @@ TEST_F(FailureRecoveryTest, CorruptedHeaderRecovery) {
     
     // Add some data
     for (int i = 0; i < 50; i++) {
-        queue->push(i);
+        ASSERT_TRUE(queue->push(i));
     }
     
     // Simulate header corruption detection
@@ -308,7 +308,7 @@ TEST_F(FailureRecoveryTest, CorruptedHeaderRecovery) {
         // Verify we can still read something
         int count = 0;
         while (!recovered_queue.empty() && count < 100) {
-            recovered_queue.pop();
+            (void)recovered_queue.pop();
             count++;
         }
         
@@ -383,10 +383,11 @@ TEST_F(FailureRecoveryTest, MultiProcessCrashRecovery) {
             Memory child_mem("/test_recovery");
             Queue<int> child_queue(child_mem, "multi_queue");
             
-            // Each child writes its range
+            // Each child writes its range (result ignored: queue may fill,
+            // and the child simulates a crash mid-work)
             for (int i = 0; i < 1000; i++) {
                 int value = p * 10000 + i;
-                child_queue.push(value);
+                (void)child_queue.push(value);
                 
                 // Simulate random crash
                 if (i == 500 + p * 100) {
@@ -437,7 +438,7 @@ TEST_F(FailureRecoveryTest, ConsistencyAfterFailures) {
     }
     
     for (int i = 0; i < 50; i++) {
-        queue.push(i * 10);
+        ASSERT_TRUE(queue.push(i * 10));
         stack.push(i * 20);
     }
     

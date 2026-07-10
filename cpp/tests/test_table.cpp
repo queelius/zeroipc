@@ -68,14 +68,14 @@ TEST_F(TableTest, DuplicateNameThrows) {
     Table table(buffer.data(), 64, buffer.size(), true);
     
     EXPECT_TRUE(table.add("test", 1000, 100));
-    EXPECT_THROW(table.add("test", 2000, 200), std::invalid_argument);
+    EXPECT_THROW((void)table.add("test", 2000, 200), std::invalid_argument);
 }
 
 TEST_F(TableTest, LongNameThrows) {
     Table table(buffer.data(), 64, buffer.size(), true);
     
     std::string long_name(32, 'x'); // 32 chars, too long
-    EXPECT_THROW(table.add(long_name, 1000, 100), std::invalid_argument);
+    EXPECT_THROW((void)table.add(long_name, 1000, 100), std::invalid_argument);
     
     std::string max_name(31, 'y'); // 31 chars, maximum allowed
     EXPECT_TRUE(table.add(max_name, 1000, 100));
@@ -114,7 +114,7 @@ TEST_F(TableTest, OpenExistingTable) {
     // Create a table
     {
         Table table(buffer.data(), 64, buffer.size(), true);
-        table.add("persistent", 1000, 500);
+        ASSERT_TRUE(table.add("persistent", 1000, 500));
     }
     
     // Open the existing table

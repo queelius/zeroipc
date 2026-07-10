@@ -54,8 +54,8 @@ TEST_F(CLITest, ShowSummary) {
         zeroipc::Array<double> array(mem, "test_array", 50);
         
         // Add some data
-        queue.push(42);
-        queue.push(13);
+        ASSERT_TRUE(queue.push(42));
+        ASSERT_TRUE(queue.push(13));
         array[0] = 3.14;
         array[1] = 2.71;
         
@@ -93,7 +93,7 @@ TEST_F(CLITest, InfoAboutSpecificStructure) {
         
         // Add some items
         for (int i = 0; i < 10; i++) {
-            queue.push(i * 10);
+            ASSERT_TRUE(queue.push(i * 10));
         }
         
         // Get info about the queue

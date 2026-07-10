@@ -66,8 +66,8 @@ TEST_F(NewStructuresTest, MapOpenExisting) {
     Memory mem(shm_name_, 1024 * 1024);
     {
         Map<int, int> map1(mem, "shared_map", 50);
-        map1.insert(1, 100);
-        map1.insert(2, 200);
+        ASSERT_TRUE(map1.insert(1, 100));
+        ASSERT_TRUE(map1.insert(2, 200));
     }
     
     // Open existing map
@@ -259,7 +259,7 @@ TEST_F(NewStructuresTest, MapConcurrentInsert) {
         threads.emplace_back([&map, t, items_per_thread]() {
             for (int i = 0; i < items_per_thread; ++i) {
                 int key = t * items_per_thread + i;
-                map.insert(key, key * 2);
+                EXPECT_TRUE(map.insert(key, key * 2));
             }
         });
     }
@@ -343,7 +343,7 @@ TEST_F(NewStructuresTest, MapConcurrentInsertFindRace) {
         writers.emplace_back([&map, w, items_per_writer]() {
             for (int i = 0; i < items_per_writer; ++i) {
                 int key = w * items_per_writer + i;
-                map.insert(key, key * 100);
+                EXPECT_TRUE(map.insert(key, key * 100));
             }
         });
     }
@@ -429,7 +429,7 @@ TEST_F(NewStructuresTest, SetConcurrentInsertContainsRace) {
         writers.emplace_back([&set, w, items_per_writer]() {
             for (int i = 0; i < items_per_writer; ++i) {
                 int value = w * items_per_writer + i;
-                set.insert(value);
+                EXPECT_TRUE(set.insert(value));
             }
         });
     }
@@ -441,7 +441,7 @@ TEST_F(NewStructuresTest, SetConcurrentInsertContainsRace) {
             int total = num_writers * items_per_writer;
             while (!done.load(std::memory_order_relaxed)) {
                 for (int k = 0; k < total; ++k) {
-                    set.contains(k);  // Must not read garbage
+                    (void)set.contains(k);  // Must not read garbage
                 }
             }
         });

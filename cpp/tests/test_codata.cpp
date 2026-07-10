@@ -44,7 +44,7 @@ TEST_F(CodataTest, FutureErrorHandling) {
     EXPECT_TRUE(future.is_ready());
     EXPECT_EQ(future.state(), Future<double>::ERROR);
     
-    EXPECT_THROW(future.get(), std::runtime_error);
+    EXPECT_THROW((void)future.get(), std::runtime_error);
 }
 
 TEST_F(CodataTest, FutureTimeout) {
@@ -54,7 +54,7 @@ TEST_F(CodataTest, FutureTimeout) {
     auto result = future.get_for(100ms);
     EXPECT_FALSE(result.has_value());  // Should timeout
     
-    future.set_value(99);
+    ASSERT_TRUE(future.set_value(99));
     result = future.get_for(100ms);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 99);
@@ -78,7 +78,7 @@ TEST_F(CodataTest, FutureConcurrent) {
     // Writer
     std::thread writer([&future]() {
         std::this_thread::sleep_for(50ms);
-        future.set_value(10);
+        EXPECT_TRUE(future.set_value(10));
     });
     
     writer.join();
@@ -295,7 +295,7 @@ TEST_F(CodataTest, ChannelTimeout) {
     // Send in background
     std::thread sender([&ch]() {
         std::this_thread::sleep_for(50ms);
-        ch.send(99);
+        EXPECT_TRUE(ch.send(99));
     });
     
     // Receive with timeout (should succeed)
@@ -310,8 +310,8 @@ TEST_F(CodataTest, ChannelClose) {
     Memory mem(shm_name_, 1024 * 1024);
     Channel<int> ch(mem, "close_ch", size_t(2));
     
-    ch.send(1);
-    ch.send(2);
+    ASSERT_TRUE(ch.send(1));
+    ASSERT_TRUE(ch.send(2));
     ch.close();
     
     EXPECT_TRUE(ch.is_closed());
@@ -371,7 +371,7 @@ TEST_F(CodataTest, FutureOpenExisting) {
     // Create and set in first future
     {
         Future<int> future1(mem, "shared_future");
-        future1.set_value(123);
+        ASSERT_TRUE(future1.set_value(123));
     }
 
     // Open existing in second future
@@ -402,7 +402,7 @@ TEST_F(CodataTest, FutureMultipleGetters) {
     Memory mem(shm_name_, 1024 * 1024);
     Future<float> future(mem, "multi_get");
 
-    future.set_value(3.14f);
+    ASSERT_TRUE(future.set_value(3.14f));
 
     // Multiple get() calls should all return the same value
     EXPECT_FLOAT_EQ(future.get(), 3.14f);
@@ -423,8 +423,8 @@ TEST_F(CodataTest, LazyPeekUncomputed) {
     EXPECT_FALSE(peeked.has_value());  // Not computed yet
     EXPECT_FALSE(sum.is_computed());
 
-    // Force computation
-    sum.force();
+    // Force computation (value checked via peek below)
+    (void)sum.force();
 
     // Now peek should return value
     peeked = sum.peek();
@@ -462,8 +462,8 @@ TEST_F(CodataTest, StreamClose) {
     Memory mem(shm_name_, 1024 * 1024);
     Stream<int> stream(mem, "closeable", 10);
 
-    stream.emit(1);
-    stream.emit(2);
+    ASSERT_TRUE(stream.emit(1));
+    ASSERT_TRUE(stream.emit(2));
 
     stream.close();
     EXPECT_TRUE(stream.is_closed());
@@ -481,9 +481,9 @@ TEST_F(CodataTest, StreamMap) {
     Memory mem(shm_name_, 1024 * 1024);
     Stream<int> stream(mem, "mappable", 100);
 
-    stream.emit(1);
-    stream.emit(2);
-    stream.emit(3);
+    ASSERT_TRUE(stream.emit(1));
+    ASSERT_TRUE(stream.emit(2));
+    ASSERT_TRUE(stream.emit(3));
     stream.close();
 
     // Map to double values

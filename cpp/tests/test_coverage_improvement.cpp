@@ -372,8 +372,8 @@ TEST_F(CoverageTest, OpenExistingStructures) {
         zeroipc::Array<float> array(mem, "persist_array", 100);
         
         // Add some data
-        queue.push(42);
-        queue.push(43);
+        ASSERT_TRUE(queue.push(42));
+        ASSERT_TRUE(queue.push(43));
         stack.push(3.14);
         stack.push(2.71);
         array[0] = 1.23f;
@@ -412,7 +412,7 @@ TEST_F(CoverageTest, TypeMismatchDetection) {
     {
         zeroipc::Memory mem("/test_coverage", 64 * 1024);
         zeroipc::Queue<int> queue(mem, "type_test", 10);
-        queue.push(42);
+        ASSERT_TRUE(queue.push(42));
     }
     
     // Try to open with different type (should throw)

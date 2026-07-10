@@ -43,7 +43,7 @@ TEST_F(MemoryTest, OpenExistingMemory) {
     // Create memory
     {
         Memory mem1(test_name, size);
-        mem1.table()->add("test_entry", 1000, 100);
+        ASSERT_TRUE(mem1.table()->add("test_entry", 1000, 100));
     }
     
     // Open existing memory
@@ -89,7 +89,7 @@ TEST_F(MemoryTest, AtMethod) {
 
 TEST_F(MemoryTest, MoveSemantics) {
     Memory mem1(test_name, 1024);
-    mem1.table()->add("entry1", 100, 50);
+    ASSERT_TRUE(mem1.table()->add("entry1", 100, 50));
     
     // Move constructor
     Memory mem2(std::move(mem1));
@@ -128,10 +128,10 @@ TEST_F(MemoryTest, TableIntegration) {
     
     // Use table to allocate space
     uint32_t offset1 = mem.table()->allocate(100);
-    mem.table()->add("data1", offset1, 100);
-    
+    ASSERT_TRUE(mem.table()->add("data1", offset1, 100));
+
     uint32_t offset2 = mem.table()->allocate(200);
-    mem.table()->add("data2", offset2, 200);
+    ASSERT_TRUE(mem.table()->add("data2", offset2, 200));
     
     // Verify allocations don't overlap
     EXPECT_GE(offset2, offset1 + 100);

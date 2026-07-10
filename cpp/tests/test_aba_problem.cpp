@@ -42,9 +42,9 @@ TEST_F(ABATest, QueueABAScenario) {
     const uint64_t MARKER_C = 0xCCCCCCCCCCCCCCCC;
     
     // Pre-fill queue
-    queue.push(MARKER_A);
-    queue.push(MARKER_B);
-    queue.push(MARKER_C);
+    ASSERT_TRUE(queue.push(MARKER_A));
+    ASSERT_TRUE(queue.push(MARKER_B));
+    ASSERT_TRUE(queue.push(MARKER_C));
     
     std::atomic<int> phase{0};
     std::atomic<bool> aba_detected{false};
@@ -85,7 +85,7 @@ TEST_F(ABATest, QueueABAScenario) {
         if (val2) thread2_values.push_back(*val2);
         
         // Push original value back
-        if (val1) queue.push(*val1);
+        if (val1) EXPECT_TRUE(queue.push(*val1));
         
         // Wait for thread 1
         while (phase < 2) {
@@ -172,7 +172,7 @@ TEST_F(ABATest, QueueRapidRecycling) {
     
     // Drain remaining
     while (!queue.empty()) {
-        queue.pop();
+        (void)queue.pop();
     }
     
     std::cout << "Rapid recycling: " << total_pushed << " pushes, " 
@@ -388,7 +388,7 @@ TEST_F(ABATest, MemoryOrderingABA) {
     
     // Initialize with values
     for (int i = 0; i < 50; i++) {
-        queue.push(i);
+        ASSERT_TRUE(queue.push(i));
     }
     
     const int num_threads = 4;
@@ -414,13 +414,13 @@ TEST_F(ABATest, MemoryOrderingABA) {
                         }
                         last_value = current;
                         
-                        // Modify and push back
-                        queue.push(current + 1000);
+                        // Modify and push back (may fail if full under contention)
+                        (void)queue.push(current + 1000);
                     }
                 } else {
                     // Producer thread
                     int new_val = t * 10000 + last_value;
-                    queue.push(new_val);
+                    (void)queue.push(new_val);  // may fail if full under contention
                     last_value++;
                 }
                 
@@ -525,10 +525,10 @@ TEST_F(ABATest, ComprehensiveABAStress) {
                 
                 switch(op) {
                     case 0:  // Queue push
-                        queue.push(value);
+                        (void)queue.push(value);
                         break;
                     case 1:  // Queue pop
-                        queue.pop();
+                        (void)queue.pop();
                         break;
                     case 2:  // Stack push
                         stack.push(value);

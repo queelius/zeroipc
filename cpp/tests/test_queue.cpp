@@ -58,7 +58,7 @@ TEST_F(QueueTest, FullQueue) {
 
     EXPECT_TRUE(queue.full());
 
-    queue.pop();
+    ASSERT_TRUE(queue.pop().has_value());
     EXPECT_FALSE(queue.full());
     EXPECT_TRUE(queue.push(4));
 }
@@ -93,8 +93,8 @@ TEST_F(QueueTest, OpenExisting) {
 
     {
         Queue<float> queue1(mem, "float_queue", 50);
-        queue1.push(3.14f);
-        queue1.push(2.71f);
+        ASSERT_TRUE(queue1.push(3.14f));
+        ASSERT_TRUE(queue1.push(2.71f));
     }
     
     Queue<float> queue2(mem, "float_queue");

@@ -49,7 +49,7 @@ TEST_F(EdgeCaseTest, QueueFullBehavior) {
     EXPECT_FALSE(queue.push(4));     // Should fail when full
 
     // After pop, should be able to push again
-    queue.pop();
+    ASSERT_TRUE(queue.pop().has_value());
     EXPECT_TRUE(queue.push(4));
     EXPECT_FALSE(queue.push(5));     // Full again
 }
@@ -306,9 +306,9 @@ TEST_F(EdgeCaseTest, MinMaxValues) {
     // Test with extreme values
     Queue<int64_t> queue(mem, "minmax", 10);
     
-    queue.push(std::numeric_limits<int64_t>::min());
-    queue.push(std::numeric_limits<int64_t>::max());
-    queue.push(0);
+    ASSERT_TRUE(queue.push(std::numeric_limits<int64_t>::min()));
+    ASSERT_TRUE(queue.push(std::numeric_limits<int64_t>::max()));
+    ASSERT_TRUE(queue.push(0));
     
     EXPECT_EQ(*queue.pop(), std::numeric_limits<int64_t>::min());
     EXPECT_EQ(*queue.pop(), std::numeric_limits<int64_t>::max());

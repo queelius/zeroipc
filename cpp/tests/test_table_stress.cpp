@@ -124,7 +124,7 @@ TEST_F(TableStressTest, ConcurrentTableCreation) {
                         arr[0] = t * 1000 + i;
                     } else if (type == 1) {
                         Queue<int> queue(mem, name, 100);
-                        queue.push(t * 1000 + i);
+                        EXPECT_TRUE(queue.push(t * 1000 + i));
                     } else {
                         Stack<int> stack(mem, name, 100);
                         stack.push(t * 1000 + i);
@@ -223,7 +223,7 @@ TEST_F(TableStressTest, TableFragmentation) {
             
             try {
                 Queue<int> queue(mem, name, 100);
-                queue.push(round * 100 + i);
+                EXPECT_TRUE(queue.push(round * 100 + i));
                 active_names.insert(name);
             } catch (...) {
                 // Table might be full
@@ -368,7 +368,7 @@ TEST_F(TableStressTest, MixedTypeTable) {
         
         // Queue
         Queue<double> queue(mem, base_name + "_queue", 10);
-        queue.push(i * 2.5);
+        ASSERT_TRUE(queue.push(i * 2.5));
         
         // Stack
         Stack<char> stack(mem, base_name + "_stack", 10);

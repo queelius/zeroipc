@@ -252,7 +252,7 @@ TEST_F(MemoryBoundaryTest, RapidAllocationDeallocation) {
         
         {
             Queue<int> q(mem, qname, 100);  // Smaller size to fit more
-            q.push(round);
+            ASSERT_TRUE(q.push(round));
         }
         
         {
@@ -373,7 +373,7 @@ TEST_F(MemoryBoundaryTest, StressTestMemoryBarriers) {
     
     // Verify all created structures still work
     for (auto& q : queues) {
-        q->push(42);
+        ASSERT_TRUE(q->push(42));
         EXPECT_EQ(*q->pop(), 42);
     }
     
